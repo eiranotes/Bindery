@@ -1,18 +1,26 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { runQAAction, runRevisionAction, runDraftAction, runAnalyzeAction, scanCodexAction, loadPlotAction } from '$lib/actions/pipeline';
+  import { scanCodexAction, loadPlotAction } from '$lib/actions/pipeline';
   import { uiStore } from '$lib/stores/uiStore';
+  import { gotoStage } from '$lib/stores/pipelineStore';
+  import type { HarnessStage } from '$lib/stores/pipelineStore';
   import { writingModeStore } from '$lib/stores/writingModeStore';
   import { editorStore } from '$lib/stores/editorStore';
 
+  function openAI(stage: HarnessStage) {
+    gotoStage(stage);
+    uiStore.update((s) => ({ ...s, centerView: 'ai' }));
+  }
+
   type Cmd = { id: string; label: string; hint?: string; run: () => void };
   const commands: Cmd[] = [
-    { id: 'write', label: '작성 화면 열기', hint: '화면', run: () => uiStore.update((s) => ({ ...s, centerView: 'write' })) },
-    { id: 'pipeline', label: 'AI 작업 화면 열기', hint: '화면', run: () => uiStore.update((s) => ({ ...s, centerView: 'pipeline' })) },
-    { id: 'draft', label: '초안 후보 생성', hint: 'AI', run: () => runDraftAction('draft') },
-    { id: 'analyze', label: '반복 표현 분석', hint: 'AI', run: () => runAnalyzeAction() },
-    { id: 'qa', label: 'QA 게이트 검사', hint: 'AI', run: runQAAction },
-    { id: 'revise', label: '수정 계획 생성', hint: 'AI', run: runRevisionAction },
+    { id: 'write', label: '집필 화면 열기', hint: '화면', run: () => uiStore.update((s) => ({ ...s, centerView: 'write' })) },
+    { id: 'materials', label: '자료 화면 열기', hint: '화면', run: () => uiStore.update((s) => ({ ...s, centerView: 'materials' })) },
+    { id: 'export', label: '내보내기 화면 열기', hint: '화면', run: () => uiStore.update((s) => ({ ...s, centerView: 'export' })) },
+    { id: 'ai-connect', label: 'AI 작업: 연결 설정', hint: 'AI', run: () => openAI('connect') },
+    { id: 'ai-bible', label: 'AI 작업: 바이블 확인', hint: 'AI', run: () => openAI('bible') },
+    { id: 'ai-run', label: 'AI 작업: 파이프라인 실행', hint: 'AI', run: () => openAI('run') },
+    { id: 'ai-review', label: 'AI 작업: 후보·QA 검토', hint: 'AI', run: () => openAI('review') },
     { id: 'scan', label: '설정집 링크 스캔', hint: '자료', run: scanCodexAction },
     { id: 'plot', label: '플롯 보드 새로고침', hint: '자료', run: loadPlotAction },
     { id: 'focus', label: '포커스 모드 전환', hint: '보기', run: () => writingModeStore.update((s) => ({ ...s, focus: !s.focus })) },
@@ -21,7 +29,8 @@
     { id: 'source', label: '본문 보기', hint: '보기', run: () => editorStore.update((s) => ({ ...s, mode: 'source' })) },
     { id: 'split', label: '분할 보기', hint: '보기', run: () => editorStore.update((s) => ({ ...s, mode: 'split' })) },
     { id: 'preview', label: '미리보기', hint: '보기', run: () => editorStore.update((s) => ({ ...s, mode: 'preview' })) },
-    { id: 'bible', label: '왼쪽 설정집 탭', hint: '탐색', run: () => uiStore.update((s) => ({ ...s, binderTab: 'bible' })) }
+    { id: 'bible', label: '왼쪽 설정집 탭', hint: '탐색', run: () => uiStore.update((s) => ({ ...s, binderTab: 'bible' })) },
+    { id: 'prefs', label: '환경설정 열기', hint: '설정', run: () => uiStore.update((s) => ({ ...s, prefsOpen: true })) }
   ];
 
   let open = false;

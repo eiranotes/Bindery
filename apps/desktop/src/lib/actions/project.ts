@@ -1,3 +1,4 @@
+import { get } from 'svelte/store';
 import { createProject, listTree, openProject, readFile } from '$lib/api/commands';
 import { candidateStore } from '$lib/stores/candidateStore';
 import { editorStore } from '$lib/stores/editorStore';
@@ -60,4 +61,20 @@ export async function openProjectIntoWorkspace(path: string): Promise<ProjectInf
 export async function createProjectIntoWorkspace(input: CreateProjectInput): Promise<ProjectInfo> {
   const project = await createProject(input);
   return openProjectIntoWorkspace(project.rootPath);
+}
+
+/** 파일을 에디터로 열고 집필 화면으로 이동한다. 바이블 확인 등 다른 화면에서 재사용. */
+export async function openFileInEditor(relativePath: string, view: 'write' | 'stay' = 'write'): Promise<void> {
+  const root = get(projectStore).current?.rootPath || 'sample-project';
+  const content = await readFile(root, relativePath);
+  fileTreeStore.update((s) => ({ ...s, selectedPath: relativePath }));
+  editorStore.set({
+    path: relativePath,
+    content,
+    savedContent: content,
+    dirty: false,
+    mode: 'source',
+    wordCount: computeStats(content).words
+  });
+  if (view === 'write') uiStore.update((s) => ({ ...s, centerView: 'write' }));
 }

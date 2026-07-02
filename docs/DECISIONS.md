@@ -1,6 +1,30 @@
 # Decisions
 
-Updated: 2026-07-02 22:37 KST
+Updated: 2026-07-02 (UI 하네스 개편)
+
+## AI Work As A Staged Harness
+
+Decision: `AI 작업` is a single staged surface — `01 연결 → 02 바이블 → 03 실행 → 04 검토` — with a persistent left rail showing live status per stage, instead of scattered panels across `AI 작업`/`검토`/`내보내기`.
+
+Reason: The AI novel harness is Bindery's differentiator; the pipeline must be legible at a glance. CLI setup was buried in the export screen, bible input had no explicit place, and review panels were duplicated across two tabs.
+
+## No AI In The Writing Screen
+
+Decision: The `집필` screen has zero AI entry points. Editor slash commands only navigate to the harness; they never execute AI.
+
+Reason: Full separation between writing and AI work was requested; the manuscript surface must stay quiet and never trigger generation as a side effect of typing.
+
+## Bible Is Optional But Explicit
+
+Decision: Stage `02 바이블` detects setting documents; if none exist, the author either creates a `canon/setting-bible.md` template or explicitly chooses `바이블 없이 진행`.
+
+Reason: Projects without a bible are a first-class case. Making the skip explicit keeps prompt contents predictable instead of silently omitting canon.
+
+## Help And Preferences Leave The Main Tabs
+
+Decision: Four main tabs (`집필`, `자료`, `AI 작업`, `내보내기`); `도움말` is a topbar button and editor preferences live in a `환경설정` modal.
+
+Reason: Pensiv-style minimalism — main navigation should map to the actual writing pipeline, not utilities.
 
 ## Project Onboarding First
 

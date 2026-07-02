@@ -1,41 +1,30 @@
 # Project Status
 
-Updated: 2026-07-02 22:37 KST
+Updated: 2026-07-02 (UI 하네스 개편)
 
 ## Current State
 
-Bindery is now a writing-first macOS/Svelte/Tauri app with an explicit onboarding flow. The first screen lets the author create a new local project, open an existing folder, or load the sample project before entering the manuscript editor. AI candidate generation, QA, revision planning, and evidence remain isolated in the `AI 작업` screen.
+Bindery is a writing-first macOS/Svelte/Tauri app. The studio has four Korean main tabs — `집필`, `자료`, `AI 작업`, `내보내기` — plus topbar `도움말` and `환경설정`. Writing and AI are fully separated: the editor has no AI entry points, and all AI work happens in a staged harness (`01 연결 → 02 바이블 → 03 실행 → 04 검토`) with a persistent status rail so the whole novel pipeline is visible at a glance.
 
-## Completed
+## Completed (latest)
 
-- Added a start screen for `새 작품`, `기존 폴더`, and `샘플` entry.
-- Added native `create_project` support that creates the initial manuscript, setting bible, plot, notes, and `.novelctl/config.yaml`.
-- Added a top-level `도움말` screen that explains the complete workflow from project creation through AI review and export.
-- Replaced the start screen's card-button layout with a quieter line/form-based layout inspired by Pensiv's focused workspace direction.
-- Simplified the topbar so project switching returns to the start screen instead of exposing a raw path input during writing.
-- Reworked the primary navigation to `작성`, `AI 작업`, `자료`, `검토`, `내보내기`.
-- Made project open select the first writable manuscript automatically.
-- Removed the always-visible right AI dock from the main writing layout.
-- Koreanized visible menus, panel labels, settings, snapshot, job log, QA, codex, plot, and candidate copy.
-- Kept the macOS topbar light in light mode while preserving native decorations, movement, resizing, and window controls.
-- Verified Codex CLI pipeline adapter with `scripts/verify_ai_pipeline.sh`.
-- Rebuilt raw standalone executable and launchable macOS `.app` bundle.
+- Rebuilt `AI 작업` as the staged harness: CLI connection (provider/command/output/test/demo), bible detection with template creation or explicit skip, a 7-step pipeline (컨텍스트→초안 후보→표현 분석→QA→수정 계획→요약→기록) with per-step status and prompt preview, and a review stage (candidate diff, QA, revision plan, repetition map).
+- Removed AI from the writing surface; editor slash commands only navigate to the harness.
+- Merged the old `검토` tab into the harness review stage; export screen now holds only snapshots and job history.
+- Moved editor preferences into a `환경설정` modal; AI connection status is a topbar button that jumps to harness stage 01.
+- Deleted dead components (`RightDock`, `BuildLadder`, `EpisodeTabs`, `EvidenceSummary`, `AIPanel`, `SettingsPanel`) and mock-only binder content; cleaned orphaned CSS.
+- Restored open project (file tree + manuscript) after page reload; fixed job console `\n` rendering.
 
 ## Verification
 
-- `npm --workspace apps/desktop run check`
-- `npm run build`
-- `cargo check`
-- `python3 scripts/verify_static.py`
-- `bash scripts/verify_ai_pipeline.sh`
-- Playwright onboarding/help/pipeline QA at 1440, 1024, and 390 px with 0 horizontal overflow and 0 clipping candidates
-- Playwright visual QA at 1440, 1024, and 390 px
-- `npm run tauri:build:mac:standalone`
-- `npx tauri build --bundles app`
-- `open -n apps/desktop/src-tauri/target/release/bundle/macos/Bindery.app`
+- `npm --workspace apps/desktop run check` — 0 errors
+- `npm run build` — success
+- `python3 scripts/verify_static.py` — pass
+- Browser click-through (Vite dev): start → sample → 집필/자료/AI 작업(4단계, 데모 전체 실행)/내보내기/도움말/환경설정, dark mode, 1024px responsive.
 
 ## Known Risks
 
 - Windows `.exe`/NSIS output is still unverified on a Windows runner.
 - Browser QA verifies the full UI flow with mock data; native Codex CLI is verified at adapter level.
 - The build still warns that one Vite chunk is larger than 500 kB.
+- Tauri `.app` bundle was not rebuilt after this UI rework (frontend build verified; run `npx tauri build --bundles app` before distributing).

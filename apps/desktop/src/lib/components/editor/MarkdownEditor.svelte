@@ -21,7 +21,8 @@
   import { smartQuotes, autoReplace } from '$lib/editor';
   import { novelExtensions, pushCodex, pushQAIssues, pushRepetition, readAICommand, wordCountField, focusModeExtension, typewriterExtension } from '$lib/editor';
   import type { WordStats } from '$lib/editor';
-  import { runDraftAction, runQAAction, runRevisionAction } from '$lib/actions/pipeline';
+  import { uiStore } from '$lib/stores/uiStore';
+  import { gotoStage } from '$lib/stores/pipelineStore';
   import { writeFile } from '$lib/api/commands';
   import { projectStore } from '$lib/stores/projectStore';
   import { toasts } from '$lib/stores/toastStore';
@@ -51,11 +52,12 @@
     autosaveTimer = setTimeout(saveNow, $settingsStore.autosaveDelayMs);
   }
 
+  // 집필 화면에서는 AI를 실행하지 않는다. 슬래시 명령은 AI 작업 화면의
+  // 실행 단계로 안내만 하고, 실제 실행은 하네스에서 진행한다.
   function runAICommand(name: string) {
-    if (name === 'qa') return runQAAction();
-    if (name === 'revise') return runRevisionAction();
-    if (name === 'draft' || name === 'continue' || name === 'rewrite') return runDraftAction(name as 'draft' | 'continue' | 'rewrite');
-    if (name === 'summarize' || name === 'context') { toasts.push(`/${name} 파이프라인 실행`, 'info'); return; }
+    gotoStage('run');
+    uiStore.update((s) => ({ ...s, centerView: 'ai' }));
+    toasts.push(`/${name} — AI 작업 화면에서 실행하세요`, 'info');
   }
 
   function buildState(doc: string) {

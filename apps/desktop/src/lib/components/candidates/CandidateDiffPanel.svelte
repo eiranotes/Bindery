@@ -51,7 +51,6 @@
 
   function discard() {
     candidateStore.set({ candidates: [], activeId: null, generating: false, appliedHunks: new Set(), sessionSnapshotId: null });
-    uiStore.update((s) => ({ ...s, centerView: 'write' }));
   }
 </script>
 

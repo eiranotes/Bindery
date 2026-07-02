@@ -22,6 +22,7 @@ import { analysisStore } from '$lib/stores/analysisStore';
 import { codexStore } from '$lib/stores/codexStore';
 import { plotStore } from '$lib/stores/plotStore';
 import { uiStore } from '$lib/stores/uiStore';
+import { gotoStage } from '$lib/stores/pipelineStore';
 import { toasts } from '$lib/stores/toastStore';
 
 const verdictLabel = { pass: '통과', warn: '주의', fail: '실패' } as const;
@@ -41,7 +42,6 @@ export async function runQAAction() {
     const { report } = await runQA(projectRoot(), episode());
     const parsed = parseQAReport(report);
     qaStore.update((s) => ({ ...s, report: parsed, raw: report, running: false }));
-    uiStore.update((s) => ({ ...s, rightTab: 'agent' }));
     toasts.push(`QA 완료 ${verdictLabel[parsed.verdict]} (${parsed.score ?? '-'})`, parsed.verdict === 'fail' ? 'bad' : parsed.verdict === 'warn' ? 'warn' : 'ok');
   } catch (e) {
     qaStore.update((s) => ({ ...s, running: false }));
@@ -67,8 +67,9 @@ export async function runDraftAction(kind: 'draft' | 'revise' | 'continue' | 're
     const base = get(editorStore).content;
     const candidates = await generateCandidate(projectRoot(), episode(), kind, base);
     candidateStore.set({ candidates, activeId: candidates[0]?.id ?? null, generating: false, appliedHunks: new Set(), sessionSnapshotId: null });
-    uiStore.update((s) => ({ ...s, centerView: 'pipeline', rightTab: 'agent' }));
-    toasts.push(`후보 ${candidates.length}개 생성됨: 후보 비교에서 검토`, 'ok');
+    gotoStage('review');
+    uiStore.update((s) => ({ ...s, centerView: 'ai' }));
+    toasts.push(`후보 ${candidates.length}개 생성됨: 검토 단계에서 비교하세요`, 'ok');
   } catch {
     candidateStore.update((s) => ({ ...s, generating: false }));
     toasts.push('후보 생성 실패', 'bad');
