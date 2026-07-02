@@ -267,6 +267,54 @@ pub fn generate_revision_plan(
     Ok(RevisionPlanResponse { plan: format!("# {} Revision Plan\n\n- [ ] [warn] 반복 반응 묘사를 업무 행동으로 전환\n- [ ] [info] 캐릭터 판단 근거를 한 줄 보강\n- [ ] [info] 적용 전 candidate diff와 snapshot 확인\n", episode) })
 }
 
+#[derive(Serialize)]
+pub struct AgentTextResult {
+    pub ok: bool,
+    pub text: String,
+    pub mode: String,
+}
+
+/// Generic agent execution with a caller-provided prompt. Used by the style
+/// replication studio and any pipeline step that needs raw agent text output.
+#[tauri::command]
+pub fn run_agent_text(
+    project_path: String,
+    prompt: String,
+    agent_cli_path: Option<String>,
+    agent_provider: Option<String>,
+    agent_output_mode: Option<String>,
+    label: Option<String>,
+) -> AppResult<AgentTextResult> {
+    let provider = agent_provider.unwrap_or_else(|| "codex".into());
+    let mode = agent_output_mode.unwrap_or_else(|| {
+        if provider == "antigravity" {
+            "file".into()
+        } else {
+            "stdout".into()
+        }
+    });
+    let label = label.unwrap_or_else(|| "agent".into());
+    match exec_agent_text(
+        &project_path,
+        &prompt,
+        agent_cli_path,
+        &provider,
+        &mode,
+        &label,
+    ) {
+        Some(text) => Ok(AgentTextResult {
+            ok: true,
+            text,
+            mode,
+        }),
+        None => Ok(AgentTextResult {
+            ok: false,
+            text: String::new(),
+            mode,
+        }),
+    }
+}
+
 #[tauri::command]
 pub fn generate_candidate(
     project_path: String,
@@ -276,6 +324,7 @@ pub fn generate_candidate(
     agent_cli_path: Option<String>,
     agent_provider: Option<String>,
     agent_output_mode: Option<String>,
+    guidance: Option<String>,
 ) -> AppResult<Vec<Candidate>> {
     let now = Utc::now().to_rfc3339();
     let provider = agent_provider.unwrap_or_else(|| "antigravity".into());
@@ -286,14 +335,14 @@ pub fn generate_candidate(
             "stdout".into()
         }
     });
-    if let Some(generated) = run_agent_candidate(
+    let prompt = agent_prompt(&episode, &kind, &base, guidance.as_deref().unwrap_or(""));
+    if let Some(generated) = exec_agent_text(
         &project_path,
-        &episode,
-        &kind,
-        &base,
+        &prompt,
         agent_cli_path.clone(),
         &provider,
         &mode,
+        &format!("candidate-{}", episode),
     ) {
         return Ok(vec![Candidate {
             id: format!("agent-{}", Utc::now().timestamp_millis()),
@@ -331,30 +380,6 @@ pub fn generate_candidate(
     ])
 }
 
-fn run_agent_candidate(
-    project_path: &str,
-    episode: &str,
-    kind: &str,
-    base: &str,
-    agent_cli_path: Option<String>,
-    provider: &str,
-    mode: &str,
-) -> Option<String> {
-    if mode == "file" {
-        if let Some(text) = run_file_candidate(
-            project_path,
-            episode,
-            kind,
-            base,
-            agent_cli_path.clone(),
-            provider,
-        ) {
-            return Some(text);
-        }
-    }
-    run_stdout_candidate(project_path, episode, kind, base, agent_cli_path, provider)
-}
-
 fn base_manuscript(episode: &str, base: &str) -> String {
     if base.trim().is_empty() {
         default_manuscript(episode)
@@ -363,35 +388,49 @@ fn base_manuscript(episode: &str, base: &str) -> String {
     }
 }
 
-fn agent_prompt(episode: &str, kind: &str, base: &str) -> String {
+fn agent_prompt(episode: &str, kind: &str, base: &str, guidance: &str) -> String {
+    let guidance_block = if guidance.trim().is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n\nWriting guidance assembled from the project bible, style guide, and pipeline artifacts. Follow it strictly:\n{}\n",
+            guidance.trim()
+        )
+    };
     format!(
-        "You are editing a Korean long-serial fiction manuscript. Return only the revised manuscript markdown, no explanations.\nEpisode: {}\nTask: {}\n\nCurrent manuscript:\n{}",
-        episode, kind, base_manuscript(episode, base)
+        "You are editing a Korean long-serial fiction manuscript. Return only the revised manuscript markdown, no explanations.\nEpisode: {}\nTask: {}{}\n\nCurrent manuscript:\n{}",
+        episode,
+        kind,
+        guidance_block,
+        base_manuscript(episode, base)
     )
 }
 
-fn run_stdout_candidate(
+/// Run the configured agent CLI with a raw prompt and return its text output.
+/// `mode == "file"` first asks the agent to write into a temp file, then falls
+/// back to stdout capture; codex always goes through `codex exec -o`.
+fn exec_agent_text(
     project_path: &str,
-    episode: &str,
-    kind: &str,
-    base: &str,
+    prompt: &str,
     agent_cli_path: Option<String>,
     provider: &str,
+    mode: &str,
+    label: &str,
 ) -> Option<String> {
     let bin = agent_cli_path
         .filter(|p| !p.trim().is_empty())
         .unwrap_or_else(|| default_agent_command(provider));
+    if mode == "file" && provider != "codex" {
+        if let Some(text) = exec_agent_file(project_path, prompt, &bin, label) {
+            return Some(text);
+        }
+    }
     if provider == "codex" {
-        return run_codex_candidate(project_path, episode, kind, base, &bin);
+        return exec_codex_text(project_path, prompt, &bin, label);
     }
-    let mut cmd = Command::new(bin);
-    cmd.current_dir(project_path);
-    if provider == "claude" {
-        cmd.arg("-p").arg(agent_prompt(episode, kind, base));
-    } else {
-        cmd.arg("-p").arg(agent_prompt(episode, kind, base));
-    }
-    match output_with_timeout(cmd, Duration::from_secs(180)) {
+    let mut cmd = Command::new(&bin);
+    cmd.current_dir(project_path).arg("-p").arg(prompt);
+    match output_with_timeout(cmd, Duration::from_secs(240)) {
         Ok((true, _code, stdout, _stderr)) if !stdout.trim().is_empty() => {
             Some(stdout.trim().to_string())
         }
@@ -399,21 +438,18 @@ fn run_stdout_candidate(
     }
 }
 
-fn run_codex_candidate(
-    project_path: &str,
-    episode: &str,
-    kind: &str,
-    base: &str,
-    bin: &str,
-) -> Option<String> {
+fn agent_tmp_file(project_path: &str, label: &str) -> Option<(std::path::PathBuf, String)> {
     let root = project_root(project_path).ok()?;
-    let tmp_dir = root.join(".bindery").join("tmp").join("candidates");
+    let tmp_dir = root.join(".bindery").join("tmp").join("agent");
     fs::create_dir_all(&tmp_dir).ok()?;
-    let output_abs = tmp_dir.join(format!(
-        "{}-{}-codex-last.md",
-        episode,
-        Utc::now().timestamp_millis()
-    ));
+    let filename = format!("{}-{}.md", label, Utc::now().timestamp_millis());
+    let abs = tmp_dir.join(&filename);
+    let rel = format!(".bindery/tmp/agent/{}", filename);
+    Some((abs, rel))
+}
+
+fn exec_codex_text(project_path: &str, prompt: &str, bin: &str, label: &str) -> Option<String> {
+    let (output_abs, _rel) = agent_tmp_file(project_path, label)?;
     let mut cmd = Command::new(bin);
     cmd.current_dir(project_path)
         .arg("exec")
@@ -423,7 +459,7 @@ fn run_codex_candidate(
         .arg("read-only")
         .arg("-o")
         .arg(&output_abs)
-        .arg(agent_prompt(episode, kind, base));
+        .arg(prompt);
     match output_with_timeout(cmd, Duration::from_secs(240)) {
         Ok((true, _code, _stdout, _stderr)) => {
             let text = fs::read_to_string(output_abs).ok()?;
@@ -438,29 +474,15 @@ fn run_codex_candidate(
     }
 }
 
-fn run_file_candidate(
-    project_path: &str,
-    episode: &str,
-    kind: &str,
-    base: &str,
-    agent_cli_path: Option<String>,
-    provider: &str,
-) -> Option<String> {
+fn exec_agent_file(project_path: &str, prompt: &str, bin: &str, label: &str) -> Option<String> {
+    let (output_abs, output_rel) = agent_tmp_file(project_path, label)?;
     let root = project_root(project_path).ok()?;
-    let tmp_dir = root.join(".bindery").join("tmp").join("candidates");
-    fs::create_dir_all(&tmp_dir).ok()?;
-    let filename = format!("{}-{}-{}.md", episode, kind, Utc::now().timestamp_millis());
-    let output_abs = tmp_dir.join(&filename);
-    let output_rel = format!(".bindery/tmp/candidates/{}", filename);
-    let prompt = format!(
-        "You are editing a Korean long-serial fiction manuscript.\n\nWrite the final revised manuscript markdown to this exact project-relative file path:\n{}\n\nDo not modify any other file. Do not include explanations.\n\nEpisode: {}\nTask: {}\n\nCurrent manuscript:\n{}",
-        output_rel, episode, kind, base_manuscript(episode, base)
+    let wrapped = format!(
+        "Write your final answer to this exact project-relative file path:\n{}\n\nDo not modify any other file. Do not include explanations outside the file.\n\n{}",
+        output_rel, prompt
     );
-    let bin = agent_cli_path
-        .filter(|p| !p.trim().is_empty())
-        .unwrap_or_else(|| default_agent_command(provider));
     let mut cmd = Command::new(bin);
-    cmd.current_dir(&root).arg("-p").arg(prompt);
+    cmd.current_dir(&root).arg("-p").arg(wrapped);
     let _ = output_with_timeout(cmd, Duration::from_secs(240));
     if output_abs.exists() {
         let text = fs::read_to_string(output_abs).ok()?;

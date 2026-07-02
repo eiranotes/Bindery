@@ -1,8 +1,24 @@
 # Tasks
 
-Updated: 2026-07-02 (UI 하네스 개편)
+Updated: 2026-07-03 (산출물 + 문체)
 
 ## Done
+
+- [x] Record an artifact for every pipeline step and show a per-episode artifact shelf in the run stage.
+- [x] Feed latest artifacts + style guideline into draft/revise candidate prompts (with real prompt preview).
+- [x] Add `run_agent_text` Tauri command and unify agent CLI execution paths.
+- [x] Build the `문체` tab: scene analysis → style extraction → rules/ban lists → proof scene → final guideline saved to `canon/style-guide.md`.
+- [x] Build Tauri macOS `.app` bundle after the changes.
+- [x] Write `docs/GAP_ANALYSIS_A_TO_Z_20260703.md`.
+
+## Next (from gap analysis)
+
+- [ ] Episode management: create/switch/status for multiple episodes.
+- [ ] Real export formats (TXT/EPUB first) in `내보내기`.
+- [ ] Sync artifacts to `.bindery/artifacts/` files; feed summarize output back into the setting bible.
+- [ ] Editable plot board; codex item creation UI.
+- [ ] Style-compliance QA gate using the confirmed guideline.
+- [ ] Snapshot restore/compare.
 
 - [x] Rebuild `AI 작업` as a staged harness (연결→바이블→실행→검토) with a live status rail.
 - [x] Move AI CLI settings out of the export screen into harness stage `01 연결`.

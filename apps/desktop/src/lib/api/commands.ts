@@ -177,6 +177,24 @@ export async function testGeminiCli(command: string): Promise<{ ok: boolean; std
   return testAgentCli(command, 'gemini', 'stdout');
 }
 
+export type AgentTextResult = { ok: boolean; text: string; mode: string };
+
+/** 범용 에이전트 실행 — 문체 스튜디오 등 자유 프롬프트 단계에서 사용.
+ *  브라우저/데모 모드에서는 ok:false를 돌려주고 호출부가 오프라인 생성기로 대체한다. */
+export async function runAgentText(projectPath: string, prompt: string, label: string): Promise<AgentTextResult> {
+  const invoke = await getInvoke();
+  if (!invoke) return { ok: false, text: '', mode: 'browser-mock' };
+  const settings = get(settingsStore);
+  return invoke<AgentTextResult>('run_agent_text', {
+    projectPath,
+    prompt,
+    agentCliPath: settings.agentCliPath || null,
+    agentProvider: settings.agentProvider || 'codex',
+    agentOutputMode: settings.agentOutputMode || 'stdout',
+    label
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Stage 3 additions — QA, candidates, codex, plot grid.
 // Tauri command signatures are kept as the single source of truth; the mock
@@ -203,14 +221,15 @@ export async function generateCandidate(
   projectPath: string,
   episode: string,
   kind: 'draft' | 'revise' | 'continue' | 'rewrite',
-  base: string
+  base: string,
+  guidance?: string
 ): Promise<Candidate[]> {
   const invoke = await getInvoke();
   const settings = get(settingsStore);
   const agentCliPath = settings.agentCliPath || settings.geminiCliPath || 'agy';
   const agentProvider = settings.agentProvider || 'antigravity';
   const agentOutputMode = settings.agentOutputMode || (agentProvider === 'antigravity' ? 'file' : 'stdout');
-  if (invoke) return invoke<Candidate[]>('generate_candidate', { projectPath, episode, kind, base, agentCliPath, agentProvider, agentOutputMode });
+  if (invoke) return invoke<Candidate[]>('generate_candidate', { projectPath, episode, kind, base, agentCliPath, agentProvider, agentOutputMode, guidance: guidance || null });
   await delay(420);
   const now = new Date().toISOString();
   const kindLabel = { draft: '초안', revise: '수정', continue: '이어쓰기', rewrite: '다시쓰기' }[kind];

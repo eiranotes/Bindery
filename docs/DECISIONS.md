@@ -1,6 +1,24 @@
 # Decisions
 
-Updated: 2026-07-02 (UI 하네스 개편)
+Updated: 2026-07-03 (산출물 + 문체)
+
+## Every Pipeline Step Leaves An Artifact
+
+Decision: Each harness step records its output as a per-episode artifact; the latest context/summary/QA/revision/analysis artifacts plus the style guideline are automatically assembled into a guidance block passed to candidate generation.
+
+Reason: The harness is only trustworthy if every run leaves reviewable evidence, and the AI should never draft blind — it must see what the pipeline already learned about the episode.
+
+## Style Replication Extracts Feel, Not Numbers
+
+Decision: The `문체` studio computes quantitative stats client-side but treats them strictly as reference ranges. The AI prompts focus on emotional qualities (breathing/rhythm, where emotion is placed, narrative distance) and explicitly forbid copying source sentences. Verification is a newly-written scene that does not exist in the source, judged by reading.
+
+Reason: Matching averages produces parody; the goal is that new text *reads* like the author. Ban lists (banned words/banned imagery) guard against both AI clichés and style-breaking habits.
+
+## Style Guideline Lives In The Project
+
+Decision: The confirmed guideline is written to `canon/style-guide.md`, so it appears in the AI harness bible stage and survives outside the app.
+
+Reason: Artifacts that matter must be plain files in the project, not app-internal state.
 
 ## AI Work As A Staged Harness
 

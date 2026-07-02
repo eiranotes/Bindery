@@ -5,6 +5,7 @@
   import SnapshotPanel from '$lib/components/snapshots/SnapshotPanel.svelte';
   import JobConsole from '$lib/components/agents/JobConsole.svelte';
   import AIStudio from '$lib/components/ai/AIStudio.svelte';
+  import StyleStudio from '$lib/components/style/StyleStudio.svelte';
   import HelpSurface from './HelpSurface.svelte';
   import { uiStore } from '$lib/stores/uiStore';
   import { editorStore } from '$lib/stores/editorStore';
@@ -39,6 +40,8 @@
     {/if}
   {:else if $uiStore.centerView === 'ai'}
     <AIStudio />
+  {:else if $uiStore.centerView === 'style'}
+    <StyleStudio />
   {:else if $uiStore.centerView === 'materials'}
     <div class="surface-head compact">
       <div class="surface-copy">

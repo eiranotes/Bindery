@@ -23,6 +23,8 @@ import { codexStore } from '$lib/stores/codexStore';
 import { plotStore } from '$lib/stores/plotStore';
 import { uiStore } from '$lib/stores/uiStore';
 import { gotoStage } from '$lib/stores/pipelineStore';
+import { recordArtifact } from '$lib/stores/artifactStore';
+import { buildGuidanceText } from '$lib/domain/guidance';
 import { toasts } from '$lib/stores/toastStore';
 
 const verdictLabel = { pass: '통과', warn: '주의', fail: '실패' } as const;
@@ -39,9 +41,11 @@ function episode(): string {
 export async function runQAAction() {
   qaStore.update((s) => ({ ...s, running: true }));
   try {
-    const { report } = await runQA(projectRoot(), episode());
+    const ep = episode();
+    const { report } = await runQA(projectRoot(), ep);
     const parsed = parseQAReport(report);
     qaStore.update((s) => ({ ...s, report: parsed, raw: report, running: false }));
+    recordArtifact('qa', ep, `QA 보고서 · ${verdictLabel[parsed.verdict]} ${parsed.score ?? ''}`.trim(), report);
     toasts.push(`QA 완료 ${verdictLabel[parsed.verdict]} (${parsed.score ?? '-'})`, parsed.verdict === 'fail' ? 'bad' : parsed.verdict === 'warn' ? 'warn' : 'ok');
   } catch (e) {
     qaStore.update((s) => ({ ...s, running: false }));
@@ -52,8 +56,10 @@ export async function runQAAction() {
 export async function runRevisionAction() {
   revisionStore.update((s) => ({ ...s, generating: true }));
   try {
-    const { plan } = await generateRevisionPlan(projectRoot(), episode());
+    const ep = episode();
+    const { plan } = await generateRevisionPlan(projectRoot(), ep);
     revisionStore.update((s) => ({ ...s, items: parseRevisionPlan(plan), raw: plan, generating: false }));
+    recordArtifact('revise', ep, '수정 계획', plan);
     toasts.push('수정 계획 생성됨', 'ok');
   } catch {
     revisionStore.update((s) => ({ ...s, generating: false }));
@@ -65,8 +71,12 @@ export async function runDraftAction(kind: 'draft' | 'revise' | 'continue' | 're
   candidateStore.update((s) => ({ ...s, generating: true }));
   try {
     const base = get(editorStore).content;
-    const candidates = await generateCandidate(projectRoot(), episode(), kind, base);
+    const ep = episode();
+    // 산출물(컨텍스트/요약/QA/수정계획/표현분석)과 문체 지침서를 참고 블록으로 전달
+    const guidance = buildGuidanceText(ep);
+    const candidates = await generateCandidate(projectRoot(), ep, kind, base, guidance);
     candidateStore.set({ candidates, activeId: candidates[0]?.id ?? null, generating: false, appliedHunks: new Set(), sessionSnapshotId: null });
+    for (const c of candidates) recordArtifact('draft', ep, `${c.label} (${kind})`, c.content);
     gotoStage('review');
     uiStore.update((s) => ({ ...s, centerView: 'ai' }));
     toasts.push(`후보 ${candidates.length}개 생성됨: 검토 단계에서 비교하세요`, 'ok');
@@ -85,8 +95,16 @@ export async function runAnalyzeAction(mode?: AnalysisMode) {
     // always reflect actual text. A native analyzer can be swapped in later.
     const report = analyzeManuscript(ed.content, useMode);
     analysisStore.update((s) => ({ ...s, running: false, repetition: report }));
-    const flagged = report.terms.filter((t) => t.judgment !== 'ok').length;
-    toasts.push(`반복 분석 완료: ${flagged}개 표현 플래그`, flagged ? 'warn' : 'ok');
+    const flagged = report.terms.filter((t) => t.judgment !== 'ok');
+    const md = [
+      '# 표현 분석 보고',
+      '',
+      ...(flagged.length
+        ? flagged.map((t) => `- **${t.term}** ×${t.count} (${t.judgment === 'overused' ? '과다' : '주의'})${t.kind && t.kind !== 'word' ? ` · ${t.kind}` : ''}`)
+        : ['- 임계치를 넘는 반복 없음'])
+    ].join('\n');
+    recordArtifact('analyze', episode(), `표현 분석 · 플래그 ${flagged.length}`, md);
+    toasts.push(`반복 분석 완료: ${flagged.length}개 표현 플래그`, flagged.length ? 'warn' : 'ok');
   } catch {
     analysisStore.update((s) => ({ ...s, running: false }));
     toasts.push('반복 분석 실패', 'bad');

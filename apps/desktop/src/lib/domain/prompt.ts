@@ -26,7 +26,7 @@ const TEMPLATES: Record<PipelineStep, string> = {
   commit: '변경 사항을 스냅샷하고 회차 메타데이터를 갱신하라.'
 };
 
-export function assemblePrompt(step: PipelineStep, content: string, codex: CodexItem[]): string {
+export function assemblePrompt(step: PipelineStep, content: string, codex: CodexItem[], guidance?: string): string {
   const fm = parseFrontmatter(content);
   const meta = Object.entries(fm.data)
     .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`)
@@ -40,7 +40,7 @@ export function assemblePrompt(step: PipelineStep, content: string, codex: Codex
     .join('\n');
   const body = content.replace(/^---[\s\S]*?\n---\n?/, '').slice(0, 600);
 
-  return [
+  const parts = [
     `# ${STEP_META[step].label} system`,
     TEMPLATES[step],
     '',
@@ -48,9 +48,15 @@ export function assemblePrompt(step: PipelineStep, content: string, codex: Codex
     meta || '(없음)',
     '',
     '## Codex (관련 항목)',
-    codexBlock || '(스캔된 항목 없음)',
+    codexBlock || '(스캔된 항목 없음)'
+  ];
+  if (guidance?.trim()) {
+    parts.push('', '## 작성 지침 (문체 지침서·파이프라인 산출물)', guidance.trim());
+  }
+  parts.push(
     '',
     '## Manuscript (앞부분)',
     body.trim() ? body.trim() + (content.length > 600 ? '\n…(생략)' : '') : '(빈 원고)'
-  ].join('\n');
+  );
+  return parts.join('\n');
 }

@@ -16,6 +16,7 @@ pub fn run() {
             read_file,
             write_file,
             run_novelctl,
+            run_agent_text,
             test_agent_cli,
             test_gemini_cli,
             create_snapshot,

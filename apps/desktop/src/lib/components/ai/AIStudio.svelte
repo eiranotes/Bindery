@@ -14,10 +14,14 @@
   import { candidateStore } from '$lib/stores/candidateStore';
   import { qaStore } from '$lib/stores/qaStore';
   import { jobStore } from '$lib/stores/jobStore';
+  import { artifactStore, artifactsForEpisode, recordArtifact } from '$lib/stores/artifactStore';
+  import type { Artifact } from '$lib/stores/artifactStore';
+  import { styleStore } from '$lib/stores/styleStore';
   import { toasts } from '$lib/stores/toastStore';
   import { testAgentCli, runNovelctl, writeFile, listTree } from '$lib/api/commands';
   import { runQAAction, runRevisionAction, runDraftAction, runAnalyzeAction } from '$lib/actions/pipeline';
   import { openFileInEditor } from '$lib/actions/project';
+  import { buildGuidanceText } from '$lib/domain/guidance';
   import { assemblePrompt, STEP_META } from '$lib/domain/prompt';
   import type { PipelineStep } from '$lib/domain/prompt';
   import type { FileNode } from '$lib/types';
@@ -44,6 +48,10 @@
   $: failedCount = steps.filter((s) => $pipelineStore.stepStatus[s] === 'failed').length;
   $: episode = currentEpisode();
   $: fileName = $editorStore.path?.split('/').pop() ?? '원고 미선택';
+  $: episodeArtifacts = artifactsForEpisode($artifactStore, episode);
+  // 집필(초안/수정) 프롬프트에 자동 포함되는 산출물 종류
+  const guidanceSteps = new Set<PipelineStep>(['context', 'summarize', 'qa', 'revise', 'analyze']);
+  let viewArtifact: Artifact | null = null;
 
   function collectBibleFiles(nodes: FileNode[]): FileNode[] {
     const out: FileNode[] = [];
@@ -137,13 +145,17 @@
     return m?.[1] || $episodeStore.currentEpisode || 'ep001';
   }
 
-  async function novelctl(step: string) {
+  const novelctlLabel: Record<string, string> = { context: '컨텍스트 팩', summarize: '회차 요약', commit: '기록 로그' };
+
+  async function novelctl(step: 'context' | 'summarize' | 'commit') {
     const ep = currentEpisode();
     const id = `${step}-${Date.now()}`;
     jobStore.update((jobs) => [{ id, createdAt: new Date().toISOString(), label: `${step} ${ep}`, status: 'running', ok: false, command: ['novelctl', step, ep], stdout: '', stderr: '', exitCode: null }, ...jobs]);
     const result = await runNovelctl($projectStore.current?.rootPath || 'sample-project', [step, ep, '--json']);
     jobStore.update((jobs) => jobs.map((j) => (j.id === id ? { ...j, ...result, status: result.ok ? 'ok' : 'failed' } : j)));
     if (!result.ok) throw new Error(result.stderr || `novelctl ${step} 실패`);
+    const body = [result.stdout.trim(), result.outputFiles?.length ? `출력 파일: ${result.outputFiles.join(', ')}` : ''].filter(Boolean).join('\n\n');
+    recordArtifact(step, ep, novelctlLabel[step] ?? step, body || '(빈 출력)');
   }
 
   const runners: Record<PipelineStep, () => void | Promise<void>> = {
@@ -175,7 +187,9 @@
   }
   function preview(step: PipelineStep) {
     previewStep = step;
-    previewText = assemblePrompt(step, $editorStore.content, $codexStore.items);
+    // 초안/수정 후보는 산출물·문체 지침이 포함된 실제 프롬프트를 보여준다.
+    const guidance = step === 'draft' || step === 'revise' ? buildGuidanceText(episode) : undefined;
+    previewText = assemblePrompt(step, $editorStore.content, $codexStore.items, guidance);
   }
 </script>
 
@@ -308,38 +322,71 @@
         <p>위에서 아래 순서로 진행됩니다. 단계별로 따로 실행하거나 전체를 이어서 실행할 수 있고, 프롬프트는 실행 전에 그대로 확인할 수 있습니다.</p>
       </header>
 
-      <div class="stage-body">
-        <ol class="pipe-list">
-          {#each steps as step, i}
-            {@const st = $pipelineStore.stepStatus[step]}
-            <li class="pipe-step" class:running={st === 'running'} class:done={st === 'done'} class:failed={st === 'failed'}>
-              <span class="pipe-num">{i + 1}</span>
-              <div class="pipe-copy">
-                <b>{STEP_META[step].label}</b>
-                <small>{STEP_META[step].desc}</small>
-              </div>
-              {#if step === 'draft'}
-                <select class="pipe-kind" bind:value={draftKind} title="후보 종류">
-                  {#each draftKinds as [k, label]}<option value={k}>{label}</option>{/each}
-                </select>
-              {/if}
-              <span class="pipe-state {st}">{running === step ? '실행 중' : statusLabel[st]}</span>
-              <div class="pipe-actions">
-                <button class="ghost tiny" on:click={() => preview(step)}>프롬프트</button>
-                <button class="ghost tiny" on:click={() => run(step)} disabled={running !== null}>실행</button>
-              </div>
-            </li>
-          {/each}
-        </ol>
+      <div class="run-layout">
+        <div class="stage-body">
+          <ol class="pipe-list">
+            {#each steps as step, i}
+              {@const st = $pipelineStore.stepStatus[step]}
+              {@const artifact = episodeArtifacts.find((a) => a.step === step)}
+              <li class="pipe-step" class:running={st === 'running'} class:done={st === 'done'} class:failed={st === 'failed'}>
+                <span class="pipe-num">{i + 1}</span>
+                <div class="pipe-copy">
+                  <b>{STEP_META[step].label}</b>
+                  <small>{STEP_META[step].desc}</small>
+                </div>
+                {#if step === 'draft'}
+                  <select class="pipe-kind" bind:value={draftKind} title="후보 종류">
+                    {#each draftKinds as [k, label]}<option value={k}>{label}</option>{/each}
+                  </select>
+                {/if}
+                {#if artifact}
+                  <button class="artifact-chip" title="산출물 보기" on:click={() => (viewArtifact = artifact)}>산출물</button>
+                {/if}
+                <span class="pipe-state {st}">{running === step ? '실행 중' : statusLabel[st]}</span>
+                <div class="pipe-actions">
+                  <button class="ghost tiny" on:click={() => preview(step)}>프롬프트</button>
+                  <button class="ghost tiny" on:click={() => run(step)} disabled={running !== null}>실행</button>
+                </div>
+              </li>
+            {/each}
+          </ol>
 
-        <div class="stage-actions">
-          <button class="primary" on:click={runAll} disabled={running !== null}>전체 실행</button>
-          <button class="ghost" on:click={resetPipeline} disabled={running !== null}>상태 초기화</button>
-          <button class="ghost" on:click={() => gotoStage('review')}>다음: 검토 →</button>
+          <div class="stage-actions">
+            <button class="primary" on:click={runAll} disabled={running !== null}>전체 실행</button>
+            <button class="ghost" on:click={resetPipeline} disabled={running !== null}>상태 초기화</button>
+            <button class="ghost" on:click={() => gotoStage('review')}>다음: 검토 →</button>
+          </div>
+          {#if $candidateStore.candidates.length}
+            <p class="stage-note">후보 {$candidateStore.candidates.length}개가 준비되었습니다. 검토 단계에서 비교하고 적용하세요.</p>
+          {/if}
         </div>
-        {#if $candidateStore.candidates.length}
-          <p class="stage-note">후보 {$candidateStore.candidates.length}개가 준비되었습니다. 검토 단계에서 비교하고 적용하세요.</p>
-        {/if}
+
+        <aside class="artifact-rail" aria-label="산출물 보관함">
+          <span class="line-label">산출물 보관함 — {episode}</span>
+          {#if $styleStore.guideline && $styleStore.applyToDraft}
+            <div class="artifact-row">
+              <div class="artifact-copy">
+                <b>문체 지침서</b>
+                <small>문체 스튜디오 · 집필 반영</small>
+              </div>
+              <span class="feed-badge">집필 반영</span>
+            </div>
+          {/if}
+          {#if episodeArtifacts.length === 0 && !$styleStore.guideline}
+            <p class="stage-note">아직 산출물이 없습니다. 단계를 실행하면 결과가 여기에 쌓이고, 초안 후보 프롬프트에 자동으로 포함됩니다.</p>
+          {:else}
+            {#each episodeArtifacts as a}
+              <button class="artifact-row clickable" on:click={() => (viewArtifact = a)}>
+                <div class="artifact-copy">
+                  <b>{STEP_META[a.step].label}</b>
+                  <small>{a.title} · {new Date(a.createdAt).toLocaleTimeString()}</small>
+                </div>
+                {#if guidanceSteps.has(a.step)}<span class="feed-badge">집필 반영</span>{/if}
+              </button>
+            {/each}
+            <p class="stage-note">「집필 반영」 산출물과 문체 지침서는 초안·수정 후보 프롬프트에 자동 포함됩니다. 프롬프트 버튼으로 실제 내용을 확인하세요.</p>
+          {/if}
+        </aside>
       </div>
     {:else}
       <header class="stage-head">
@@ -361,6 +408,19 @@
     {/if}
   </section>
 </div>
+
+{#if viewArtifact}
+  <div class="pv-backdrop">
+    <button class="pv-close-area" aria-label="닫기" on:click={() => (viewArtifact = null)}></button>
+    <div class="pv" role="dialog" aria-modal="true">
+      <div class="pv-head">
+        <span class="eyebrow">산출물 — {STEP_META[viewArtifact.step].label} · {viewArtifact.episode}</span>
+        <button class="ghost" on:click={() => (viewArtifact = null)}>닫기</button>
+      </div>
+      <pre class="pv-body">{viewArtifact.content}</pre>
+    </div>
+  </div>
+{/if}
 
 {#if previewStep}
   <div class="pv-backdrop">
@@ -462,14 +522,15 @@
 
   .pipe-list { list-style: none; margin: 0; padding: 0; display: grid; border-top: 1px solid var(--line); max-width: 760px; }
   .pipe-step {
-    display: grid;
-    grid-template-columns: 34px minmax(0, 1fr) auto auto auto;
+    display: flex;
     gap: 12px;
     align-items: center;
     padding: 11px 0;
     border-bottom: 1px solid var(--line);
     position: relative;
   }
+  .pipe-num { flex-shrink: 0; }
+  .pipe-copy { flex: 1; }
   .pipe-num {
     width: 24px; height: 24px;
     display: grid; place-items: center;
@@ -505,6 +566,33 @@
   .pipe-actions { display: flex; gap: 4px; }
   .tiny { padding: 4px 9px; font-size: 11.5px; }
 
+  .run-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 290px;
+    gap: 22px;
+    align-items: start;
+  }
+  .artifact-rail { display: grid; gap: 0; align-content: start; padding-top: 18px; border-left: 1px solid var(--line); padding-left: 18px; }
+  .artifact-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    text-align: left;
+    border: 0;
+    border-radius: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 10px 2px;
+    background: transparent;
+  }
+  .artifact-row.clickable { cursor: pointer; }
+  .artifact-copy { min-width: 0; display: grid; gap: 2px; }
+  .artifact-copy b { color: var(--text); font-size: 12.5px; font-weight: 650; }
+  .artifact-copy small { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .feed-badge { flex-shrink: 0; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 2px 8px; font-size: 10px; font-weight: 700; }
+  .artifact-chip { border: 1px solid var(--line); border-radius: 999px; padding: 3px 9px; font-size: 10.5px; color: var(--accent-2); background: var(--accent-2-soft); }
+  .artifact-rail .stage-note { padding-top: 10px; }
+
   .review-layout {
     padding-top: 16px;
     display: grid;
@@ -530,12 +618,16 @@
     .rail-stage.on::before { display: none; }
     .rail-stage.on { background: var(--accent-soft); }
     .review-layout { grid-template-columns: 1fr; }
+    .run-layout { grid-template-columns: 1fr; }
+    .artifact-rail { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); }
   }
   @media (max-width: 700px) {
     .ai-stage { padding: 16px; }
-    .pipe-step { grid-template-columns: 34px minmax(0, 1fr); grid-auto-flow: row; }
+    .pipe-step { flex-wrap: wrap; }
     .pipe-step::after { display: none; }
-    .pipe-state, .pipe-actions, .pipe-kind { grid-column: 2; justify-self: start; text-align: left; }
+    .pipe-copy { flex: 1 1 100%; order: -1; margin-left: 46px; }
+    .pipe-num { position: absolute; left: 0; top: 14px; }
+    .pipe-state { text-align: left; }
     .rail-stages { grid-template-columns: 1fr; }
   }
 </style>

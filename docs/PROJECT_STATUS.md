@@ -1,12 +1,20 @@
 # Project Status
 
-Updated: 2026-07-02 (UI 하네스 개편)
+Updated: 2026-07-03 (산출물 + 문체)
 
 ## Current State
 
-Bindery is a writing-first macOS/Svelte/Tauri app. The studio has four Korean main tabs — `집필`, `자료`, `AI 작업`, `내보내기` — plus topbar `도움말` and `환경설정`. Writing and AI are fully separated: the editor has no AI entry points, and all AI work happens in a staged harness (`01 연결 → 02 바이블 → 03 실행 → 04 검토`) with a persistent status rail so the whole novel pipeline is visible at a glance.
+Bindery is a writing-first macOS/Svelte/Tauri app. Five Korean main tabs — `집필`, `자료`, `문체`, `AI 작업`, `내보내기` — plus topbar `도움말`/`환경설정`. The AI harness (`01 연결 → 02 바이블 → 03 실행 → 04 검토`) now records an artifact for every step in a per-episode shelf, and draft/revise prompts automatically include the latest artifacts plus the style guideline. The `문체` studio turns a pasted sample into a per-scene analysis, scene-type writing rules with ban lists, a proof scene, and a final style guideline saved to `canon/style-guide.md`.
 
-## Completed (latest)
+## Completed (2026-07-03)
+
+- Artifact shelf: every pipeline step (context/draft/analyze/qa/revise/summarize/commit) records a per-episode artifact with viewer modal and `집필 반영` badges.
+- Guidance injection: `generate_candidate` accepts a guidance block (bible + style guideline + latest artifacts); prompt preview shows the real assembled prompt.
+- New `run_agent_text` Tauri command and unified agent CLI runners (stdout/file/codex exec).
+- `문체` tab: sample input → per-scene quantitative stats → AI emotional extraction → scene-type rules + banned words/imagery → proof scene not in the source → final guideline saved into the project; offline fallbacks are clearly labeled.
+- Verified: svelte-check 0 errors, vite build, cargo check, `npx tauri build --bundles app` success, browser click-through of the full style flow and artifact-fed draft prompt.
+
+## Completed (2026-07-02)
 
 - Rebuilt `AI 작업` as the staged harness: CLI connection (provider/command/output/test/demo), bible detection with template creation or explicit skip, a 7-step pipeline (컨텍스트→초안 후보→표현 분석→QA→수정 계획→요약→기록) with per-step status and prompt preview, and a review stage (candidate diff, QA, revision plan, repetition map).
 - Removed AI from the writing surface; editor slash commands only navigate to the harness.

@@ -34,13 +34,13 @@
     </div>
     <div>
       <b>3</b>
-      <span>자료</span>
-      <small>설정집(바이블)과 플롯을 분리 관리</small>
+      <span>자료·문체</span>
+      <small>설정집·플롯 관리, 문체 지침서 제작</small>
     </div>
     <div>
       <b>4</b>
       <span>AI 작업</span>
-      <small>연결→바이블→실행→검토 하네스</small>
+      <small>연결→바이블→실행→검토, 단계마다 산출물 축적</small>
     </div>
     <div>
       <b>5</b>
@@ -92,9 +92,9 @@
       <div class="screen-map">
         <div><b>집필</b><span>일상 작업의 중심. 원고만 쓰고 저장합니다. AI 버튼이 없습니다.</span></div>
         <div><b>자료</b><span>설정집과 플롯 보드. 설정 항목은 AI 프롬프트의 바이블로 쓰입니다.</span></div>
-        <div><b>AI 작업</b><span>연결→바이블→실행→검토 파이프라인 하네스. Bindery의 핵심 작업대입니다.</span></div>
+        <div><b>문체</b><span>샘플 텍스트를 장면별로 분석해 문체 지침서를 만들고 집필에 반영합니다.</span></div>
+        <div><b>AI 작업</b><span>연결→바이블→실행→검토 하네스. 모든 단계가 산출물을 남기고, 산출물은 다음 집필에 자동 반영됩니다.</span></div>
         <div><b>내보내기</b><span>스냅샷과 실행 기록을 확인하고 출력 전 상태를 점검합니다.</span></div>
-        <div><b>환경설정</b><span>폰트, 자동 저장 등 편집 환경. 상단 오른쪽에서 엽니다.</span></div>
       </div>
     </section>
   </div>

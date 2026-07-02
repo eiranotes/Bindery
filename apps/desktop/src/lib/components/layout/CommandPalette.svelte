@@ -21,6 +21,7 @@
     { id: 'ai-bible', label: 'AI 작업: 바이블 확인', hint: 'AI', run: () => openAI('bible') },
     { id: 'ai-run', label: 'AI 작업: 파이프라인 실행', hint: 'AI', run: () => openAI('run') },
     { id: 'ai-review', label: 'AI 작업: 후보·QA 검토', hint: 'AI', run: () => openAI('review') },
+    { id: 'style', label: '문체 재현 열기', hint: '문체', run: () => uiStore.update((s) => ({ ...s, centerView: 'style' })) },
     { id: 'scan', label: '설정집 링크 스캔', hint: '자료', run: scanCodexAction },
     { id: 'plot', label: '플롯 보드 새로고침', hint: '자료', run: loadPlotAction },
     { id: 'focus', label: '포커스 모드 전환', hint: '보기', run: () => writingModeStore.update((s) => ({ ...s, focus: !s.focus })) },
