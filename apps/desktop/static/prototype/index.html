@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bindery Prototype</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar"><div class="brand"><span></span>Bindery</div><div class="chips"><b>evidence-first</b><b>Markdown source</b><b>Gemini lanes</b></div></header>
+    <main class="grid">
+      <aside class="panel"><h2>Binder</h2><p class="muted">Episodes · Plot · Codex · Notes</p><div class="tree">▾ story<br>&nbsp;&nbsp;▾ chapters<br>&nbsp;&nbsp;&nbsp;&nbsp;▾ ep001<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;• manuscript.md<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;• index.md<br>▾ canon<br>&nbsp;&nbsp;• setting-bible.md<br>▾ plot<br>&nbsp;&nbsp;• open-threads.md</div></aside>
+      <section class="panel main"><div class="tabs"><button>Brief</button><button class="on">Manuscript</button><button>QA</button><button>Revision</button></div><div class="pipeline"><button>Context</button><button>Draft</button><button>QA</button><button>Revise</button><button>Commit</button></div><article><h1>EP001 Manuscript</h1><p>에이라는 말없이 자료를 넘겼다. 주인공은 고개를 끄덕였다. 하지만 그 침묵은 오래 가지 않았다.</p><p class="caret">AI candidate / diff / apply 흐름은 여기서 오른쪽 evidence gate와 연결된다.</p></article></section>
+      <aside class="panel"><h2>Evidence Gates</h2><div class="gate ok">Plot QA <strong>86</strong></div><div class="gate ok">Continuity <strong>91</strong></div><div class="gate warn">Style <strong>78</strong></div><div class="gate bad">Lexicon <strong>62</strong></div><h2>Repetition Map</h2><div class="rep"><span>시선</span><b>9</b><i class="bad">overused</i></div><div class="rep"><span>침묵</span><b>5</b><i class="warn">watch</i></div><h2>Agent Crew</h2><div class="console">[architect] context-pack written\n[drafter] candidate ready\n[judge] qa warns lexicon\n[archivist] snapshot pending</div></aside>
+    </main>
+  </div>
+</body>
+</html>

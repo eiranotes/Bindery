@@ -1,0 +1,45 @@
+project:
+  title: "Untitled Novel"
+  language: "ko"
+  timezone: "Asia/Seoul"
+  episode_digits: 3
+
+engine:
+  type: "gemini-cli"
+  mock: true
+  gemini_cli_path: "gemini"
+  novelctl_path: "novelctl"
+
+ui:
+  source_of_truth: "markdown"
+  wiki_link_style: "obsidian"
+  autosave: true
+
+writing:
+  target_chars: 9000
+  draft_variants: 2
+  allow_unplanned_micro_invention: true
+  allow_new_major_canon_without_delta: false
+
+qa:
+  plot: true
+  continuity: true
+  style: true
+  voice: true
+  lexicon: true
+  scene_pattern: true
+  reader_review: false
+
+analysis:
+  repetition: true
+  rhythm: true
+  mentions: true
+
+security:
+  review_before_ai_send: false
+  deny_patterns:
+    - ".env"
+    - "*.pem"
+    - "*.key"
+    - "secrets/**"
+    - ".git/**"

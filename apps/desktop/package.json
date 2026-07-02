@@ -1,0 +1,42 @@
+{
+  "name": "bindery-desktop",
+  "version": "0.3.0-stage3",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4173",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "tauri:build:standalone": "tauri build --no-bundle && node ./scripts/make-standalone.mjs",
+    "tauri:build:portable": "npm run tauri:build:standalone",
+    "tauri:build:mac": "tauri build --bundles app,dmg",
+    "tauri:build:mac:standalone": "tauri build --no-bundle && node ./scripts/make-standalone.mjs"
+  },
+  "dependencies": {
+    "@codemirror/autocomplete": "^6.20.3",
+    "@codemirror/commands": "^6.8.0",
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/language": "^6.11.3",
+    "@codemirror/lint": "^6.9.7",
+    "@codemirror/search": "^6.7.1",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.36.8",
+    "@lezer/highlight": "^1.2.3",
+    "@sveltejs/adapter-static": "^3.0.8",
+    "@tauri-apps/api": "^2.5.0",
+    "dompurify": "^3.4.11",
+    "marked": "^15.0.12",
+    "svelte": "^5.33.0"
+  },
+  "devDependencies": {
+    "@sveltejs/kit": "^2.21.5",
+    "@sveltejs/vite-plugin-svelte": "^5.1.0",
+    "@tauri-apps/cli": "^2.5.0",
+    "svelte-check": "^4.1.7",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
+  }
+}

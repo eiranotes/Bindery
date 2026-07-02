@@ -1,0 +1,9 @@
+project:
+  title: Sample Novel
+  language: ko
+engine:
+  mock: true
+  geminiCliPath: gemini
+writing:
+  source_of_truth: markdown
+  ai_apply_mode: candidate_diff_apply

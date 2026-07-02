@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SnapshotManifest",
+  "type": "object",
+  "required": ["snapshotId", "createdAt", "files"],
+  "properties": {
+    "snapshotId": {"type": "string"},
+    "episode": {"type": "string"},
+    "scope": {"type": "string"},
+    "reason": {"type": "string"},
+    "createdAt": {"type": "string"},
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {"type": "string"},
+          "sha256": {"type": "string"},
+          "size": {"type": "integer"}
+        }
+      }
+    }
+  }
+}

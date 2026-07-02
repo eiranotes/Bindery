@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "JobSummary",
+  "type": "object",
+  "required": ["id", "type", "status"],
+  "properties": {
+    "id": {"type": "string"},
+    "type": {"type": "string"},
+    "agent": {"type": "string"},
+    "episode": {"type": "string"},
+    "status": {"type": "string", "enum": ["queued", "running", "awaiting_review", "applied", "failed", "cancelled"]},
+    "inputFiles": {"type": "array", "items": {"type": "string"}},
+    "outputFiles": {"type": "array", "items": {"type": "string"}}
+  }
+}

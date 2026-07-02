@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EpisodeMetadata",
+  "type": "object",
+  "required": ["episode", "status"],
+  "properties": {
+    "episode": {"type": "string"},
+    "title": {"type": "string"},
+    "status": {"type": "string", "enum": ["brief", "draft", "qa", "revision", "final", "committed"]},
+    "arc": {"type": "string"},
+    "timeline": {"type": "string"},
+    "pov": {"type": "string"},
+    "word_count_target": {"type": "integer"},
+    "tags": {"type": "array", "items": {"type": "string"}},
+    "characters": {"type": "array", "items": {"type": "string"}},
+    "locations": {"type": "array", "items": {"type": "string"}},
+    "threads": {"type": "array", "items": {"type": "string"}}
+  }
+}

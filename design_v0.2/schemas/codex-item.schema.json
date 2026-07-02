@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CodexItem",
+  "type": "object",
+  "required": ["type", "id", "name"],
+  "properties": {
+    "type": {"type": "string"},
+    "id": {"type": "string"},
+    "name": {"type": "string"},
+    "aliases": {"type": "array", "items": {"type": "string"}},
+    "status": {"type": "string"},
+    "first_appearance": {"type": "string"},
+    "last_seen": {"type": "string"},
+    "related_threads": {"type": "array", "items": {"type": "string"}},
+    "auto_link": {"type": "boolean"},
+    "min_alias_length": {"type": "integer", "minimum": 1}
+  }
+}

@@ -1,0 +1,8 @@
+# Build Windows release binaries with the MSVC C runtime statically linked.
+# This reduces the chance that the standalone exe needs a separate Visual C++ Redistributable install.
+# Tauri/WebView2 itself is still a system runtime dependency on Windows.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

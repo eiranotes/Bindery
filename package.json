@@ -1,0 +1,28 @@
+{
+  "name": "bindery-workspace",
+  "version": "0.3.0-stage3",
+  "private": true,
+  "description": "Markdown-native long-serial fiction IDE scaffold with Tauri, SvelteKit, Gemini CLI, and novelctl core.",
+  "scripts": {
+    "dev": "npm --workspace apps/desktop run dev",
+    "build": "npm --workspace apps/desktop run build",
+    "preview": "npm --workspace apps/desktop run preview",
+    "tauri:dev": "npm --workspace apps/desktop run tauri:dev",
+    "tauri:build": "npm --workspace apps/desktop run tauri:build",
+    "prototype": "python3 scripts/serve_prototype.py",
+    "verify:static": "python3 scripts/verify_static.py",
+    "verify:browser": "bash scripts/browser_smoke.sh",
+    "package:zip": "python3 scripts/package_zip.py",
+    "tauri:build:standalone": "npm --workspace apps/desktop run tauri:build:standalone",
+    "tauri:build:portable": "npm --workspace apps/desktop run tauri:build:portable",
+    "tauri:build:mac": "npm --workspace apps/desktop run tauri:build:mac",
+    "tauri:build:mac:standalone": "npm --workspace apps/desktop run tauri:build:mac:standalone"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}

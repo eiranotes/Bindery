@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "QAReport",
+  "type": "object",
+  "required": ["episode", "type", "score", "verdict", "issues"],
+  "properties": {
+    "episode": {"type": "string"},
+    "type": {"type": "string"},
+    "score": {"type": "number", "minimum": 0, "maximum": 100},
+    "verdict": {"type": "string", "enum": ["pass", "warn", "fail"]},
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "message"],
+        "properties": {
+          "severity": {"type": "string", "enum": ["info", "warn", "fail"]},
+          "title": {"type": "string"},
+          "message": {"type": "string"},
+          "file": {"type": "string"},
+          "lineStart": {"type": "integer"},
+          "lineEnd": {"type": "integer"},
+          "suggestedAction": {"type": "string"}
+        }
+      }
+    }
+  }
+}

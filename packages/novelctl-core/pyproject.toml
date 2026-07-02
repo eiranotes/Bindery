@@ -1,0 +1,8 @@
+[project]
+name = "novelctl-core"
+version = "0.3.0"
+description = "Mockable local-first novel project CLI core for Bindery"
+requires-python = ">=3.10"
+
+[project.scripts]
+novelctl = "novelctl.cli:main"
