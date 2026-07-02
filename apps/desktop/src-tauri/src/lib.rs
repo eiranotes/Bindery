@@ -15,6 +15,7 @@ pub fn run() {
             list_tree,
             read_file,
             write_file,
+            write_file_hex,
             run_novelctl,
             run_agent_text,
             test_agent_cli,

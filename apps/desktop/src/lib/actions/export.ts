@@ -1,7 +1,8 @@
 // 내보내기 — 회차 원고를 모아 TXT/HTML 합본을 만든다.
 // 데스크톱에서는 프로젝트 exports/ 폴더에 저장하고, 브라우저에서는 다운로드한다.
 import { get } from 'svelte/store';
-import { readFile, writeFile } from '$lib/api/commands';
+import { readFile, writeFile, writeFileHex } from '$lib/api/commands';
+import { buildEpub, toHex } from '$lib/domain/epub';
 import { projectStore } from '$lib/stores/projectStore';
 import { fileTreeStore } from '$lib/stores/fileTreeStore';
 import { editorStore } from '$lib/stores/editorStore';
@@ -9,7 +10,7 @@ import { toasts } from '$lib/stores/toastStore';
 import { parseFrontmatter } from '$lib/domain/frontmatter';
 import { listEpisodes } from './episodes';
 
-export type ExportFormat = 'txt' | 'html';
+export type ExportFormat = 'txt' | 'html' | 'epub';
 export type ExportScope = 'all' | 'current';
 
 function stripFrontmatter(text: string): string {
@@ -21,8 +22,8 @@ function isTauri(): boolean {
   return typeof window !== 'undefined' && Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
 }
 
-function download(filename: string, content: string, mime: string) {
-  const blob = new Blob([content], { type: `${mime};charset=utf-8` });
+function download(filename: string, content: string | Uint8Array, mime: string) {
+  const blob = typeof content === 'string' ? new Blob([content], { type: `${mime};charset=utf-8` }) : new Blob([content as BlobPart], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -103,9 +104,25 @@ export async function exportCompilation(format: ExportFormat, scope: ExportScope
   const ts = new Date().toISOString().slice(0, 10);
   const safeTitle = title.replace(/[\\/:*?"<>|]/g, ' ').trim() || 'bindery';
   const filename = `${safeTitle}-${scope === 'current' ? chapters[0].id : '전체'}-${ts}.${format}`;
-  const content = format === 'txt' ? toTxt(title, chapters) : toHtml(title, '', chapters);
   const rel = `exports/${filename}`;
 
+  if (format === 'epub') {
+    const bytes = buildEpub(
+      title,
+      '',
+      chapters.map((c) => ({ id: c.id, title: c.id.toUpperCase(), paragraphs: c.body.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean) }))
+    );
+    if (isTauri()) {
+      await writeFileHex(root, rel, toHex(bytes));
+      toasts.push(`내보내기 완료: ${rel} (회차 ${chapters.length}개)`, 'ok');
+    } else {
+      download(filename, bytes, 'application/epub+zip');
+      toasts.push(`다운로드 시작: ${filename}`, 'ok');
+    }
+    return rel;
+  }
+
+  const content = format === 'txt' ? toTxt(title, chapters) : toHtml(title, '', chapters);
   if (isTauri()) {
     await writeFile(root, rel, content);
     toasts.push(`내보내기 완료: ${rel} (회차 ${chapters.length}개)`, 'ok');

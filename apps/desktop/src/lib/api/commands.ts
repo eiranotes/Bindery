@@ -118,6 +118,14 @@ export async function writeFile(projectPath: string, relativePath: string, conte
   console.info('[mock write]', projectPath, path, content.length);
 }
 
+/** 바이너리 쓰기 — hex 문자열로 전달 (EPUB 등). 브라우저 모드에서는 no-op. */
+export async function writeFileHex(projectPath: string, relativePath: string, contentHex: string): Promise<boolean> {
+  const invoke = await getInvoke();
+  if (!invoke) return false;
+  await invoke<void>('write_file_hex', { projectPath, relativePath, contentHex });
+  return true;
+}
+
 export async function runNovelctl(projectPath: string, args: string[]): Promise<JobResult> {
   const invoke = await getInvoke();
   const novelctlPath = get(settingsStore).novelctlPath || 'novelctl';

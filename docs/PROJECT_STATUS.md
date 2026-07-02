@@ -12,7 +12,7 @@ Bindery is a writing-first macOS/Svelte/Tauri app covering the full local novel 
 - Agent-based QA and revision plans (fallback preserved); style-compliance gate (banned-term scan) and continuity gate (previous episode summary in QA prompt).
 - Artifacts synced to `.bindery/artifacts/`; summarize output fed to `canon/summaries/`.
 - Snapshot compare/restore with automatic safety snapshot; project search (⌘⇧F); editor scene jump; daily writing stats.
-- Real export: TXT/HTML compilation into `exports/` (browser: download). EPUB deferred pending zip dependency approval.
+- Real export: TXT/HTML/EPUB compilation into `exports/` (browser: download). EPUB3 assembled dependency-free (stored-ZIP), verified with `unzip -t`.
 - AI drafting parameters (분량/창의성/추가 지시) injected into candidate prompts; style guideline strictness (유연/균형/엄격) with deviation-allowing preambles.
 - Verified: svelte-check 0 errors, vite build, cargo check, standalone macOS build, browser click-through (회차 탭, 파라미터→프롬프트 반영, 검색, 내보내기 화면).
 

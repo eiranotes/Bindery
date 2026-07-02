@@ -51,7 +51,8 @@
       <span>형식</span>
       <select bind:value={format}>
         <option value="txt">TXT (연재 플랫폼 붙여넣기)</option>
-        <option value="html">HTML (인쇄·전자책 변환용)</option>
+        <option value="html">HTML (인쇄용)</option>
+        <option value="epub">EPUB (전자책)</option>
       </select>
     </label>
     <div class="exp-actions">

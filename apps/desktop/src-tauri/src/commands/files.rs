@@ -81,3 +81,36 @@ pub fn write_file(project_path: String, relative_path: String, content: String) 
     fs::write(p, content)?;
     Ok(())
 }
+
+/// Write binary content passed as a hex string. Used for EPUB export where
+/// the frontend assembles the (stored) ZIP container bytes.
+#[tauri::command]
+pub fn write_file_hex(
+    project_path: String,
+    relative_path: String,
+    content_hex: String,
+) -> AppResult<()> {
+    let hex = content_hex.trim();
+    if hex.len() % 2 != 0 {
+        return Err(crate::error::AppError {
+            message: "invalid hex payload".into(),
+        });
+    }
+    let mut bytes = Vec::with_capacity(hex.len() / 2);
+    let raw = hex.as_bytes();
+    for i in (0..raw.len()).step_by(2) {
+        let hi = (raw[i] as char).to_digit(16);
+        let lo = (raw[i + 1] as char).to_digit(16);
+        match (hi, lo) {
+            (Some(h), Some(l)) => bytes.push(((h << 4) | l) as u8),
+            _ => {
+                return Err(crate::error::AppError {
+                    message: "invalid hex payload".into(),
+                })
+            }
+        }
+    }
+    let p = resolve_for_write(&project_path, &relative_path)?;
+    fs::write(p, bytes)?;
+    Ok(())
+}

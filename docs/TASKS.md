@@ -14,7 +14,7 @@ Updated: 2026-07-03 (산출물 + 문체)
 ## Done (2026-07-03 A-to-Z)
 
 - [x] Episode management: create/switch/status (초고/퇴고/발행) in the binder `회차` tab.
-- [x] Real export: TXT/HTML compilation into `exports/` (EPUB deferred — needs zip dependency approval).
+- [x] Real export: TXT/HTML/EPUB compilation into `exports/` (EPUB via dependency-free stored-ZIP builder, verified with `unzip -t`).
 - [x] Sync artifacts to `.bindery/artifacts/`; feed summarize output into `canon/summaries/`.
 - [x] Editable plot board (`plot/plot-board.json`); codex item creation UI.
 - [x] Agent-based QA + revision plans with fallback; style-compliance and continuity gates.
@@ -25,7 +25,6 @@ Updated: 2026-07-03 (산출물 + 문체)
 
 ## Next
 
-- [ ] EPUB export (requires zip dependency approval).
 - [ ] Drag-and-drop scene reordering on the plot board.
 - [ ] Automated click-through inside the packaged app; Windows runner validation.
 

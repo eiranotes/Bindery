@@ -9,7 +9,7 @@
 - Style-compliance gate: banned terms from the confirmed style guideline are scanned client-side and merged into QA issues; continuity gate feeds the previous episode summary into the QA prompt.
 - Artifacts are now synced to `.bindery/artifacts/{episode}/{step}.md`; `summarize` output is fed back into `canon/summaries/{ep}.md` (auto-detected as bible).
 - Snapshot restore & compare: diff modal against the current manuscript plus one-click restore with an automatic before-restore safety snapshot.
-- Real export: TXT/HTML compilation (all episodes or current) into `exports/` (browser: download); frontmatter stripped automatically.
+- Real export: TXT/HTML/EPUB compilation (all episodes or current) into `exports/` (browser: download); frontmatter stripped automatically. EPUB3 is assembled dependency-free as a stored-ZIP container (new `write_file_hex` command for binary output), integrity-verified with `unzip -t`.
 - Writing stats: daily written-word bars (last 7 days) recorded at save time.
 - Project-wide search modal (⌘⇧F) across Markdown files with jump-to-line; scene jump dropdown in the editor toolbar.
 - AI drafting parameters: target length, creativity (보수적/균형/과감), and free-form author instructions are injected into candidate prompts.
