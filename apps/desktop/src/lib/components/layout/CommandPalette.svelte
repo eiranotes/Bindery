@@ -31,7 +31,8 @@
     { id: 'split', label: '분할 보기', hint: '보기', run: () => editorStore.update((s) => ({ ...s, mode: 'split' })) },
     { id: 'preview', label: '미리보기', hint: '보기', run: () => editorStore.update((s) => ({ ...s, mode: 'preview' })) },
     { id: 'bible', label: '왼쪽 설정집 탭', hint: '탐색', run: () => uiStore.update((s) => ({ ...s, binderTab: 'bible' })) },
-    { id: 'prefs', label: '환경설정 열기', hint: '설정', run: () => uiStore.update((s) => ({ ...s, prefsOpen: true })) }
+    { id: 'prefs', label: '환경설정 열기', hint: '설정', run: () => uiStore.update((s) => ({ ...s, prefsOpen: true })) },
+    { id: 'search', label: '프로젝트 전체 검색', hint: '검색', run: () => uiStore.update((s) => ({ ...s, searchOpen: true })) }
   ];
 
   let open = false;

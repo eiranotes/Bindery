@@ -4,6 +4,7 @@
   import CodexPanel from '$lib/components/codex/CodexPanel.svelte';
   import SnapshotPanel from '$lib/components/snapshots/SnapshotPanel.svelte';
   import JobConsole from '$lib/components/agents/JobConsole.svelte';
+  import ExportPanel from '$lib/components/export/ExportPanel.svelte';
   import AIStudio from '$lib/components/ai/AIStudio.svelte';
   import StyleStudio from '$lib/components/style/StyleStudio.svelte';
   import HelpSurface from './HelpSurface.svelte';
@@ -59,11 +60,12 @@
     <div class="surface-head compact">
       <div class="surface-copy">
         <span class="eyebrow">내보내기</span>
-        <h1>스냅샷과 실행 기록</h1>
-        <p>출력 전에 현재 원고 상태를 스냅샷으로 남기고, 지금까지의 실행 기록을 확인합니다.</p>
+        <h1>출고와 기록</h1>
+        <p>합본을 출력하고, 스냅샷과 실행 기록, 집필 통계를 확인합니다.</p>
       </div>
     </div>
-    <div class="export-grid">
+    <div class="export-grid three">
+      <section class="panel-slim"><ExportPanel /></section>
       <section class="panel-slim"><SnapshotPanel /></section>
       <section class="panel-slim"><JobConsole /></section>
     </div>

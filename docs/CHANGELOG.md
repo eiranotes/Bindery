@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-07-03 (A-to-Z 갭 해소)
+
+- Episode management: binder gains a `회차` tab with per-episode status (초고/퇴고/발행), one-click episode switching, and `+ 새 회차` scaffolding (`story/chapters/epNNN/`).
+- Plot board editing: scene add/delete, title/tension/beat cell editing, saved to `plot/plot-board.json` (loaded back on refresh).
+- Codex item creation: `+ 새 항목` form writes typed templates into `characters/`, `world/`, `canon/`, `lore/`.
+- Real QA: `QA` step now runs the configured agent CLI with a gate-scoring prompt (fallback to the previous file/native report); revision plans are generated from actual QA issues.
+- Style-compliance gate: banned terms from the confirmed style guideline are scanned client-side and merged into QA issues; continuity gate feeds the previous episode summary into the QA prompt.
+- Artifacts are now synced to `.bindery/artifacts/{episode}/{step}.md`; `summarize` output is fed back into `canon/summaries/{ep}.md` (auto-detected as bible).
+- Snapshot restore & compare: diff modal against the current manuscript plus one-click restore with an automatic before-restore safety snapshot.
+- Real export: TXT/HTML compilation (all episodes or current) into `exports/` (browser: download); frontmatter stripped automatically.
+- Writing stats: daily written-word bars (last 7 days) recorded at save time.
+- Project-wide search modal (⌘⇧F) across Markdown files with jump-to-line; scene jump dropdown in the editor toolbar.
+- AI drafting parameters: target length, creativity (보수적/균형/과감), and free-form author instructions are injected into candidate prompts.
+- Style flexibility: guideline enforcement strength (유연/균형/엄격) controls the preamble injected with the style guide, and guideline generation now phrases rules as ranges with explicit deviation allowances.
+
 ## 2026-07-03 (산출물 체계 + 문체 재현)
 
 - Every pipeline step now records an artifact (context pack, draft candidates, expression analysis, QA report, revision plan, summary, commit log) into a per-episode artifact shelf shown in the `03 실행` stage.

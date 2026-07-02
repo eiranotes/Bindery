@@ -1,8 +1,12 @@
 <script lang="ts">
   import { codexStore } from '$lib/stores/codexStore';
   import { editorStore } from '$lib/stores/editorStore';
+  import { projectStore } from '$lib/stores/projectStore';
+  import { fileTreeStore } from '$lib/stores/fileTreeStore';
   import { loadCodexAction, scanCodexAction } from '$lib/actions/pipeline';
   import { gotoLine } from '$lib/stores/editorNavStore';
+  import { writeFile, listTree } from '$lib/api/commands';
+  import { toasts } from '$lib/stores/toastStore';
   import type { CodexType } from '$lib/domain/codex';
 
   const ICON: Record<CodexType, string> = { character: '◆', location: '⌂', faction: '⚑', system: '⚙', item: '✦', term: '§', event: '✳' };
@@ -30,6 +34,45 @@
     });
     scanCodexAction();
   }
+  // 새 항목 생성 — 유형별 디렉터리에 템플릿 파일을 만든다 (list_codex가 스캔하는 경로).
+  const TYPE_DIR: Partial<Record<CodexType, string>> = { character: 'characters', location: 'world', term: 'canon', event: 'lore' };
+  const typeOptions = Object.keys(TYPE_LABEL) as CodexType[];
+  let addOpen = false;
+  let newName = '';
+  let newType: CodexType = 'character';
+  let newSummary = '';
+  let creatingItem = false;
+
+  function slugify(name: string): string {
+    const s = name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9가-힣-]/g, '');
+    return s || `item-${Date.now()}`;
+  }
+
+  async function createItem() {
+    if (!newName.trim()) {
+      toasts.push('항목 이름을 입력하세요', 'warn');
+      return;
+    }
+    const root = $projectStore.current?.rootPath || 'sample-project';
+    const dir = TYPE_DIR[newType] ?? 'canon';
+    const rel = `${dir}/${slugify(newName)}.md`;
+    creatingItem = true;
+    try {
+      await writeFile(root, rel, `# ${newName.trim()}\n\n${newSummary.trim() || '(요약을 적어주세요)'}\n\n## 메모\n\n- \n`);
+      const nodes = await listTree(root);
+      fileTreeStore.update((s) => ({ ...s, nodes }));
+      await loadCodexAction();
+      toasts.push(`설정 항목 생성됨: ${rel}`, 'ok');
+      addOpen = false;
+      newName = '';
+      newSummary = '';
+    } catch (e) {
+      toasts.push(`항목 생성 실패: ${e instanceof Error ? e.message : String(e)}`, 'bad');
+    } finally {
+      creatingItem = false;
+    }
+  }
+
   $: report = $codexStore.mentionReport;
   $: mentionCountByItem = (() => {
     const m = new Map<string, number>();
@@ -42,10 +85,27 @@
   <div class="codex-toolbar">
     <div class="ct-left"><strong>설정집</strong><span class="muted">{$codexStore.items.length}개</span></div>
     <div class="ct-right">
+      <button class="ghost tiny" on:click={() => (addOpen = !addOpen)}>{addOpen ? '닫기' : '+ 새 항목'}</button>
       <button class="ghost tiny" on:click={loadCodexAction}>새로고침</button>
       <button class="tiny" on:click={scanCodexAction} disabled={$codexStore.loading}>{$codexStore.loading ? '…' : '링크 스캔'}</button>
     </div>
   </div>
+
+  {#if addOpen}
+    <form class="add-form" on:submit|preventDefault={createItem}>
+      <div class="add-row">
+        <select bind:value={newType}>
+          {#each typeOptions as t}<option value={t}>{TYPE_LABEL[t]}</option>{/each}
+        </select>
+        <input bind:value={newName} placeholder="이름 (예: 에이라)" />
+      </div>
+      <input bind:value={newSummary} placeholder="한 줄 요약 (선택)" />
+      <div class="add-actions">
+        <button class="primary tiny" type="submit" disabled={creatingItem}>{creatingItem ? '생성 중…' : '항목 만들기'}</button>
+        <span class="add-hint">유형별 폴더(characters/world/canon/lore)에 Markdown 파일로 저장됩니다.</span>
+      </div>
+    </form>
+  {/if}
 
   {#if $codexStore.items.length === 0}
     <div class="empty">설정집을 불러오면 인물·장소·떡밥이 표시됩니다.</div>
@@ -142,4 +202,8 @@
   .m-link:hover { background: var(--accent-2-soft); }
   .m-conf { font-size: 9.5px; color: var(--ok); }
   .m-conf.low { color: var(--warn); }
+  .add-form { display: grid; gap: 7px; border-bottom: 1px solid var(--line); padding: 2px 2px 12px; margin-bottom: 10px; }
+  .add-row { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 7px; }
+  .add-actions { display: flex; align-items: center; gap: 10px; }
+  .add-hint { color: var(--faint); font-size: 11px; line-height: 1.4; }
 </style>

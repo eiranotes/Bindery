@@ -1,6 +1,9 @@
 // 파이프라인 산출물 보관함 — 모든 단계 실행 결과를 회차별로 기록한다.
-// 최신 산출물은 집필(초안 후보) 프롬프트의 참고 자료로 자동 포함된다.
+// 최신 산출물은 집필(초안 후보) 프롬프트의 참고 자료로 자동 포함되고,
+// 프로젝트의 .bindery/artifacts/ 아래에 파일로도 남는다.
 import { writable, get } from 'svelte/store';
+import { writeFile } from '$lib/api/commands';
+import { projectStore } from '$lib/stores/projectStore';
 import type { PipelineStep } from '$lib/domain/prompt';
 
 export type ArtifactStep = PipelineStep;
@@ -54,6 +57,12 @@ export function recordArtifact(step: ArtifactStep, episode: string, title: strin
     createdAt: new Date().toISOString()
   };
   artifactStore.update((items) => [artifact, ...items].slice(0, MAX));
+  // 프로젝트에도 파일로 남긴다(최신본 덮어쓰기). 실패해도 UI 흐름은 막지 않는다.
+  const root = get(projectStore).current?.rootPath;
+  if (root) {
+    const header = `<!-- Bindery 산출물 · ${title} · ${artifact.createdAt} -->\n\n`;
+    void writeFile(root, `.bindery/artifacts/${episode}/${step}.md`, header + content).catch(() => {});
+  }
   return artifact;
 }
 

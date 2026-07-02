@@ -5,6 +5,7 @@
   import ToastHost from './ToastHost.svelte';
   import CommandPalette from './CommandPalette.svelte';
   import PreferencesModal from './PreferencesModal.svelte';
+  import SearchModal from './SearchModal.svelte';
   import BinderPanel from '$lib/components/binder/BinderPanel.svelte';
   import MainSurface from './MainSurface.svelte';
   import MyBooks from './MyBooks.svelte';
@@ -40,5 +41,6 @@
     <ToastHost />
     <CommandPalette />
     <PreferencesModal />
+    <SearchModal />
   </div>
 {/if}

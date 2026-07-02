@@ -470,6 +470,8 @@ input::placeholder { color: var(--faint); }
   padding: 10px;
   align-content: start;
 }
+.export-grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 1320px) { .export-grid.three { grid-template-columns: 1fr; } }
 .help-page {
   min-height: 0;
   overflow: auto;
@@ -576,7 +578,7 @@ input::placeholder { color: var(--faint); }
   border-bottom: 1px solid var(--line);
 }
 .binder-head h2 { margin: 2px 0 0; font-size: 20px; line-height: 1.2; }
-.book-navigator .binder-seg { grid-template-columns: repeat(2, 1fr); }
+.book-navigator .binder-seg { grid-template-columns: repeat(3, 1fr); }
 .binder-seg { display: grid; gap: 4px; }
 .binder-seg button { min-width: 0; }
 

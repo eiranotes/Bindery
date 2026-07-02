@@ -7,6 +7,7 @@
   import { writingModeStore, goalStore } from '$lib/stores/writingModeStore';
   import { jobStore } from '$lib/stores/jobStore';
   import { toasts } from '$lib/stores/toastStore';
+  import { gotoLine } from '$lib/stores/editorNavStore';
   import type { WordStats } from '$lib/editor';
 
   export let stats: WordStats = { words: 0, chars: 0, charsNoSpace: 0, paragraphs: 0 };
@@ -29,6 +30,27 @@
   }
   $: written = $goalStore.startedAt ? Math.max(0, stats.words - $goalStore.startWords) : 0;
   $: pct = $goalStore.startedAt ? Math.min(100, Math.round((written / Math.max(1, $goalStore.target)) * 100)) : 0;
+
+  // 장면(헤딩·*** 구분자) 목록 — 긴 원고에서 장면 단위 이동용
+  type Scene = { line: number; label: string };
+  function extractScenes(content: string): Scene[] {
+    const out: Scene[] = [];
+    const lines = content.split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const t = lines[i].trim();
+      const h = /^(#{1,3})\s+(.+)$/.exec(t);
+      if (h) out.push({ line: i + 1, label: h[2].slice(0, 30) });
+      else if (/^(\*\s*){3,}$/.test(t)) out.push({ line: i + 1, label: `⁂ 장면 전환 (L${i + 1})` });
+      if (out.length >= 40) break;
+    }
+    return out;
+  }
+  $: scenes = extractScenes($editorStore.content);
+  function jumpScene(e: Event) {
+    const el = e.currentTarget as HTMLSelectElement;
+    if (el.value) gotoLine(parseInt(el.value, 10));
+    el.value = '';
+  }
 </script>
 
 <div class="editor-toolbar">
@@ -37,6 +59,13 @@
       <button class="seg-btn" class:on={$editorStore.mode === m} on:click={() => editorStore.update((s) => ({ ...s, mode: m }))}>{label}</button>
     {/each}
   </div>
+
+  {#if scenes.length > 1}
+    <select class="scene-jump" title="장면으로 이동" on:change={jumpScene}>
+      <option value="">장면 이동…</option>
+      {#each scenes as sc}<option value={sc.line}>{sc.label}</option>{/each}
+    </select>
+  {/if}
 
   <span class="wc">{stats.words.toLocaleString()} 단어 · {stats.charsNoSpace.toLocaleString()} 자</span>
   {#if $goalStore.startedAt}
@@ -75,6 +104,7 @@
   .seg-btn { border: 0; padding: 4px 11px; border-radius: 6px; font-size: 12px; }
   .seg-btn.on { background: var(--bg-2); color: var(--text); font-weight: 600; box-shadow: var(--shadow); }
   .wc { font-size: 11.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .scene-jump { max-width: 150px; font-size: 11.5px; padding: 3px 6px; color: var(--muted); background: var(--chip); border: 1px solid var(--line); border-radius: var(--r-sm); }
   .goal-mini { width: 56px; height: 5px; background: var(--chip); border-radius: 5px; overflow: hidden; }
   .goal-mini i { display: block; height: 100%; background: var(--accent); transition: width .3s ease; }
   .dirty { color: var(--warn); font-size: 10px; }

@@ -12,9 +12,10 @@ export const mainViews: Array<{ id: CenterView; label: string; hint: string }> =
 
 export const uiStore = writable<{
   centerView: CenterView;
-  binderTab: 'files' | 'bible';
+  binderTab: 'episodes' | 'files' | 'bible';
   prefsOpen: boolean;
-}>({ centerView: 'write', binderTab: 'files', prefsOpen: false });
+  searchOpen: boolean;
+}>({ centerView: 'write', binderTab: 'episodes', prefsOpen: false, searchOpen: false });
 
 export function gotoView(view: CenterView) {
   uiStore.update((s) => ({ ...s, centerView: view }));

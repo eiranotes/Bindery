@@ -16,7 +16,10 @@
   import { jobStore } from '$lib/stores/jobStore';
   import { artifactStore, artifactsForEpisode, recordArtifact } from '$lib/stores/artifactStore';
   import type { Artifact } from '$lib/stores/artifactStore';
-  import { styleStore } from '$lib/stores/styleStore';
+  import { styleStore, STRICTNESS_LABEL } from '$lib/stores/styleStore';
+  import type { StyleStrictness } from '$lib/stores/styleStore';
+  import { draftParamsStore, CREATIVITY_LABEL } from '$lib/stores/draftParamsStore';
+  import type { Creativity } from '$lib/stores/draftParamsStore';
   import { toasts } from '$lib/stores/toastStore';
   import { testAgentCli, runNovelctl, writeFile, listTree } from '$lib/api/commands';
   import { runQAAction, runRevisionAction, runDraftAction, runAnalyzeAction } from '$lib/actions/pipeline';
@@ -39,6 +42,9 @@
   type DraftKind = 'draft' | 'continue' | 'rewrite';
   let draftKind: DraftKind = 'draft';
   const draftKinds: Array<[DraftKind, string]> = [['draft', '초안'], ['continue', '이어쓰기'], ['rewrite', '다시쓰기']];
+  const lengthOptions: Array<[number, string]> = [[0, '자동'], [1500, '약 1,500자'], [3000, '약 3,000자'], [5000, '약 5,000자'], [8000, '약 8,000자']];
+  const creativityOptions = Object.keys(CREATIVITY_LABEL) as Creativity[];
+  const strictnessOptions = Object.keys(STRICTNESS_LABEL) as StyleStrictness[];
 
   // ---- 상태 요약 (레일) -------------------------------------------------
   $: agentReady = Boolean($settingsStore.agentCliPath);
@@ -156,6 +162,12 @@
     if (!result.ok) throw new Error(result.stderr || `novelctl ${step} 실패`);
     const body = [result.stdout.trim(), result.outputFiles?.length ? `출력 파일: ${result.outputFiles.join(', ')}` : ''].filter(Boolean).join('\n\n');
     recordArtifact(step, ep, novelctlLabel[step] ?? step, body || '(빈 출력)');
+    if (step === 'summarize' && body.trim()) {
+      // 요약을 시리즈 바이블로 환류 — canon/summaries/{ep}.md 는 바이블 감지 대상이라
+      // 다음 회차 파이프라인과 연속성 검사가 자동으로 참조한다.
+      const root = $projectStore.current?.rootPath || 'sample-project';
+      await writeFile(root, `canon/summaries/${ep}.md`, `# ${ep} 요약\n\n${body}\n`).catch(() => {});
+    }
   }
 
   const runners: Record<PipelineStep, () => void | Promise<void>> = {
@@ -350,6 +362,36 @@
               </li>
             {/each}
           </ol>
+
+          <div class="param-block">
+            <span class="line-label">집필 파라미터 — 초안·수정 후보 프롬프트에 반영</span>
+            <div class="param-row">
+              <label>
+                <span>분량</span>
+                <select bind:value={$draftParamsStore.lengthTarget}>
+                  {#each lengthOptions as [v, label]}<option value={v}>{label}</option>{/each}
+                </select>
+              </label>
+              <label>
+                <span>창의성</span>
+                <select bind:value={$draftParamsStore.creativity}>
+                  {#each creativityOptions as c}<option value={c}>{CREATIVITY_LABEL[c]}</option>{/each}
+                </select>
+              </label>
+              {#if $styleStore.guideline}
+                <label>
+                  <span>문체 강도</span>
+                  <select bind:value={$styleStore.strictness}>
+                    {#each strictnessOptions as st}<option value={st}>{STRICTNESS_LABEL[st]}</option>{/each}
+                  </select>
+                </label>
+              {/if}
+            </div>
+            <label class="param-notes">
+              <span>추가 지시</span>
+              <input bind:value={$draftParamsStore.notes} placeholder="예: 이 회차는 에이라 시점 유지, 마지막에 떡밥 하나 회수" />
+            </label>
+          </div>
 
           <div class="stage-actions">
             <button class="primary" on:click={runAll} disabled={running !== null}>전체 실행</button>
@@ -572,6 +614,12 @@
     gap: 22px;
     align-items: start;
   }
+  .param-block { display: grid; gap: 8px; max-width: 760px; border-top: 1px solid var(--line); padding-top: 4px; }
+  .param-row { display: flex; gap: 14px; flex-wrap: wrap; }
+  .param-row label, .param-notes { display: grid; gap: 4px; }
+  .param-row label > span, .param-notes > span { color: var(--faint); font-size: 10.5px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+  .param-row select { min-width: 120px; font-size: 12.5px; }
+  .param-notes input { width: 100%; font-size: 12.5px; }
   .artifact-rail { display: grid; gap: 0; align-content: start; padding-top: 18px; border-left: 1px solid var(--line); padding-left: 18px; }
   .artifact-row {
     display: flex;

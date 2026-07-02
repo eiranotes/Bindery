@@ -5,6 +5,15 @@ import type { StyleAnalysis } from '$lib/domain/style';
 
 export type StyleStep = 'sample' | 'analyze' | 'guide' | 'proof' | 'final';
 
+/** 지침 강제 강도 — 너무 강하면 문장이 딱딱해지므로 기본은 '균형'. */
+export type StyleStrictness = 'flexible' | 'balanced' | 'strict';
+
+export const STRICTNESS_LABEL: Record<StyleStrictness, string> = {
+  flexible: '유연',
+  balanced: '균형',
+  strict: '엄격'
+};
+
 export type StyleState = {
   step: StyleStep;
   sampleText: string;
@@ -19,6 +28,8 @@ export type StyleState = {
   guideline: string | null;
   /** 지침서를 집필 프롬프트에 포함할지 */
   applyToDraft: boolean;
+  /** 지침 강제 강도 */
+  strictness: StyleStrictness;
   savedPath: string | null;
 };
 
@@ -33,6 +44,7 @@ const initial: StyleState = {
   proof: null,
   guideline: null,
   applyToDraft: true,
+  strictness: 'balanced',
   savedPath: null
 };
 

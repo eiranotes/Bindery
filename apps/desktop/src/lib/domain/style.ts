@@ -232,6 +232,8 @@ export function buildGuidelinePrompt(extract: string, guide: string, proof: stri
   return `너는 소설 문체 편집자다. 아래 재료를 통합해 이 작가의 **최종 문체 지침서**를 작성하라. 이 지침서는 AI가 매 회차 집필 때 프롬프트에 그대로 들어간다. 2000자 이내로 밀도 있게 쓰라.
 
 ${COMMON_RULES}
+- 규칙은 절대값이 아니라 범위와 원칙으로 서술하라. 각 규칙에 "이런 경우에는 벗어나도 좋다"는 예외 조건을 짧게 붙여, 지침이 문장을 경직시키지 않게 하라.
+- 금지 목록만은 예외 없이 명확하게 쓰라.
 
 구조:
 # 문체 지침서
@@ -254,6 +256,65 @@ ${proof.slice(0, 1500)}
 
 ## 재료 4 — 정량 참고치
 ${statsMarkdown(analysis)}`;
+}
+
+// ---------------------------------------------------------------------------
+// 문체 준수 검사 — 지침서의 금지어 표에서 항목을 뽑아 원고를 스캔한다.
+// 클라이언트 측 빠른 게이트: AI QA와 별개로 항상 동작한다.
+// ---------------------------------------------------------------------------
+
+/** 지침서 마크다운의 금지 목록(표의 첫 칸, '금지어' 섹션의 불릿)에서 표현을 추출한다. */
+export function extractBannedTerms(guideline: string): string[] {
+  const terms: string[] = [];
+  const lines = guideline.split('\n');
+  let inBanned = false;
+  for (const line of lines) {
+    const t = line.trim();
+    if (/^#{1,3}\s/.test(t)) inBanned = /금지/.test(t);
+    if (!inBanned) continue;
+    // 표 행: | 표현 | 이유 |  또는  | 금지어 | a · b · c |
+    const cell = /^\|\s*([^|]+?)\s*\|/.exec(t);
+    if (cell) {
+      const head = cell[1].trim();
+      if (['표현', '구분', '항목', '금지어', '금지 묘사', '---'].includes(head) || head.startsWith('-')) {
+        // 값이 두 번째 칸에 몰린 형태(| 금지어 | a · b |) 처리
+        const second = /^\|[^|]+\|\s*([^|]+?)\s*\|/.exec(t)?.[1] ?? '';
+        for (const part of second.split(/[·,]/)) {
+          const v = part.trim().replace(/\(.*?\)/g, '').trim();
+          if (v.length >= 2 && !/금지|항목/.test(v)) terms.push(v);
+        }
+        continue;
+      }
+      const v = head.replace(/\(.*?\)/g, '').trim();
+      if (v.length >= 2) terms.push(v);
+    }
+    const bullet = /^-\s+\*{0,2}([^:*]+?)\*{0,2}\s*[:—-]/.exec(t);
+    if (bullet) {
+      const v = bullet[1].trim();
+      if (v.length >= 2 && v.length <= 20) terms.push(v);
+    }
+  }
+  return [...new Set(terms)].slice(0, 40);
+}
+
+export type ComplianceHit = { term: string; count: number; line: number };
+
+export function checkStyleCompliance(content: string, guideline: string): ComplianceHit[] {
+  const banned = extractBannedTerms(guideline);
+  const hits: ComplianceHit[] = [];
+  for (const term of banned) {
+    let idx = content.indexOf(term);
+    if (idx === -1) continue;
+    let count = 0;
+    let firstLine = 0;
+    while (idx !== -1) {
+      if (count === 0) firstLine = content.slice(0, idx).split('\n').length;
+      count++;
+      idx = content.indexOf(term, idx + term.length);
+    }
+    hits.push({ term, count, line: firstLine });
+  }
+  return hits;
 }
 
 // ---------------------------------------------------------------------------

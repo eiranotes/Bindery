@@ -53,7 +53,7 @@ export async function openProjectIntoWorkspace(path: string): Promise<ProjectInf
   }
 
   candidateStore.set({ candidates: [], activeId: null, generating: false, appliedHunks: new Set(), sessionSnapshotId: null });
-  uiStore.update((s) => ({ ...s, centerView: 'write', binderTab: 'files' }));
+  uiStore.update((s) => ({ ...s, centerView: 'write', binderTab: 'episodes' }));
   await Promise.all([loadCodexAction(), loadPlotAction()]);
   return project;
 }

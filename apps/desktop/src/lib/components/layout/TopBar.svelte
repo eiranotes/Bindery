@@ -17,7 +17,7 @@
 
   function backToBooks() {
     projectStore.update((s) => ({ ...s, current: null }));
-    uiStore.update((s) => ({ ...s, centerView: 'write', binderTab: 'files' }));
+    uiStore.update((s) => ({ ...s, centerView: 'write', binderTab: 'episodes' }));
   }
   function openAIConnect() {
     gotoStage('connect');

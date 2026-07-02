@@ -1,7 +1,7 @@
 <script lang="ts">
   import MarkdownPreview from '$lib/components/editor/MarkdownPreview.svelte';
-  import { styleStore } from '$lib/stores/styleStore';
-  import type { StyleStep } from '$lib/stores/styleStore';
+  import { styleStore, STRICTNESS_LABEL } from '$lib/stores/styleStore';
+  import type { StyleStep, StyleStrictness } from '$lib/stores/styleStore';
   import { projectStore } from '$lib/stores/projectStore';
   import { fileTreeStore } from '$lib/stores/fileTreeStore';
   import { settingsStore } from '$lib/stores/settingsStore';
@@ -29,6 +29,12 @@
 
   let running: StyleStep | null = null;
   let offlineNotice = false;
+  const strictnessOptions = Object.keys(STRICTNESS_LABEL) as StyleStrictness[];
+  const strictnessHint: Record<StyleStrictness, string> = {
+    flexible: '지침은 지향점 — 장면이 우선, 금지 목록만 준수',
+    balanced: '기본 준수 + 장면 필요 시 20% 내외 이탈 허용',
+    strict: '엄격 준수 — 금지 위반은 실패로 간주'
+  };
 
   $: s = $styleStore;
   $: sampleChars = s.sampleText.replace(/\s/g, '').length;
@@ -290,6 +296,19 @@
               </label>
             {/if}
           </div>
+          {#if s.guideline}
+            <div class="strictness-row">
+              <span class="line-label">적용 강도 — 너무 강하게 강제하면 문장이 딱딱해집니다</span>
+              <div class="strictness-opts">
+                {#each strictnessOptions as st}
+                  <button class="strict-opt" class:on={s.strictness === st} on:click={() => styleStore.update((v) => ({ ...v, strictness: st }))}>
+                    <b>{STRICTNESS_LABEL[st]}</b>
+                    <small>{strictnessHint[st]}</small>
+                  </button>
+                {/each}
+              </div>
+            </div>
+          {/if}
           {#if s.savedPath}<p class="stage-note ok">저장됨: {s.savedPath} — AI 작업 02 바이블과 산출물 보관함에서 확인할 수 있습니다.</p>{/if}
           {#if s.guideline}
             <div class="md-output"><MarkdownPreview content={s.guideline} /></div>
@@ -385,6 +404,13 @@
   }
   .md-output :global(.preview) { border-left: 0; padding: 18px 22px; font-size: 13.5px; line-height: 1.85; }
   .apply-check { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12.5px; }
+  .line-label { color: var(--faint); font-size: 10.5px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+  .strictness-row { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .strictness-opts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; max-width: 640px; }
+  .strict-opt { display: grid; gap: 3px; text-align: left; border: 1px solid var(--line); border-radius: var(--r-md); padding: 9px 11px; }
+  .strict-opt.on { border-color: color-mix(in srgb, var(--accent) 50%, transparent); background: var(--accent-soft); }
+  .strict-opt b { color: var(--text); font-size: 12.5px; }
+  .strict-opt small { color: var(--muted); font-size: 10.5px; line-height: 1.4; }
 
   @media (max-width: 1100px) {
     .style-studio { grid-template-columns: 1fr; }

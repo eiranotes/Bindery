@@ -11,14 +11,23 @@ Updated: 2026-07-03 (산출물 + 문체)
 - [x] Build Tauri macOS `.app` bundle after the changes.
 - [x] Write `docs/GAP_ANALYSIS_A_TO_Z_20260703.md`.
 
-## Next (from gap analysis)
+## Done (2026-07-03 A-to-Z)
 
-- [ ] Episode management: create/switch/status for multiple episodes.
-- [ ] Real export formats (TXT/EPUB first) in `내보내기`.
-- [ ] Sync artifacts to `.bindery/artifacts/` files; feed summarize output back into the setting bible.
-- [ ] Editable plot board; codex item creation UI.
-- [ ] Style-compliance QA gate using the confirmed guideline.
-- [ ] Snapshot restore/compare.
+- [x] Episode management: create/switch/status (초고/퇴고/발행) in the binder `회차` tab.
+- [x] Real export: TXT/HTML compilation into `exports/` (EPUB deferred — needs zip dependency approval).
+- [x] Sync artifacts to `.bindery/artifacts/`; feed summarize output into `canon/summaries/`.
+- [x] Editable plot board (`plot/plot-board.json`); codex item creation UI.
+- [x] Agent-based QA + revision plans with fallback; style-compliance and continuity gates.
+- [x] Snapshot restore/compare with safety snapshot.
+- [x] Project-wide search (⌘⇧F) and editor scene jump.
+- [x] AI drafting parameters (length/creativity/instructions); style strictness (유연/균형/엄격).
+- [x] Standalone macOS build.
+
+## Next
+
+- [ ] EPUB export (requires zip dependency approval).
+- [ ] Drag-and-drop scene reordering on the plot board.
+- [ ] Automated click-through inside the packaged app; Windows runner validation.
 
 - [x] Rebuild `AI 작업` as a staged harness (연결→바이블→실행→검토) with a live status rail.
 - [x] Move AI CLI settings out of the export screen into harness stage `01 연결`.

@@ -23,6 +23,7 @@
   import type { WordStats } from '$lib/editor';
   import { uiStore } from '$lib/stores/uiStore';
   import { gotoStage } from '$lib/stores/pipelineStore';
+  import { recordWriting } from '$lib/stores/statsStore';
   import { writeFile } from '$lib/api/commands';
   import { projectStore } from '$lib/stores/projectStore';
   import { toasts } from '$lib/stores/toastStore';
@@ -41,7 +42,11 @@
   async function saveNow() {
     const s = $editorStore;
     if (!s.path || !s.dirty) return;
-    await writeFile($projectStore.current?.rootPath || 'sample-project', s.path, s.content);
+    const root = $projectStore.current?.rootPath || 'sample-project';
+    await writeFile(root, s.path, s.content);
+    // 집필 통계: 저장 시점 단어 증가분을 날짜별로 누적
+    const prevWords = s.savedContent.trim().split(/\s+/).filter(Boolean).length;
+    recordWriting(root, s.wordCount - prevWords);
     editorStore.update((p) => ({ ...p, savedContent: p.content, dirty: false }));
     toasts.push('저장됨', 'ok');
   }

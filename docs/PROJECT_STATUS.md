@@ -1,12 +1,22 @@
 # Project Status
 
-Updated: 2026-07-03 (산출물 + 문체)
+Updated: 2026-07-03 (A-to-Z 갭 해소)
 
 ## Current State
 
-Bindery is a writing-first macOS/Svelte/Tauri app. Five Korean main tabs — `집필`, `자료`, `문체`, `AI 작업`, `내보내기` — plus topbar `도움말`/`환경설정`. The AI harness (`01 연결 → 02 바이블 → 03 실행 → 04 검토`) now records an artifact for every step in a per-episode shelf, and draft/revise prompts automatically include the latest artifacts plus the style guideline. The `문체` studio turns a pasted sample into a per-scene analysis, scene-type writing rules with ban lists, a proof scene, and a final style guideline saved to `canon/style-guide.md`.
+Bindery is a writing-first macOS/Svelte/Tauri app covering the full local novel workflow: episode management (create/switch/status), writing with scene jump and daily stats, materials (editable plot board, codex item creation), style replication with adjustable enforcement strength, an AI harness whose every step leaves file-synced artifacts that feed drafting (with author-tunable length/creativity/instructions), agent-based QA with style-compliance and continuity gates, snapshot compare/restore, project-wide search, and real TXT/HTML export. Storage is local-only by design.
 
-## Completed (2026-07-03)
+## Completed (2026-07-03, A-to-Z pass)
+
+- Episode `회차` tab (create/switch/초고·퇴고·발행), editable plot board persisted to `plot/plot-board.json`, codex item creation UI.
+- Agent-based QA and revision plans (fallback preserved); style-compliance gate (banned-term scan) and continuity gate (previous episode summary in QA prompt).
+- Artifacts synced to `.bindery/artifacts/`; summarize output fed to `canon/summaries/`.
+- Snapshot compare/restore with automatic safety snapshot; project search (⌘⇧F); editor scene jump; daily writing stats.
+- Real export: TXT/HTML compilation into `exports/` (browser: download). EPUB deferred pending zip dependency approval.
+- AI drafting parameters (분량/창의성/추가 지시) injected into candidate prompts; style guideline strictness (유연/균형/엄격) with deviation-allowing preambles.
+- Verified: svelte-check 0 errors, vite build, cargo check, standalone macOS build, browser click-through (회차 탭, 파라미터→프롬프트 반영, 검색, 내보내기 화면).
+
+## Completed (2026-07-03, 산출물 + 문체)
 
 - Artifact shelf: every pipeline step (context/draft/analyze/qa/revise/summarize/commit) records a per-episode artifact with viewer modal and `집필 반영` badges.
 - Guidance injection: `generate_candidate` accepts a guidance block (bible + style guideline + latest artifacts); prompt preview shows the real assembled prompt.
