@@ -8,9 +8,21 @@
   import { projectStore } from '$lib/stores/projectStore';
   import { runDraftAction } from '$lib/actions/pipeline';
   import { diffLines, applyHunk } from '$lib/domain/diff';
+  import { styleStore } from '$lib/stores/styleStore';
+  import { scoreStyleMatch } from '$lib/domain/style';
 
   $: active = $candidateStore.candidates.find((c) => c.id === $candidateStore.activeId) || null;
   $: diff = active ? diffLines($editorStore.content, active.content) : null;
+
+  // 문체 시스템에 프리셋이 있으면 후보별 문체 부합도를 매겨 검토 판단을 돕는다.
+  $: styleProfile = $styleStore.presets[0] ?? null;
+  $: candidateScores = (() => {
+    const profile = styleProfile;
+    if (!profile) return {} as Record<string, number>;
+    return Object.fromEntries(
+      $candidateStore.candidates.map((c) => [c.id, Math.round(scoreStyleMatch(c.content, profile).total_score * 100)])
+    );
+  })();
 
   function select(id: string) {
     candidateStore.update((s) => ({ ...s, activeId: id }));
@@ -60,6 +72,7 @@
       {#each $candidateStore.candidates as c}
         <button class="cand-tab" class:on={c.id === $candidateStore.activeId} on:click={() => select(c.id)}>
           {c.label}
+          {#if candidateScores[c.id] !== undefined}<span class="cand-score">{candidateScores[c.id]}</span>{/if}
         </button>
       {/each}
     </div>
@@ -80,6 +93,9 @@
   {:else}
     <div class="cand-source">
       {active.source}
+      {#if styleProfile && candidateScores[active.id] !== undefined}
+        <span class="style-fit" title="문체 시스템 프리셋 기준 부합도(로컬 채점)">문체 부합 {candidateScores[active.id]}/100 · {styleProfile.name}</span>
+      {/if}
       {#if $candidateStore.sessionSnapshotId}
         <span class="snap">스냅샷: {$candidateStore.sessionSnapshotId}</span>
       {/if}
@@ -102,6 +118,8 @@
   .cand-tabs { display: flex; gap: 6px; overflow-x: auto; }
   .cand-tab { padding: 6px 11px; border-radius: 9px; background: var(--hover); border: 1px solid transparent; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
   .cand-tab.on { color: var(--text); border-color: var(--accent-2); background: var(--accent-2-soft); }
+  .cand-score { margin-left: 6px; font-variant-numeric: tabular-nums; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 0 6px; font-size: 11px; font-weight: 700; }
+  .style-fit { color: var(--accent); border: 1px solid var(--line); border-radius: 999px; padding: 2px 7px; font-variant-numeric: tabular-nums; }
   .cand-actions { display: flex; gap: 6px; }
   .tiny { padding: 5px 9px; font-size: 11.5px; }
   .cand-source { padding: 6px 12px; font-family: ui-monospace, monospace; font-size: 11px; color: var(--faint); display:flex; gap: 12px; align-items:center; }

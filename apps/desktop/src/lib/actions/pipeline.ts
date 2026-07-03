@@ -11,7 +11,8 @@ import {
   scanCodexLinks,
   getPlotGrid,
   readFile,
-  writeFile
+  writeFile,
+  createSnapshot
 } from '$lib/api/commands';
 import { parseQAReport, parseRevisionPlan } from '$lib/domain/reports';
 import type { QAIssue } from '$lib/domain/reports';
@@ -153,6 +154,101 @@ export async function runRevisionAction() {
     revisionStore.update((s) => ({ ...s, generating: false }));
     toasts.push('수정 계획 생성 실패', 'bad');
   }
+}
+
+/** 컨텍스트 팩 — 이전 회차 요약, 원고에 등장하는 설정 항목, 열린 떡밥을 모아
+ *  집필 입력을 구성한다. 결과는 집필 프롬프트의 「컨텍스트 팩」 블록으로 자동 반영된다. */
+export async function runContextAction() {
+  const ep = episode();
+  const prev = prevEpisode(ep);
+  const prevSummary = prev ? latestArtifact('summarize', prev) : null;
+  let openThreads = '';
+  try {
+    openThreads = await readFile(projectRoot(), 'plot/open-threads.md');
+  } catch {
+    /* 열린 떡밥 파일이 없을 수 있음 */
+  }
+  const manuscript = get(editorStore).content;
+  const relevant = get(codexStore).items.filter((c) => manuscript.includes(c.name));
+  const content = [
+    `# 컨텍스트 팩 — ${ep}`,
+    '',
+    '## 이전 회차 요약',
+    prevSummary ? prevSummary.content.slice(0, 1200) : prev ? `(${prev} 요약 없음 — 요약 단계를 먼저 실행하면 연속성이 강해집니다)` : '(첫 회차입니다)',
+    '',
+    '## 관련 설정 항목 (원고에 등장)',
+    relevant.length ? relevant.map((c) => `- ${c.name} (${c.type}): ${c.summary ?? ''}`).join('\n') : '(원고에서 감지된 설정 항목이 없습니다)',
+    '',
+    '## 열린 떡밥',
+    openThreads.trim() ? openThreads.trim().slice(0, 800) : '(plot/open-threads.md 없음)'
+  ].join('\n');
+  recordArtifact('context', ep, '컨텍스트 팩', content);
+  toasts.push('컨텍스트 팩 구성됨 · 초안 프롬프트에 반영', 'ok');
+}
+
+/** 회차 요약 — 에이전트로 원고를 요약하고, 실패 시 로컬 요약으로 폴백한다.
+ *  결과는 canon/summaries/{ep}.md로 환류돼 다음 회차 연속성 게이트가 참조한다. */
+export async function runSummarizeAction() {
+  const ep = episode();
+  const manuscript = get(editorStore).content;
+  const prompt = [
+    '너는 한국어 연재소설 편집자다. 아래 원고를 다음 회차 집필과 연속성 검사에 쓸 요약으로 정리하라.',
+    '아래 마크다운 형식을 그대로 채워라. 설명 문장은 넣지 말고 요약만 쓴다.',
+    '## 한 줄 요약',
+    '- (한 문장)',
+    '## 장면 흐름',
+    '- (사건 순서대로 3~5개)',
+    '## 인물 상태 변화',
+    '- 인물: 무엇이 바뀌었는지',
+    '## 열린 떡밥',
+    '- (다음 회차로 넘어가는 미해결 요소)',
+    '',
+    `## 원고 (${ep})`,
+    manuscript.slice(0, 8000)
+  ].join('\n');
+  const agent = await runAgentText(projectRoot(), prompt, `summarize-${ep}`);
+  const summary = agent.ok && agent.text.trim() ? agent.text.trim() : localSummary(manuscript);
+  recordArtifact('summarize', ep, agent.ok && agent.text.trim() ? '회차 요약' : '회차 요약(오프라인)', summary);
+  await writeFile(projectRoot(), `canon/summaries/${ep}.md`, `# ${ep} 요약\n\n${summary}\n`).catch(() => {});
+  toasts.push(agent.ok && agent.text.trim() ? '회차 요약 생성됨 · canon/summaries 반영' : '오프라인 요약 생성됨 · canon/summaries 반영', agent.ok && agent.text.trim() ? 'ok' : 'warn');
+}
+
+/** AI 미연결 시 폴백 — 원고 앞부분과 기본 통계로 최소 요약을 만든다(정직하게 오프라인임을 표시). */
+function localSummary(manuscript: string): string {
+  const body = manuscript
+    .replace(/^---[\s\S]*?\n---\n?/, '')
+    .replace(/^#.*$/gm, '')
+    .trim();
+  const chars = body.replace(/\s/g, '').length;
+  const paras = body.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  const lead = paras.slice(0, 2).join(' ').slice(0, 180);
+  return [
+    '## 한 줄 요약',
+    `- ${lead ? `${lead}…` : '(원고 내용 없음)'}`,
+    '## 통계',
+    `- 공백 제외 ${chars.toLocaleString()}자 · 문단 ${paras.length}개`,
+    '',
+    '> AI 실행기 미연결 상태의 오프라인 요약입니다. 연결 후 다시 실행하면 장면 흐름·인물 상태·떡밥이 채워집니다.'
+  ].join('\n');
+}
+
+/** 기록 — 현재 원고를 스냅샷하고 기록 저널 산출물을 남긴다. */
+export async function runCommitAction() {
+  const ep = episode();
+  const ed = get(editorStore);
+  const target = ed.path || 'manuscript.md';
+  const snap = await createSnapshot(projectRoot(), target, `${ep} 파이프라인 기록`, ed.content);
+  const journal = [
+    `# 기록 — ${ep}`,
+    '',
+    `- 시각: ${new Date().toLocaleString()}`,
+    `- 대상: ${target}`,
+    `- 스냅샷: ${snap.id}`,
+    `- sha256: ${snap.sha256}`,
+    `- 분량: 공백 제외 ${ed.content.replace(/\s/g, '').length.toLocaleString()}자`
+  ].join('\n');
+  recordArtifact('commit', ep, '기록 저널', journal);
+  toasts.push(`스냅샷 기록됨: ${snap.id}`, 'ok');
 }
 
 export async function runDraftAction(kind: 'draft' | 'revise' | 'continue' | 'rewrite' = 'draft') {

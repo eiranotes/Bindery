@@ -13,16 +13,15 @@
   import { codexStore } from '$lib/stores/codexStore';
   import { candidateStore } from '$lib/stores/candidateStore';
   import { qaStore } from '$lib/stores/qaStore';
-  import { jobStore } from '$lib/stores/jobStore';
-  import { artifactStore, artifactsForEpisode, recordArtifact } from '$lib/stores/artifactStore';
+  import { artifactStore, artifactsForEpisode } from '$lib/stores/artifactStore';
   import type { Artifact } from '$lib/stores/artifactStore';
   import { styleStore, STRICTNESS_LABEL } from '$lib/stores/styleStore';
   import type { StyleStrictness } from '$lib/stores/styleStore';
   import { draftParamsStore, CREATIVITY_LABEL } from '$lib/stores/draftParamsStore';
   import type { Creativity } from '$lib/stores/draftParamsStore';
   import { toasts } from '$lib/stores/toastStore';
-  import { testAgentCli, runNovelctl, writeFile, listTree } from '$lib/api/commands';
-  import { runQAAction, runRevisionAction, runDraftAction, runAnalyzeAction } from '$lib/actions/pipeline';
+  import { testAgentCli, writeFile, listTree } from '$lib/api/commands';
+  import { runQAAction, runRevisionAction, runDraftAction, runAnalyzeAction, runContextAction, runSummarizeAction, runCommitAction } from '$lib/actions/pipeline';
   import { openFileInEditor } from '$lib/actions/project';
   import { buildGuidanceText } from '$lib/domain/guidance';
   import { assemblePrompt, STEP_META } from '$lib/domain/prompt';
@@ -151,33 +150,14 @@
     return m?.[1] || $episodeStore.currentEpisode || 'ep001';
   }
 
-  const novelctlLabel: Record<string, string> = { context: '컨텍스트 팩', summarize: '회차 요약', commit: '기록 로그' };
-
-  async function novelctl(step: 'context' | 'summarize' | 'commit') {
-    const ep = currentEpisode();
-    const id = `${step}-${Date.now()}`;
-    jobStore.update((jobs) => [{ id, createdAt: new Date().toISOString(), label: `${step} ${ep}`, status: 'running', ok: false, command: ['novelctl', step, ep], stdout: '', stderr: '', exitCode: null }, ...jobs]);
-    const result = await runNovelctl($projectStore.current?.rootPath || 'sample-project', [step, ep, '--json']);
-    jobStore.update((jobs) => jobs.map((j) => (j.id === id ? { ...j, ...result, status: result.ok ? 'ok' : 'failed' } : j)));
-    if (!result.ok) throw new Error(result.stderr || `novelctl ${step} 실패`);
-    const body = [result.stdout.trim(), result.outputFiles?.length ? `출력 파일: ${result.outputFiles.join(', ')}` : ''].filter(Boolean).join('\n\n');
-    recordArtifact(step, ep, novelctlLabel[step] ?? step, body || '(빈 출력)');
-    if (step === 'summarize' && body.trim()) {
-      // 요약을 시리즈 바이블로 환류 — canon/summaries/{ep}.md 는 바이블 감지 대상이라
-      // 다음 회차 파이프라인과 연속성 검사가 자동으로 참조한다.
-      const root = $projectStore.current?.rootPath || 'sample-project';
-      await writeFile(root, `canon/summaries/${ep}.md`, `# ${ep} 요약\n\n${body}\n`).catch(() => {});
-    }
-  }
-
   const runners: Record<PipelineStep, () => void | Promise<void>> = {
-    context: () => novelctl('context'),
+    context: runContextAction,
     draft: () => runDraftAction(draftKind),
     analyze: () => runAnalyzeAction(),
     qa: runQAAction,
     revise: runRevisionAction,
-    summarize: () => novelctl('summarize'),
-    commit: () => novelctl('commit')
+    summarize: runSummarizeAction,
+    commit: runCommitAction
   };
 
   async function run(step: PipelineStep) {

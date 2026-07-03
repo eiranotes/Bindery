@@ -4,11 +4,28 @@ import { get } from 'svelte/store';
 import { latestArtifact } from '$lib/stores/artifactStore';
 import { styleStore } from '$lib/stores/styleStore';
 import type { StyleStrictness } from '$lib/stores/styleStore';
+import type { PromptCapsule } from '$lib/domain/style';
 import { draftParamsStore, CREATIVITY_DIRECTIVE, CREATIVITY_LABEL } from '$lib/stores/draftParamsStore';
 
 function clip(text: string, max: number): string {
   const t = text.trim();
   return t.length > max ? `${t.slice(0, max)}\n…(생략)` : t;
+}
+
+/** 문체 시스템에서 라우팅된 PromptCapsule을 집필 프롬프트용 규칙 블록으로 렌더한다. */
+function renderCapsule(capsule: PromptCapsule): string {
+  const lines: string[] = [`장면 유형: ${capsule.scene_type} · register: ${capsule.style_register}`];
+  const add = (label: string, items: string[]) => {
+    const list = items.filter((s) => s && s.trim());
+    if (list.length) lines.push(`- ${label}: ${list.join(' / ')}`);
+  };
+  add('전역 규칙', capsule.global_rules);
+  add('유형 규칙', capsule.register_rules);
+  add('중첩 규칙', capsule.overlay_rules);
+  add('인물 규칙', capsule.character_rules);
+  add('금지', capsule.negative_rules);
+  add('자가 점검', capsule.self_checklist);
+  return lines.join('\n');
 }
 
 export type GuidanceSection = { label: string; source: string; content: string };
@@ -42,6 +59,15 @@ export function collectGuidance(episode: string): GuidanceSection[] {
       label: `문체 지침서 (적용 강도: ${style.strictness === 'flexible' ? '유연' : style.strictness === 'strict' ? '엄격' : '균형'})`,
       source: '문체 스튜디오',
       content: `${STRICTNESS_PREAMBLE[style.strictness]}\n\n${clip(style.guideline, 2400)}`
+    });
+  }
+
+  // 문체 시스템에서 장면 라우팅으로 만든 캡슐이 있으면 구조화된 규칙을 함께 전달한다.
+  if (style.applyToDraft && style.promptCapsule) {
+    sections.push({
+      label: '문체 캡슐 (장면 라우팅 규칙)',
+      source: '문체 시스템',
+      content: renderCapsule(style.promptCapsule)
     });
   }
 
