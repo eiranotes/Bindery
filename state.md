@@ -13,7 +13,7 @@
   - Top navigation reduced from five tabs to three (`집필 · 자료 · 작업실`); `문체`/`AI`/`내보내기` are folded under one `작업실` surface with a slim sub-nav in `MainSurface.svelte` (`studioViews`/`isStudioView` in `uiStore.ts`).
   - Flattened the materials/export/help surfaces: `panel-slim` and `help-panel` lost their rounded card/background chrome in favor of hairline-divided full-width sections (`app.css`).
   - `StyleSystemPanel.svelte` was already band/hairline based, so it was left as-is.
-  - Remaining polish (not blocking): unify the AI/style rails into one full-bleed surface; Muvel-style editor widgets; a Pensive-style per-episode book map.
+  - Remaining polish (not blocking): unify the AI/style rails into one full-bleed surface; Muvel-style editor widgets (timer/memo/dictionary/episode reference). (The earlier "book map" idea was from pensive.me, a separate US AI studio, not the Korean pensive.so/Muvel references, so it was dropped.)
 - Verification this pass: svelte-check 0/0, Python 18 tests OK, TS/analyzer smoke OK, browser click-through (3 top tabs, studio sub-nav, navigator gating, flattened panels) with 0 console errors.
 - Coordination note: Codex was actively committing during this session and swept the working tree into its commits (`501064e`, `e676d1e`); this session's later work is committed under `2931f49`, `e4dfd54`, and the docs commit that follows.
 

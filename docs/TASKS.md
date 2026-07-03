@@ -18,7 +18,10 @@ Updated: 2026-07-03 (파이프라인 갭 마감 + UI 재편 착수)
 
 - [ ] Unify the AI and style studio rails into one calm full-bleed surface language.
 - [ ] Add Muvel-style optional editor widgets (timer, quick memo, dictionary, episode reference).
-- [ ] Add a Pensive-style book map (per-episode planned/drafted/QA/snapshot status).
+
+Reference note: the UI direction follows pensive.so and Muvel (뮤블), the Korean
+programs named for this project. The earlier "book map" idea came from pensive.me,
+a separate US AI book-writing studio, so it was dropped from this backlog.
 
 ## Done
 
