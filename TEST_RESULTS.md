@@ -12,11 +12,12 @@ npm run build
 python3 scripts/verify_static.py
 cargo fmt --check
 cargo check
+Chrome DevTools visual QA at 1280/768/390 for `문체 시스템`
 ```
 
 ## Result
 
-- Python unittest: 13 tests, OK.
+- Python unittest: 18 tests, OK.
 - TypeScript smoke test: OK.
 - Scene grouping smoke test: OK.
 - Python compileall: OK.
@@ -25,8 +26,10 @@ cargo check
 - Static project verification: OK.
 - Rust format check: OK.
 - Rust cargo check: OK.
+- Visual QA: PASS at 1280/768/390; no body horizontal overflow, detected overlap, or unclipped control overflow.
 
 ## Notes
 
-- Tauri `.app`/DMG rebuild was not run in this pass because the patch only changed TypeScript/Python style analysis and docs.
+- Tauri `.app`/DMG rebuild was not run in this pass because Phase 2 changed source/runtime/UI and the normal production build plus Rust checks passed.
 - The Vite build still emits the known chunk-size warning for the main app chunk.
+- Visual QA evidence: `.superloopy/evidence/frontend/20260703-phase2-style-system/VISUAL_QA.md`.

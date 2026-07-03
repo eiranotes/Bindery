@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-07-03 (문체 시스템 Phase 2 완료)
+
+- Added `novelctl style-sync` for syncing project `styles/` JSON into `.bindery/style-system.sqlite3` with a `styles/style-repository.json` summary.
+- Added the `문체 시스템` stage with Preset Manager, Stack Mixer, Router Editor, Scene Override, Score Lab, Suggestion Lab, and SkillPack export preview.
+- Expanded Korean style analysis with deterministic surface counts for morphology-like endings/particles, action verbs, judgment markers, relationship markers, emotion markers, and manual speaker correction policy.
+- Hardened StyleMatch scoring with feature-based discourse, dialogue, lexical, fluency, leakage, register mismatch, and overfit diagnostics.
+- Added structured-output schema manifests and guards so LLM correction/suggestion output cannot set the authoritative local score.
+- Added SkillPack validator, zip export path, reference loading policy, Korean marker manifest, structured schema manifest, and regression fixture files.
+
 ## 2026-07-03 (문체 시스템 Phase 2 시작)
 
 - Added native Tauri style commands for `classify_style_scene`, `resolve_style_route`, `build_prompt_capsule`, `score_style_match`, and `export_style_skill_pack`.

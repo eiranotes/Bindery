@@ -17,7 +17,9 @@
 
 ### 새로 추가한 파일
 - `apps/desktop/src/lib/domain/styleSystem.ts`
+- `apps/desktop/src/lib/components/style/StyleSystemPanel.svelte`
 - `packages/novelctl-core/novelctl/style_system.py`
+- `packages/novelctl-core/novelctl/migrations/001_style_system.sql`
 - `tests/test_style_system.py`
 - `tests/styleSystem.node.test.mjs`
 - `analysis_report.md`
@@ -60,12 +62,27 @@
 
 ### StyleMatchScorer
 - `scoreStyleMatch()` / `score_style_match()` 구현.
-- total_score, global_fit, register_fit, scene_classification_fit, leakage_penalty, register_mismatch_penalty, diagnostics 포함.
+- total_score, global_fit, register_fit, scene_classification_fit, rhythm_fit, discourse_fit, dialogue_fit, lexical_fit, fluency, leakage_penalty, register_mismatch_penalty, overfit_penalty, diagnostics 포함.
+- Phase 2에서 discourse/dialogue/lexical/fluency가 상수값이 아니라 scene feature, baseline, rule word contact, repetition signal로 계산된다.
 
 ### SkillPack export
 - TS: `buildStyleSkillPackFiles()` virtual files.
 - Python: `export_style_skill_pack()` actual file output.
-- CLI: `style-export-skill`.
+- CLI: `style-export-skill`, `style-validate-skill`.
+- Validator, zip exporter, reference loading policy, regression fixture, structured-output schema manifest, Korean marker manifest를 포함한다.
+
+### Repository sync
+- `novelctl style-sync` 구현.
+- `styles/profiles`, `styles/presets`, `styles/stacks`, `styles/routers`, `styles/classifications`, `styles/reports` JSON을 `.bindery/style-system.sqlite3`로 upsert한다.
+- `styles/style-repository.json`에 sync policy와 count를 기록한다.
+
+### Korean NLP / surface analysis
+- 외부 형태소 의존성 없이 deterministic MVP로 eojeol, 어미, 조사, 존대, 행동 동사, 판단어, 관계 표지, 감정어를 카운트한다.
+- 화자 식별은 자동 확정하지 않고 후보와 `manual_speaker_correction_first` 정책으로 노출한다.
+
+### Phase 2 UI
+- `문체 시스템` stage 추가.
+- Preset Manager, Stack Mixer, Router Editor, Scene Override, Score Lab, Suggestion Lab, SkillPack export preview 구현.
 
 ## 3. 테스트 결과
 
@@ -73,14 +90,15 @@
 - SceneClassifier: 5개.
 - StyleRouter: 4개.
 - PromptCapsule/merge/scoring: 2개.
-- SkillPack/CLI: 2개.
+- Repository/NLP: 2개.
+- SkillPack/CLI: 4개.
 - TS smoke: 1개 script.
 
 ### 실행 결과
 
 ```bash
 python3 -m unittest discover -s tests -v
-# Ran 13 tests in 1.785s
+# Ran 18 tests
 # OK
 
 node --experimental-strip-types tests/styleSystem.node.test.mjs
@@ -89,10 +107,6 @@ node --experimental-strip-types tests/styleSystem.node.test.mjs
 python3 -m compileall -q packages/novelctl-core/novelctl
 # OK
 ```
-
-### 실패 또는 보류
-- TypeScript full project build는 업로드본에 `package.json`/`tsconfig.json`이 없어 실행하지 않았다.
-- Tauri build는 전체 프로젝트 파일이 없어 실행하지 않았다.
 
 ### Bindery 적용 후 추가 검증
 
@@ -111,7 +125,7 @@ python3 -m compileall -q packages/novelctl-core/novelctl
 ### LLM 사용 위치와 규칙 기반 처리 위치
 - 구현된 MVP는 규칙 기반.
 - LLM은 기존 `runAgentText()` workflow에서 감성·거리감 해석 보강용으로 남김.
-- structured output 보정은 Phase 2.
+- structured output 보정 schema는 Phase 2에서 추가했지만 총점 산출 권한은 로컬 scorer에 남김.
 
 ### 과적합 방지 로직
 - `content_terms` leakage penalty.
@@ -125,17 +139,20 @@ python3 -m compileall -q packages/novelctl-core/novelctl
 
 ## 5. 남은 작업
 
-- SQLite repository sync between project `styles/` JSON and SQLite.
-- Preset Manager/Stack Mixer/Router Editor UI.
-- 한국어 형태소 분석기.
-- LLM structured correction.
-- 고급 scoring.
-- SkillPack validator/zip exporter.
+- 외부 형태소기 연동은 아직 하지 않았다. 현재는 dependency-free deterministic surface analyzer다.
+- Windows runner와 packaged `.app` click-through는 별도 검증 항목으로 남아 있다.
 
 ## 7. Phase 2 시작 반영
 
 - Tauri style commands were added as Python `novelctl` runtime adapters: `classify_style_scene`, `resolve_style_route`, `build_prompt_capsule`, `score_style_match`, `export_style_skill_pack`.
 - The MVP SQLite schema now lives in `packages/novelctl-core/novelctl/migrations/001_style_system.sql`; `SQLITE_SCHEMA` and `novelctl style-sql` read that migration-backed content.
+
+## 8. Phase 2 완료 반영
+
+- `style-sync`, `style-structured-schemas`, `style-korean-nlp`, `style-validate-skill` CLI 추가.
+- `StyleSystemPanel.svelte`로 Phase 2 관리 UI 추가.
+- Score Lab과 Suggestion Lab은 로컬 scorer와 Korean surface report를 사용한다.
+- SkillPack export는 validation report와 zip path를 지원한다.
 
 ## 6. 사용법
 
@@ -167,4 +184,18 @@ novelctl style-score . --text "..." --style-json stack.json --classification-jso
 
 ```bash
 novelctl style-export-skill . --style-json style_payload.json --output-dir exports --project-id proj --json
+```
+
+### CLI repository sync
+
+```bash
+novelctl style-sync . --json
+```
+
+### CLI structured schema / Korean surface / validation
+
+```bash
+novelctl style-structured-schemas . --json
+novelctl style-korean-nlp . --text "..." --speaker "에이라" --json
+novelctl style-validate-skill . --skill-dir exports/bindery-style-runtime --zip-path exports/bindery-style-runtime.zip --json
 ```

@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,13 +21,18 @@ from novelctl.style_system import (  # noqa: E402
     StyleRule,
     StyleStack,
     StyleStackAdapter,
+    STRUCTURED_OUTPUT_SCHEMAS,
+    analyze_korean_surface,
     build_prompt_capsule,
     classify_scene,
     export_style_skill_pack,
     merge_style_stack,
     resolve_active_style_stack,
     score_style_match,
+    sync_style_repository,
     to_plain,
+    validate_style_skill_pack,
+    zip_style_skill_pack,
 )
 
 
@@ -161,6 +167,38 @@ class PromptCapsuleTests(unittest.TestCase):
         self.assertGreaterEqual(report.total_score, 0)
         self.assertLessEqual(report.total_score, 1)
         self.assertIsInstance(report.diagnostics, list)
+        self.assertTrue(any("discourse_fit=" in item for item in report.diagnostics))
+        self.assertGreaterEqual(report.fluency, 0)
+
+
+class RepositoryAndNlpTests(unittest.TestCase):
+    def test_style_repository_sync_indexes_project_json(self):
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            (tmp / "styles/presets").mkdir(parents=True)
+            (tmp / "styles/stacks").mkdir(parents=True)
+            (tmp / "styles/routers").mkdir(parents=True)
+            (tmp / "styles/classifications").mkdir(parents=True)
+            (tmp / "styles/reports").mkdir(parents=True)
+            (tmp / "styles/presets/preset_001.json").write_text(json.dumps({"preset_id": "preset_001", "name": "Preset", "preset_type": "mixed"}), encoding="utf-8")
+            (tmp / "styles/stacks/stack_001.json").write_text(json.dumps({"stack_id": "stack_001", "name": "Stack"}), encoding="utf-8")
+            (tmp / "styles/routers/router.json").write_text(json.dumps({"router_id": "router_001", "rules": [{"rule_id": "route_001", "target_type": "project_default", "target_value": "*", "stack_id": "stack_001"}]}), encoding="utf-8")
+            (tmp / "styles/classifications/S001.json").write_text(json.dumps(to_plain(classify_scene(dialogue_scene(), {"scene_id": "S001"}))), encoding="utf-8")
+            (tmp / "styles/reports/report_001.json").write_text(json.dumps({"report_id": "report_001", "total_score": 0.8, "stack_id": "stack_001"}), encoding="utf-8")
+            summary = sync_style_repository(tmp)
+            self.assertTrue(Path(summary["db_path"]).exists())
+            self.assertEqual(summary["counts"]["presets"], 1)
+            self.assertEqual(summary["counts"]["router_rules"], 1)
+            self.assertTrue((tmp / "styles/style-repository.json").exists())
+        finally:
+            shutil.rmtree(tmp)
+
+    def test_korean_surface_report_marks_manual_speaker_policy(self):
+        report = analyze_korean_surface(dialogue_scene(), ["에이라"])
+        self.assertTrue(report["dialogue"]["manual_speaker_correction_first"])
+        self.assertGreater(report["dialogue"]["quoted_block_count"], 0)
+        self.assertTrue(report["relationship_markers"])
+        self.assertIn("scene_classification", STRUCTURED_OUTPUT_SCHEMAS)
 
 
 class SkillPackExportTests(unittest.TestCase):
@@ -183,11 +221,23 @@ class SkillPackExportTests(unittest.TestCase):
                 "references/writing-workflow.md",
                 "references/scoring-rubric.md",
                 "references/leakage-rules.md",
+                "references/reference-policy.md",
+                "references/regression-fixture.json",
+                "references/structured-output-schemas.json",
+                "references/korean-nlp-markers.json",
+                "scripts/validate_skill_pack.py",
+                "validation-report.json",
                 "references/presets/preset_001.md",
                 "references/stacks/stack_001.md",
             ]
             for rel in required:
                 self.assertTrue((root / rel).exists(), rel)
+            validation = validate_style_skill_pack(root)
+            self.assertTrue(validation["ok"], validation)
+            zip_path = zip_style_skill_pack(root, tmp / "style-runtime.zip")
+            self.assertTrue(zip_path.exists())
+            with zipfile.ZipFile(zip_path) as zf:
+                self.assertIn("bindery-style-runtime/SKILL.md", zf.namelist())
         finally:
             shutil.rmtree(tmp)
 
@@ -204,6 +254,16 @@ class SkillPackExportTests(unittest.TestCase):
         data = json.loads(result.stdout)
         self.assertTrue(data["ok"])
         self.assertIn("CREATE TABLE IF NOT EXISTS style_profiles", data["data"]["schema"])
+
+    def test_cli_structured_schema_and_korean_nlp(self):
+        schema_cmd = [sys.executable, str(ROOT / "packages" / "novelctl-core" / "novelctl" / "cli.py"), "style-structured-schemas", str(ROOT), "--json"]
+        schema_result = subprocess.run(schema_cmd, text=True, capture_output=True, check=True)
+        schema_data = json.loads(schema_result.stdout)
+        self.assertIn("scoring_explanation", schema_data["data"]["schemas"])
+        nlp_cmd = [sys.executable, str(ROOT / "packages" / "novelctl-core" / "novelctl" / "cli.py"), "style-korean-nlp", str(ROOT), "--text", dialogue_scene(), "--speaker", "에이라", "--json"]
+        nlp_result = subprocess.run(nlp_cmd, text=True, capture_output=True, check=True)
+        nlp_data = json.loads(nlp_result.stdout)
+        self.assertTrue(nlp_data["data"]["dialogue"]["manual_speaker_correction_first"])
 
 
 if __name__ == "__main__":

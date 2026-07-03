@@ -1,6 +1,6 @@
 # Tasks
 
-Updated: 2026-07-03 (문체 시스템 Phase 2 시작)
+Updated: 2026-07-03 (문체 시스템 Phase 2 완료)
 
 ## Done
 
@@ -9,6 +9,12 @@ Updated: 2026-07-03 (문체 시스템 Phase 2 시작)
 - [x] Add `novelctl` style subcommands and local frontend style API entrypoints.
 - [x] Add native Tauri style commands backed by the Python `novelctl` style runtime.
 - [x] Move the MVP SQLite schema into a real migration file while keeping `style-sql` output compatible.
+- [x] Add repository sync between project `styles/` JSON and SQLite (`style-sync`; JSON remains editable source, SQLite is query/index cache).
+- [x] Build the Phase 2 `문체 시스템` UI: Preset Manager, Stack Mixer, Router Editor, scene classification override editor, Score Lab, Suggestion Lab, and SkillPack export preview.
+- [x] Add Korean NLP expansion for morphology-like surface counts, action verbs, judgment markers, relationship markers, emotion dictionaries, and manual speaker correction policy.
+- [x] Add structured LLM correction schemas for SceneClassification, paragraph function tagging, scoring explanation, and suggestions while keeping local scoring authoritative.
+- [x] Harden scoring with feature-based rhythm/discourse/dialogue/lexical/fluency, content leakage review diagnostics, and overfit penalties.
+- [x] Add SkillPack validator, zip exporter, reference loading policy, structured schema manifest, Korean marker manifest, and regression fixtures.
 - [x] Show SceneClassification/register rows in the `문체` analyzer UI.
 - [x] Fix scene candidate segmentation so sentence-separated text is grouped instead of treating every sentence-like paragraph as a separate scene.
 - [x] Add regression coverage for sentence-separated style samples.
@@ -41,12 +47,6 @@ Updated: 2026-07-03 (문체 시스템 Phase 2 시작)
 
 ## Next
 
-- [ ] Add repository sync between project `styles/` JSON and SQLite.
-- [ ] Build Preset Manager, Stack Mixer, Router Editor, scene classification override editor, Score Lab, and Suggestion Lab.
-- [ ] Add Korean NLP expansion for morphology, action verbs, judgment markers, relationship markers, emotion dictionaries, and manual speaker correction.
-- [ ] Add structured LLM correction schemas for SceneClassification, paragraph function tagging, scoring explanation, and suggestions while keeping local scoring authoritative.
-- [ ] Harden scoring with feature-based rhythm/discourse/dialogue/lexical/fluency, content leakage review, and overfit penalties.
-- [ ] Add SkillPack validator, zip exporter, reference loading policy, and regression fixtures.
 - [ ] Add a user preference to remember the sidebar collapsed state across app launches.
 - [ ] Add a native folder picker for `기존 폴더` so users do not need to paste absolute paths.
 - [ ] Add manual scene split/merge and evidence confirmation editing for the analyzer.

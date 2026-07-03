@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import {
+  STRUCTURED_OUTPUT_SCHEMAS,
+  analyzeKoreanSurface,
   buildPromptCapsule,
   buildStyleSkillPackFiles,
   classifyScene,
@@ -64,8 +66,17 @@ assert.ok(capsule.fewshot_refs.length <= 2);
 
 const report = scoreStyleMatch(text, stack, cls);
 assert.ok(report.total_score >= 0 && report.total_score <= 1);
+assert.ok(report.diagnostics.some((item) => item.startsWith('discourse_fit=')));
+
+const korean = analyzeKoreanSurface(text, ['에이라']);
+assert.equal(korean.dialogue.manual_speaker_correction_first, true);
+assert.ok(korean.relationship_markers);
+assert.ok(STRUCTURED_OUTPUT_SCHEMAS.scoring_explanation);
 
 const files = buildStyleSkillPackFiles('proj', [preset], [stack], router);
 assert.ok(files.some((f) => f.path === 'SKILL.md'));
 assert.ok(files.some((f) => f.path === 'references/scene-classification.md'));
+assert.ok(files.some((f) => f.path === 'references/reference-policy.md'));
+assert.ok(files.some((f) => f.path === 'references/regression-fixture.json'));
+assert.ok(files.some((f) => f.path === 'references/structured-output-schemas.json'));
 console.log('styleSystem TS smoke tests ok');

@@ -14,7 +14,9 @@ import hashlib
 import json
 import math
 import re
+import sqlite3
 from typing import Any, Literal
+import zipfile
 
 SceneTag = Literal["OBS", "DIA", "ACT", "INF", "CON", "MOV", "AFT", "TRN", "INT", "REL"]
 StyleRegister = Literal[
@@ -62,12 +64,258 @@ DEFAULT_NEGATIVE_RULES = [
     "primary_type의 register를 secondary overlay가 덮어쓰지 않게 한다.",
     "특정 장면의 사물 나열이나 동선 순서를 전역 문체로 반복하지 않는다.",
 ]
+ACTION_VERB_MARKERS = sorted(set(MARKERS["action_verb_density"] + ["건넸", "꺼냈", "밀어", "눌렀", "찢", "접", "펼", "멈췄"]))
+JUDGMENT_MARKERS = sorted(set(MARKERS["internal_judgment_density"] + ["판단", "확신", "의심", "예상", "결론", "선택"]))
+RELATIONSHIP_MARKERS = sorted(set(MARKERS["relationship_shift_density"] + ["존댓말", "반말", "사과", "거절", "승낙", "경계"]))
+EMOTION_MARKERS = ["슬픔", "불안", "분노", "후회", "두려", "기쁨", "안도", "망설", "당황", "놀라"]
+FEWSHOT_MAX_FILES = 12
+FEWSHOT_MAX_BYTES = 120_000
 
 def _load_sqlite_schema() -> str:
     return (Path(__file__).with_name("migrations") / "001_style_system.sql").read_text(encoding="utf-8").strip()
 
 
 SQLITE_SCHEMA = _load_sqlite_schema()
+
+SCENE_CLASSIFICATION_CORRECTION_SCHEMA: dict[str, Any] = {
+    "name": "scene_classification_correction",
+    "schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["scene_id", "primary_type", "secondary_types", "surface_mode", "style_register", "confidence", "reason"],
+        "properties": {
+            "scene_id": {"type": "string"},
+            "primary_type": {"type": "string", "enum": ALL_SCENE_TAGS},
+            "secondary_types": {"type": "array", "items": {"type": "string", "enum": ALL_SCENE_TAGS}, "maxItems": 4},
+            "surface_mode": {"type": "string"},
+            "style_register": {"type": "string"},
+            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+            "reason": {"type": "string"},
+            "manual_override": {"type": "boolean"},
+        },
+    },
+}
+PARAGRAPH_FUNCTION_TAGGING_SCHEMA: dict[str, Any] = {
+    "name": "paragraph_function_tags",
+    "schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["scene_id", "paragraphs"],
+        "properties": {
+            "scene_id": {"type": "string"},
+            "paragraphs": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["index", "function", "evidence"],
+                    "properties": {
+                        "index": {"type": "integer", "minimum": 0},
+                        "function": {"type": "string"},
+                        "evidence": {"type": "string"},
+                    },
+                },
+            },
+        },
+    },
+}
+SCORING_EXPLANATION_SCHEMA: dict[str, Any] = {
+    "name": "style_score_explanation",
+    "schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["report_id", "explanation", "local_score_used"],
+        "properties": {
+            "report_id": {"type": "string"},
+            "explanation": {"type": "string"},
+            "local_score_used": {"type": "boolean", "const": True},
+            "risk_notes": {"type": "array", "items": {"type": "string"}},
+        },
+    },
+}
+STYLE_SUGGESTION_SCHEMA: dict[str, Any] = {
+    "name": "style_suggestion",
+    "schema": {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["suggestions", "score_guard"],
+        "properties": {
+            "suggestions": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["issue", "suggestion", "local_evidence"],
+                    "properties": {
+                        "issue": {"type": "string"},
+                        "suggestion": {"type": "string"},
+                        "local_evidence": {"type": "string"},
+                    },
+                },
+            },
+            "score_guard": {"type": "string", "enum": ["llm_must_not_set_total_score"]},
+        },
+    },
+}
+STRUCTURED_OUTPUT_SCHEMAS = {
+    "scene_classification": SCENE_CLASSIFICATION_CORRECTION_SCHEMA,
+    "paragraph_functions": PARAGRAPH_FUNCTION_TAGGING_SCHEMA,
+    "scoring_explanation": SCORING_EXPLANATION_SCHEMA,
+    "suggestion": STYLE_SUGGESTION_SCHEMA,
+}
+
+
+def _now() -> str:
+    return _dt.datetime.now(_dt.timezone.utc).isoformat()
+
+
+def migration_files() -> list[Path]:
+    return sorted((Path(__file__).with_name("migrations")).glob("*.sql"))
+
+
+def style_db_path(project: Path) -> Path:
+    return project / ".bindery" / "style-system.sqlite3"
+
+
+def apply_style_migrations(project: Path) -> Path:
+    db_path = style_db_path(project)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(db_path) as con:
+        con.execute("CREATE TABLE IF NOT EXISTS style_migrations (name TEXT PRIMARY KEY, applied_at TEXT)")
+        applied = {row[0] for row in con.execute("SELECT name FROM style_migrations")}
+        for migration in migration_files():
+            if migration.name in applied:
+                continue
+            con.executescript(migration.read_text(encoding="utf-8"))
+            con.execute("INSERT INTO style_migrations(name, applied_at) VALUES (?, ?)", (migration.name, _now()))
+        con.commit()
+    return db_path
+
+
+def _read_json_files(root: Path) -> list[dict[str, Any]]:
+    if not root.exists():
+        return []
+    out = []
+    for path in sorted(root.glob("*.json")):
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                out.append(raw)
+        except json.JSONDecodeError:
+            continue
+    return out
+
+
+def _upsert_json(con: sqlite3.Connection, table: str, key: str, key_value: str, json_col: str, payload: dict[str, Any], extra: dict[str, Any]) -> None:
+    columns = [key, *extra.keys(), json_col, "created_at", "updated_at"]
+    values = [key_value, *extra.values(), json.dumps(payload, ensure_ascii=False), payload.get("created_at") or _now(), _now()]
+    placeholders = ", ".join("?" for _ in columns)
+    update = ", ".join(f"{col}=excluded.{col}" for col in [*extra.keys(), json_col, "updated_at"])
+    con.execute(
+        f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders}) ON CONFLICT({key}) DO UPDATE SET {update}",
+        values,
+    )
+
+
+def sync_style_repository(project: Path) -> dict[str, Any]:
+    db_path = apply_style_migrations(project)
+    styles = project / "styles"
+    styles.mkdir(parents=True, exist_ok=True)
+    counts = {"profiles": 0, "presets": 0, "stacks": 0, "router_rules": 0, "classifications": 0, "reports": 0}
+    with sqlite3.connect(db_path) as con:
+        for raw in _read_json_files(styles / "profiles"):
+            profile_id = raw.get("profile_id")
+            if not profile_id:
+                continue
+            _upsert_json(con, "style_profiles", "profile_id", profile_id, "profile_json", raw, {
+                "project_id": raw.get("project_id"),
+                "source_title": raw.get("source_title"),
+                "language": raw.get("language", "ko"),
+            })
+            counts["profiles"] += 1
+        for raw in _read_json_files(styles / "presets"):
+            preset_id = raw.get("preset_id")
+            if not preset_id:
+                continue
+            _upsert_json(con, "style_presets", "preset_id", preset_id, "preset_json", raw, {
+                "project_id": raw.get("project_id"),
+                "name": raw.get("name", preset_id),
+                "description": raw.get("description"),
+                "source_profile_id": raw.get("source_profile_id"),
+                "preset_type": raw.get("preset_type", "mixed"),
+                "default_strength": raw.get("default_strength", 0.75),
+            })
+            counts["presets"] += 1
+        for raw in _read_json_files(styles / "stacks"):
+            stack_id = raw.get("stack_id")
+            if not stack_id:
+                continue
+            _upsert_json(con, "style_stacks", "stack_id", stack_id, "stack_json", raw, {
+                "project_id": raw.get("project_id"),
+                "name": raw.get("name", stack_id),
+                "description": raw.get("description"),
+            })
+            counts["stacks"] += 1
+        routers = _read_json_files(styles / "routers")
+        router_path = styles / "router.json"
+        if router_path.exists():
+            try:
+                raw = json.loads(router_path.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    routers.append(raw)
+            except json.JSONDecodeError:
+                pass
+        for router in routers:
+            router_id = router.get("router_id", "router_default")
+            for rule in router.get("rules", []):
+                rule_id = rule.get("rule_id")
+                if not rule_id:
+                    continue
+                _upsert_json(con, "style_router_rules", "rule_id", rule_id, "rule_json", rule, {
+                    "project_id": router.get("project_id"),
+                    "router_id": router_id,
+                    "target_type": rule.get("target_type"),
+                    "target_value": rule.get("target_value"),
+                    "stack_id": rule.get("stack_id"),
+                    "priority": rule.get("priority", 0),
+                })
+                counts["router_rules"] += 1
+        for raw in _read_json_files(styles / "classifications"):
+            scene_id = raw.get("scene_id")
+            if not scene_id:
+                continue
+            _upsert_json(con, "scene_classifications", "scene_id", scene_id, "classification_json", raw, {
+                "project_id": raw.get("project_id"),
+                "chapter_id": raw.get("chapter_id"),
+                "primary_type": raw.get("primary_type"),
+                "secondary_types_json": json.dumps(raw.get("secondary_types", []), ensure_ascii=False),
+                "surface_mode": raw.get("surface_mode"),
+                "narrative_functions_json": json.dumps(raw.get("narrative_functions", []), ensure_ascii=False),
+                "style_register": raw.get("style_register"),
+                "confidence": raw.get("confidence", 0),
+                "manual_override": 1 if raw.get("manual_override") else 0,
+            })
+            counts["classifications"] += 1
+        for raw in _read_json_files(styles / "reports"):
+            report_id = raw.get("report_id")
+            if not report_id:
+                continue
+            _upsert_json(con, "style_match_reports", "report_id", report_id, "report_json", raw, {
+                "project_id": raw.get("project_id"),
+                "target_text_id": raw.get("target_text_id"),
+                "stack_id": raw.get("stack_id"),
+                "total_score": raw.get("total_score", 0),
+            })
+            counts["reports"] += 1
+        con.commit()
+    summary = {
+        "db_path": str(db_path),
+        "styles_dir": str(styles),
+        "sync_policy": "styles/*.json is the editable source; SQLite is a query/index cache rebuilt by style-sync.",
+        "counts": counts,
+    }
+    (styles / "style-repository.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    return summary
 
 
 @dataclass
@@ -281,7 +529,7 @@ def to_plain(obj: Any) -> Any:
 
 
 def _id(prefix: str, seed: str = "") -> str:
-    seed = seed or f"{prefix}-{_dt.datetime.now(_dt.UTC).isoformat()}"
+    seed = seed or f"{prefix}-{_dt.datetime.now(_dt.timezone.utc).isoformat()}"
     return f"{prefix}_{hashlib.sha1(seed.encode('utf-8')).hexdigest()[:10]}"
 
 
@@ -317,20 +565,77 @@ def _density(text: str, marker_key: str, divisor: float = 7.0) -> float:
     return _clamp01(count / max(divisor, sentences * 1.6))
 
 
+def _density_for_markers(text: str, markers: list[str], divisor: float = 7.0) -> float:
+    sentences = max(1, len(split_sentences(text)))
+    count = _count_markers(text, markers)
+    return _clamp01(count / max(divisor, sentences * 1.6))
+
+
 def compute_scene_feature_scores(scene_text: str) -> SceneFeatureScores:
     sentences = split_sentences(scene_text)
     return SceneFeatureScores(
         dialogue_ratio=_dialogue_ratio(scene_text, sentences),
         observation_density=_density(scene_text, "observation_density", 7),
-        action_verb_density=_density(scene_text, "action_verb_density", 7),
+        action_verb_density=_density_for_markers(scene_text, ACTION_VERB_MARKERS, 7),
         exposition_marker_density=_density(scene_text, "exposition_marker_density", 5),
         conflict_intensity=_density(scene_text, "conflict_intensity", 5),
         movement_marker_density=_density(scene_text, "movement_marker_density", 5),
         aftermath_marker_density=_density(scene_text, "aftermath_marker_density", 5),
         transition_marker_density=_density(scene_text, "transition_marker_density", 5),
-        internal_judgment_density=_density(scene_text, "internal_judgment_density", 5),
-        relationship_shift_density=_density(scene_text, "relationship_shift_density", 5),
+        internal_judgment_density=_density_for_markers(scene_text, JUDGMENT_MARKERS, 5),
+        relationship_shift_density=_density_for_markers(scene_text, RELATIONSHIP_MARKERS, 5),
     )
+
+
+def _marker_counts(text: str, markers: list[str]) -> dict[str, int]:
+    return {marker: count for marker in markers if (count := text.count(marker)) > 0}
+
+
+def _top_counts(items: list[str], limit: int = 12) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in items:
+        counts[item] = counts.get(item, 0) + 1
+    return dict(sorted(counts.items(), key=lambda x: (-x[1], x[0]))[:limit])
+
+
+def analyze_korean_surface(text: str, speaker_aliases: list[str] | None = None) -> dict[str, Any]:
+    """Deterministic Korean surface report.
+
+    This is not a full morphology engine. It exposes the dictionary-backed
+    signals the UI and LLM guards need, while keeping speaker attribution manual.
+    """
+    speaker_aliases = speaker_aliases or []
+    eojeol = re.findall(r"[가-힣A-Za-z0-9]+", text)
+    endings = re.findall(r"(습니다|습니까|세요|했다|였다|었다|았다|한다|된다|이다|다|요|죠|까|냐|네|군)(?:[.!?…\"”’」』)]|\s|$)", text)
+    particles = re.findall(r"[가-힣]+(은|는|이|가|을|를|에|에서|으로|와|과|도|만)(?:\s|$)", text)
+    quoted = re.findall(r"[「『“\"]([^」』”\"]+)[」』”\"]", text)
+    candidate_speakers = []
+    for alias in speaker_aliases:
+        if alias and alias in text:
+            candidate_speakers.append({"speaker": alias, "count": text.count(alias), "source": "provided_alias"})
+    for marker in RELATIONSHIP_MARKERS:
+        if marker in text and marker not in speaker_aliases:
+            candidate_speakers.append({"speaker": marker, "count": text.count(marker), "source": "relationship_marker"})
+    return {
+        "morphology": {
+            "eojeol_count": len(eojeol),
+            "unique_eojeol_ratio": _clamp01(len(set(eojeol)) / max(1, len(eojeol))),
+            "sentence_count": len(split_sentences(text)),
+            "ending_counts": _top_counts(list(endings)),
+            "particle_counts": _top_counts(list(particles)),
+            "honorific_counts": _marker_counts(text, ["습니다", "습니까", "세요", "셨", "께서", "드립니다"]),
+        },
+        "action_verbs": _marker_counts(text, ACTION_VERB_MARKERS),
+        "judgment_markers": _marker_counts(text, JUDGMENT_MARKERS),
+        "relationship_markers": _marker_counts(text, RELATIONSHIP_MARKERS),
+        "emotion_markers": _marker_counts(text, EMOTION_MARKERS),
+        "dialogue": {
+            "quoted_block_count": len(quoted),
+            "quoted_blocks": quoted[:8],
+            "manual_speaker_correction_first": True,
+            "speaker_candidates": candidate_speakers[:12],
+        },
+    }
 
 
 def _scores_from_features(f: SceneFeatureScores) -> dict[str, float]:
@@ -645,7 +950,16 @@ def _text_metrics(text: str) -> dict[str, float]:
     avg = sum(lens) / len(lens) if lens else 0
     short = len([l for l in lens if l <= 20]) / max(1, len(lens))
     long = len([l for l in lens if l >= 60]) / max(1, len(lens))
-    return {"avg_sentence_len": avg, "short_sentence_ratio": short, "long_sentence_ratio": long, "dialogue_ratio": _dialogue_ratio(text, sentences)}
+    paragraphs = [p for p in re.split(r"\n\s*\n", text) if p.strip()]
+    return {
+        "avg_sentence_len": avg,
+        "short_sentence_ratio": short,
+        "long_sentence_ratio": long,
+        "dialogue_ratio": _dialogue_ratio(text, sentences),
+        "sentence_count": len(sentences),
+        "paragraph_count": len(paragraphs),
+        "comma_per_sentence": len(re.findall(r"[,、，]", text)) / max(1, len(sentences)),
+    }
 
 
 def _instruction_fit(text: str, rules: list[StyleRule]) -> float:
@@ -672,6 +986,97 @@ def _rhythm_fit(text: str, baseline: dict[str, float]) -> float:
     return _clamp01(1 - sum(diffs) / max(1, len(diffs)))
 
 
+def _discourse_fit(text: str, expected: SceneClassification | None, inferred: SceneClassification) -> float:
+    if not expected:
+        return 0.7
+    expected_functions = set(expected.narrative_functions)
+    inferred_functions = set(inferred.narrative_functions)
+    coverage = len(expected_functions & inferred_functions) / max(1, len(expected_functions))
+    feature_alignment = 0.0
+    if "information_reveal" in expected_functions:
+        feature_alignment += inferred.feature_scores.exposition_marker_density * 0.35
+    if "movement" in expected_functions:
+        feature_alignment += inferred.feature_scores.movement_marker_density * 0.35
+    if "tension_escalation" in expected_functions:
+        feature_alignment += inferred.feature_scores.conflict_intensity * 0.35
+    if "relationship_shift" in expected_functions:
+        feature_alignment += inferred.feature_scores.relationship_shift_density * 0.35
+    if "emotional_shift" in expected_functions:
+        feature_alignment += inferred.feature_scores.internal_judgment_density * 0.25
+    if "scene_transition" in expected_functions:
+        feature_alignment += inferred.feature_scores.transition_marker_density * 0.3
+    return _clamp01(0.48 + coverage * 0.32 + min(0.2, feature_alignment))
+
+
+def _dialogue_fit(inferred: SceneClassification, expected: SceneClassification | None, baseline: dict[str, float]) -> float:
+    expected_ratio = baseline.get("dialogue_ratio")
+    if expected and expected.style_register == "dialogue":
+        return _clamp01(0.45 + inferred.scores["DIA"] * 0.55)
+    if isinstance(expected_ratio, (int, float)):
+        return _clamp01(1 - min(1, abs(inferred.scores["DIA"] - expected_ratio)))
+    return _clamp01(0.82 - max(0.0, inferred.scores["DIA"] - 0.35) * 0.45)
+
+
+def _lexical_fit(text: str, rules: list[StyleRule], content_terms: list[str]) -> float:
+    words = re.findall(r"[가-힣A-Za-z0-9]{2,}", text)
+    if not words:
+        return 0.2
+    unique_ratio = len(set(words)) / len(words)
+    rule_words = {
+        w.lower()
+        for rule in rules
+        for w in re.findall(r"[가-힣A-Za-z0-9]{2,}", rule.instruction)
+        if len(w) >= 2
+    }
+    text_words = {w.lower() for w in words}
+    rule_contact = len(rule_words & text_words) / max(1, min(len(rule_words), 12))
+    leakage_overlap = len([term for term in content_terms if term and term in text])
+    return _clamp01(0.42 + min(0.3, unique_ratio * 0.35) + min(0.2, rule_contact * 0.2) - min(0.22, leakage_overlap * 0.04))
+
+
+def _repeated_ngram_ratio(text: str, n: int = 3) -> float:
+    words = re.findall(r"[가-힣A-Za-z0-9]{2,}", text)
+    grams = [" ".join(words[i : i + n]) for i in range(max(0, len(words) - n + 1))]
+    if not grams:
+        return 0.0
+    repeated = sum(count - 1 for count in _top_counts(grams, len(grams)).values() if count > 1)
+    return repeated / len(grams)
+
+
+def _fluency_score(text: str) -> float:
+    if not text.strip():
+        return 0.2
+    metrics = _text_metrics(text)
+    avg = metrics["avg_sentence_len"]
+    punctuation_noise = len(re.findall(r"[!?]{3,}|…{4,}", text))
+    balance = 1.0
+    if avg < 6 or avg > 95:
+        balance -= 0.25
+    if metrics["comma_per_sentence"] > 4:
+        balance -= 0.15
+    balance -= min(0.25, punctuation_noise * 0.05)
+    balance -= min(0.3, _repeated_ngram_ratio(text, 2) * 0.9)
+    return _clamp01(balance)
+
+
+def _leakage_hits(text: str, terms: list[str]) -> list[str]:
+    return sorted({term for term in terms if term and term in text})
+
+
+def _overfit_penalty(text: str, leakage_hits: list[str]) -> float:
+    repeated_sentence_count = 0
+    sentences = split_sentences(text)
+    seen: set[str] = set()
+    for sentence in sentences:
+        normalized = re.sub(r"\s+", "", sentence)
+        if normalized in seen:
+            repeated_sentence_count += 1
+        seen.add(normalized)
+    ngram_ratio = _repeated_ngram_ratio(text, 3)
+    leakage_repeat = sum(max(0, text.count(term) - 1) for term in leakage_hits)
+    return _clamp01(min(0.28, ngram_ratio * 0.6 + repeated_sentence_count * 0.05 + leakage_repeat * 0.025))
+
+
 def score_style_match(text: str, style_profile: StyleProfile | StylePreset | StyleStack, scene_classification: SceneClassification | None = None) -> StyleMatchReport:
     if isinstance(style_profile, StyleStack):
         global_rules = style_profile.global_rules
@@ -679,7 +1084,7 @@ def score_style_match(text: str, style_profile: StyleProfile | StylePreset | Sty
         negative = style_profile.negative_rules
         content_terms = [term for preset in style_profile.presets for term in preset.content_terms]
         baseline = next((p.metrics_baseline for p in style_profile.presets if p.metrics_baseline), {})
-        stack_blend_fit = 0.72
+        stack_blend_fit = _clamp01(0.62 + min(0.28, len([a for a in style_profile.adapters if a.enabled]) * 0.06))
     else:
         global_rules = style_profile.global_rules
         register_rules = style_profile.register_rules
@@ -695,15 +1100,18 @@ def score_style_match(text: str, style_profile: StyleProfile | StylePreset | Sty
     if scene_classification:
         scene_fit = 1.0 if inferred.primary_type == scene_classification.primary_type else 0.78 if inferred.style_register == scene_classification.style_register else 0.55
     rhythm = _rhythm_fit(text, baseline)
-    dialogue_fit = inferred.scores["DIA"] if scene_classification and scene_classification.style_register == "dialogue" else 0.72
-    leakage_hits = [term for term in content_terms if term and term in text]
+    dialogue_fit = _dialogue_fit(inferred, scene_classification, baseline)
+    leakage_hits = _leakage_hits(text, content_terms)
     leakage = _clamp01(min(0.35, len(leakage_hits) * 0.05))
     register_penalty = 0.0
     if scene_classification and inferred.primary_type != scene_classification.primary_type:
         register_penalty = 0.04 if inferred.style_register == scene_classification.style_register else 0.12
-    overfit = 0.03 if leakage > 0.15 else 0.0
-    discourse_fit = lexical_fit = 0.7
-    fluency = 0.76 if text.strip() else 0.2
+    overfit = _overfit_penalty(text, leakage_hits)
+    discourse_fit = _discourse_fit(text, scene_classification, inferred)
+    lexical_fit = _lexical_fit(text, [*global_rules, *active_register_rules], content_terms)
+    fluency = _fluency_score(text)
+    if any(rule and rule in text for rule in negative):
+        fluency = _clamp01(fluency - 0.08)
     total = _clamp01(
         global_fit * 0.20 + register_fit * 0.20 + scene_fit * 0.10 + stack_blend_fit * 0.10 + rhythm * 0.12 + discourse_fit * 0.13 + dialogue_fit * 0.08 + lexical_fit * 0.05 + fluency * 0.07 - leakage - register_penalty - overfit
     )
@@ -722,7 +1130,15 @@ def score_style_match(text: str, style_profile: StyleProfile | StylePreset | Sty
         leakage,
         register_penalty,
         overfit,
-        [f"inferred_primary={inferred.primary_type}", f"expected_primary={scene_classification.primary_type if scene_classification else 'not_provided'}", f"leakage_hits={len(leakage_hits)}"],
+        [
+            f"inferred_primary={inferred.primary_type}",
+            f"expected_primary={scene_classification.primary_type if scene_classification else 'not_provided'}",
+            f"leakage_hits={len(leakage_hits)}",
+            f"discourse_fit={discourse_fit}",
+            f"lexical_fit={lexical_fit}",
+            f"fluency={fluency}",
+            f"overfit_penalty={overfit}",
+        ],
     )
 
 
@@ -784,10 +1200,165 @@ def _router_md(router: StyleRouter) -> str:
     ])
 
 
-def export_style_skill_pack(project_id: str, presets: list[StylePreset], stacks: list[StyleStack], router: StyleRouter, output_dir: Path) -> Path:
+def _reference_policy_md() -> str:
+    return "\n".join([
+        "# Reference Loading Policy",
+        "",
+        "- Load preset and stack markdown only for the active route.",
+        "- Load at most two few-shot references per prompt capsule.",
+        f"- Do not load more than {FEWSHOT_MAX_FILES} few-shot files across a single task.",
+        f"- Keep total few-shot bytes under {FEWSHOT_MAX_BYTES}.",
+        "- Treat source names, proper nouns, object lists, choreography, and event order as content, not style.",
+        "- LLM output may explain or suggest changes, but it must not set the authoritative StyleMatchScore.",
+    ])
+
+
+def _regression_fixture_json(project_id: str, presets: list[StylePreset], stacks: list[StyleStack], router: StyleRouter) -> str:
+    fixture = {
+        "schema_version": "bindery.style.skillpack.regression.v1",
+        "project_id": project_id,
+        "checks": [
+            {
+                "name": "dialogue_relationship_overlay",
+                "scene_text": "“선생님, 이 자료를 믿어도 됩니까?”\n“아직은요. 그래도 당신 말은 확인하겠습니다.”\n그 호칭은 조금 가까워져 있었다.",
+                "expected_primary_type": "DIA",
+                "expected_secondary_type": "REL",
+                "score_guard": "local_runtime_authoritative",
+            },
+            {
+                "name": "sentence_blocks_grouped",
+                "scene_text": "에이라는 말없이 자료를 넘겼다.\n\n그 시선은 서류 아래쪽에서 멈췄다.\n\n주인공은 고개를 끄덕였다.\n\n잠시 뒤 방 안의 공기가 낮게 가라앉았다.",
+                "expected_note": "Sentence-separated samples are not one sentence per scene.",
+            },
+        ],
+        "preset_count": len(presets),
+        "stack_count": len(stacks),
+        "router_rule_count": len(router.rules),
+    }
+    return json.dumps(fixture, ensure_ascii=False, indent=2)
+
+
+def _korean_markers_json() -> str:
+    return json.dumps(
+        {
+            "action_verbs": ACTION_VERB_MARKERS,
+            "judgment_markers": JUDGMENT_MARKERS,
+            "relationship_markers": RELATIONSHIP_MARKERS,
+            "emotion_markers": EMOTION_MARKERS,
+            "speaker_policy": "speaker_candidates_are_not_authoritative_manual_correction_first",
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
+def _validator_script() -> str:
+    return "\n".join([
+        "#!/usr/bin/env python3",
+        "from pathlib import Path",
+        "import json",
+        "import sys",
+        "",
+        "REQUIRED = [",
+        "    'SKILL.md',",
+        "    'agents/openai.yaml',",
+        "    'references/preset-index.md',",
+        "    'references/scene-classification.md',",
+        "    'references/style-router.md',",
+        "    'references/writing-workflow.md',",
+        "    'references/scoring-rubric.md',",
+        "    'references/leakage-rules.md',",
+        "    'references/reference-policy.md',",
+        "    'references/regression-fixture.json',",
+        "    'references/structured-output-schemas.json',",
+        "    'references/korean-nlp-markers.json',",
+        "]",
+        "",
+        "def main(root):",
+        "    root = Path(root)",
+        "    errors = [f'missing {rel}' for rel in REQUIRED if not (root / rel).exists()]",
+        "    fixture = root / 'references/regression-fixture.json'",
+        "    if fixture.exists():",
+        "        try:",
+        "            json.loads(fixture.read_text(encoding='utf-8'))",
+        "        except json.JSONDecodeError as exc:",
+        "            errors.append(f'invalid regression fixture: {exc}')",
+        "    fewshots = list((root / 'references/fewshots').glob('*')) if (root / 'references/fewshots').exists() else []",
+        "    if len([p for p in fewshots if p.is_file()]) > 12:",
+        "        errors.append('too many few-shot files')",
+        "    total = sum(p.stat().st_size for p in fewshots if p.is_file())",
+        "    if total > 120000:",
+        "        errors.append('few-shot bytes exceed limit')",
+        "    print(json.dumps({'ok': not errors, 'errors': errors, 'fewshot_bytes': total}, ensure_ascii=False, indent=2))",
+        "    return 0 if not errors else 1",
+        "",
+        "if __name__ == '__main__':",
+        "    raise SystemExit(main(sys.argv[1] if len(sys.argv) > 1 else '.'))",
+    ])
+
+
+def validate_style_skill_pack(root: Path) -> dict[str, Any]:
+    required = [
+        "SKILL.md",
+        "agents/openai.yaml",
+        "references/preset-index.md",
+        "references/scene-classification.md",
+        "references/style-router.md",
+        "references/writing-workflow.md",
+        "references/scoring-rubric.md",
+        "references/leakage-rules.md",
+        "references/reference-policy.md",
+        "references/regression-fixture.json",
+        "references/structured-output-schemas.json",
+        "references/korean-nlp-markers.json",
+    ]
+    errors = [f"missing {rel}" for rel in required if not (root / rel).exists()]
+    warnings: list[str] = []
+    fixture_path = root / "references/regression-fixture.json"
+    if fixture_path.exists():
+        try:
+            fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+            if not fixture.get("checks"):
+                errors.append("regression fixture has no checks")
+        except json.JSONDecodeError as exc:
+            errors.append(f"invalid regression fixture: {exc}")
+    fewshot_files = [p for p in (root / "references/fewshots").glob("*") if p.is_file()] if (root / "references/fewshots").exists() else []
+    fewshot_bytes = sum(p.stat().st_size for p in fewshot_files)
+    if len(fewshot_files) > FEWSHOT_MAX_FILES:
+        errors.append(f"few-shot file count exceeds {FEWSHOT_MAX_FILES}")
+    if fewshot_bytes > FEWSHOT_MAX_BYTES:
+        errors.append(f"few-shot bytes exceed {FEWSHOT_MAX_BYTES}")
+    if not list((root / "references/presets").glob("*.md")):
+        warnings.append("no preset markdown files")
+    if not list((root / "references/stacks").glob("*.md")):
+        warnings.append("no stack markdown files")
+    return {
+        "ok": not errors,
+        "errors": errors,
+        "warnings": warnings,
+        "counts": {
+            "files": len([p for p in root.rglob("*") if p.is_file()]),
+            "fewshot_files": len(fewshot_files),
+            "fewshot_bytes": fewshot_bytes,
+        },
+    }
+
+
+def zip_style_skill_pack(root: Path, zip_path: Path | None = None) -> Path:
+    zip_path = zip_path or root.with_suffix(".zip")
+    zip_path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for path in sorted(root.rglob("*")):
+            if not path.is_file() or path == zip_path:
+                continue
+            zf.write(path, path.relative_to(root.parent))
+    return zip_path
+
+
+def export_style_skill_pack(project_id: str, presets: list[StylePreset], stacks: list[StyleStack], router: StyleRouter, output_dir: Path, zip_path: Path | None = None) -> Path:
     root = output_dir / "bindery-style-runtime"
     (root / "agents").mkdir(parents=True, exist_ok=True)
-    for rel in ["references/presets", "references/stacks", "references/fewshots"]:
+    for rel in ["references/presets", "references/stacks", "references/fewshots", "scripts"]:
         (root / rel).mkdir(parents=True, exist_ok=True)
     files: dict[str, str] = {
         "SKILL.md": "\n".join([
@@ -822,6 +1393,11 @@ def export_style_skill_pack(project_id: str, presets: list[StylePreset], stacks:
         "references/writing-workflow.md": "# Writing Workflow\n\nBuild PromptCapsule, draft or rewrite, then check leakage and register mismatch. Preserve new user content unless rewrite strength is strong.\n",
         "references/scoring-rubric.md": "# Scoring Rubric\n\nStyleMatchScore = GlobalFit*0.20 + RegisterFit*0.20 + SceneClassificationFit*0.10 + StackBlendFit*0.10 + RhythmFit*0.12 + DiscourseFit*0.13 + DialogueFit*0.08 + LexicalFit*0.05 + Fluency*0.07 - ContentLeakagePenalty - RegisterMismatchPenalty - OverfitPenalty.\n",
         "references/leakage-rules.md": "# Leakage Rules\n\n" + _md_list(DEFAULT_NEGATIVE_RULES) + "\n",
+        "references/reference-policy.md": _reference_policy_md(),
+        "references/regression-fixture.json": _regression_fixture_json(project_id, presets, stacks, router),
+        "references/structured-output-schemas.json": json.dumps(STRUCTURED_OUTPUT_SCHEMAS, ensure_ascii=False, indent=2),
+        "references/korean-nlp-markers.json": _korean_markers_json(),
+        "scripts/validate_skill_pack.py": _validator_script(),
     }
     for preset in presets:
         files[f"references/presets/{preset.preset_id}.md"] = _preset_md(preset)
@@ -831,6 +1407,10 @@ def export_style_skill_pack(project_id: str, presets: list[StylePreset], stacks:
         target = root / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
+    validation = validate_style_skill_pack(root)
+    (root / "validation-report.json").write_text(json.dumps(validation, ensure_ascii=False, indent=2), encoding="utf-8")
+    if zip_path:
+        zip_style_skill_pack(root, zip_path)
     return root
 
 

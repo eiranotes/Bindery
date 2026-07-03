@@ -11,7 +11,7 @@ import type {
   StyleStack
 } from '$lib/domain/style';
 
-export type StyleStep = 'sample' | 'analyze' | 'guide' | 'proof' | 'final';
+export type StyleStep = 'sample' | 'analyze' | 'guide' | 'proof' | 'final' | 'system';
 
 /** 지침 강제 강도 — 너무 강하면 문장이 딱딱해지므로 기본은 '균형'. */
 export type StyleStrictness = 'flexible' | 'balanced' | 'strict';

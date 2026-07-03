@@ -232,6 +232,13 @@ Base: ChatGPT Stage 3.6 archive (native stubs, relative-path API, session-snapsh
 - Verified Gemini headless prompt is blocked by current account/client policy, Claude fails 401, and `agy` is unavailable.
 - Captured Superloopy visual QA under `.superloopy/evidence/frontend/20260702-bindery-ui-implementation/`.
 
+## 2026-07-03 21:40 KST — Style System Phase 2 Completion Pass
+
+- Completed remaining `phase2_backlog.md` items: `style-sync`, JSON-to-SQLite repository policy, Phase 2 style-system UI, Korean surface/NLP dictionaries, structured-output schemas/guards, feature-based scoring hardening, SkillPack validator, zip export, reference policy, and regression fixtures.
+- Added `StyleSystemPanel.svelte` for Preset Manager, Stack Mixer, Router Editor, Scene Override, Score Lab, Suggestion Lab, and SkillPack export preview.
+- Added/expanded regression coverage for repository sync, Korean surface report, scoring diagnostics, SkillPack validation, and SkillPack zip contents.
+- Final checks passed: Python unittest, TypeScript style smoke, scene grouping smoke, Python compileall, static verification, Svelte check, production build, Rust fmt/check, and Chrome DevTools visual QA at 1280/768/390.
+
 ## 2026-07-02 Writing-First UI + Pipeline Verification Pass
 
 - Used Superloopy frontend workflow for the visual pass.

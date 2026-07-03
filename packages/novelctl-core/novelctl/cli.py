@@ -5,14 +5,16 @@ try:
         classify_scene, to_plain, load_style_payload, _scene_classification_from_dict,
         _style_stack_from_dict, _router_from_dict, _preset_from_dict, StyleRouteContext, ActiveStyleStack, StyleProfile, _router_rule_from_dict, _rules_from_dict, _rules_map,
         resolve_active_style_stack, build_prompt_capsule, score_style_match,
-        export_style_skill_pack, SQLITE_SCHEMA
+        export_style_skill_pack, SQLITE_SCHEMA, STRUCTURED_OUTPUT_SCHEMAS,
+        analyze_korean_surface, sync_style_repository, validate_style_skill_pack, zip_style_skill_pack
     )
 except ImportError:  # direct script execution
     from style_system import (
         classify_scene, to_plain, load_style_payload, _scene_classification_from_dict,
         _style_stack_from_dict, _router_from_dict, _preset_from_dict, StyleRouteContext, ActiveStyleStack, StyleProfile, _router_rule_from_dict, _rules_from_dict, _rules_map,
         resolve_active_style_stack, build_prompt_capsule, score_style_match,
-        export_style_skill_pack, SQLITE_SCHEMA
+        export_style_skill_pack, SQLITE_SCHEMA, STRUCTURED_OUTPUT_SCHEMAS,
+        analyze_korean_surface, sync_style_repository, validate_style_skill_pack, zip_style_skill_pack
     )
 
 WATCH = ["시선","침묵","숨","어깨","고개","미소","눈빛","공기","순간","말없이","입을 열었다","고개를 끄덕였다"]
@@ -113,6 +115,17 @@ def cmd_style_classify(args):
 def cmd_style_sql(args):
     write_json(envelope(command=['style-sql'], stdout=SQLITE_SCHEMA, data={'schema': SQLITE_SCHEMA}))
 
+def cmd_style_sync(args):
+    summary = sync_style_repository(pathlib.Path(args.project))
+    write_json(envelope(command=['style-sync'], stdout='style repository sync ok', output_files=['styles/style-repository.json', '.bindery/style-system.sqlite3'], data=summary))
+
+def cmd_style_structured_schemas(args):
+    write_json(envelope(command=['style-structured-schemas'], stdout='structured schemas ok', data={'schemas': STRUCTURED_OUTPUT_SCHEMAS}))
+
+def cmd_style_korean_nlp(args):
+    report = analyze_korean_surface(_text_arg(args), args.speaker or [])
+    write_json(envelope(command=['style-korean-nlp'], stdout='korean surface analysis ok', data=report))
+
 def cmd_style_route(args):
     payload = load_style_payload(pathlib.Path(args.context_json))
     classification = _scene_classification_from_dict(payload['classification'])
@@ -169,9 +182,24 @@ def cmd_style_export_skill(args):
     presets = [_preset_from_dict(x) for x in payload.get('presets', [])]
     stacks = [_style_stack_from_dict(x) for x in payload.get('stacks', [])]
     router = _router_from_dict(payload.get('router', {'router_id': 'router_default', 'rules': []}))
-    out = export_style_skill_pack(args.project_id or pathlib.Path(args.project).name, presets, stacks, router, pathlib.Path(args.output_dir))
+    zip_path = pathlib.Path(args.zip_path) if args.zip_path else None
+    out = export_style_skill_pack(args.project_id or pathlib.Path(args.project).name, presets, stacks, router, pathlib.Path(args.output_dir), zip_path)
+    validation = validate_style_skill_pack(out)
     files = [str(p.relative_to(out)) for p in sorted(out.rglob('*')) if p.is_file()]
-    write_json(envelope(command=['style-export-skill'], stdout=f'exported {out}', output_files=[str(out)], data={'path': str(out), 'files': files}))
+    output_files = [str(out)]
+    if zip_path:
+        output_files.append(str(zip_path))
+    write_json(envelope(command=['style-export-skill'], stdout=f'exported {out}', output_files=output_files, data={'path': str(out), 'files': files, 'validation': validation, 'zip_path': str(zip_path) if zip_path else None}))
+
+def cmd_style_validate_skill(args):
+    root = pathlib.Path(args.skill_dir)
+    validation = validate_style_skill_pack(root)
+    if args.zip_path and validation.get('ok'):
+        zip_path = zip_style_skill_pack(root, pathlib.Path(args.zip_path))
+        validation['zip_path'] = str(zip_path)
+    write_json(envelope(ok=bool(validation.get('ok')), command=['style-validate-skill'], stdout='style skill validation ok' if validation.get('ok') else 'style skill validation failed', stderr='\n'.join(validation.get('errors', [])), data=validation, exit_code=0 if validation.get('ok') else 1))
+    if not validation.get('ok'):
+        raise SystemExit(1)
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='novelctl')
@@ -184,10 +212,14 @@ def main(argv=None):
     p=sub.add_parser('snapshot'); p.add_argument('project'); p.add_argument('path'); p.add_argument('--label'); p.add_argument('--json', action='store_true'); p.set_defaults(func=cmd_snapshot)
     p=sub.add_parser('style-classify'); p.add_argument('project'); p.add_argument('--path'); p.add_argument('--text'); p.add_argument('--scene-id', default='S001'); p.add_argument('--chapter-id'); p.add_argument('--manual-override', action='store_true'); p.add_argument('--json', action='store_true'); p.set_defaults(func=cmd_style_classify)
     p=sub.add_parser('style-sql'); p.add_argument('project'); p.add_argument('--json', action='store_true'); p.set_defaults(func=cmd_style_sql)
+    p=sub.add_parser('style-sync'); p.add_argument('project'); p.add_argument('--json', action='store_true'); p.set_defaults(func=cmd_style_sync)
+    p=sub.add_parser('style-structured-schemas'); p.add_argument('project'); p.add_argument('--json', action='store_true'); p.set_defaults(func=cmd_style_structured_schemas)
+    p=sub.add_parser('style-korean-nlp'); p.add_argument('project'); p.add_argument('--path'); p.add_argument('--text'); p.add_argument('--speaker', action='append'); p.add_argument('--json', action='store_true'); p.set_defaults(func=cmd_style_korean_nlp)
     p=sub.add_parser('style-route'); p.add_argument('project'); p.add_argument('--context-json', required=True); p.add_argument('--router-json', required=True); p.add_argument('--json', action='store_true'); p.set_defaults(func=cmd_style_route)
     p=sub.add_parser('style-capsule'); p.add_argument('project'); p.add_argument('--payload-json', required=True); p.add_argument('--max-rules', type=int, default=18); p.add_argument('--token-budget', type=int, default=1200); p.add_argument('--json', action='store_true'); p.set_defaults(func=cmd_style_capsule)
     p=sub.add_parser('style-score'); p.add_argument('project'); p.add_argument('--path'); p.add_argument('--text'); p.add_argument('--style-json', required=True); p.add_argument('--classification-json'); p.add_argument('--json', action='store_true'); p.set_defaults(func=cmd_style_score)
-    p=sub.add_parser('style-export-skill'); p.add_argument('project'); p.add_argument('--style-json', required=True); p.add_argument('--output-dir', required=True); p.add_argument('--project-id'); p.add_argument('--json', action='store_true'); p.set_defaults(func=cmd_style_export_skill)
+    p=sub.add_parser('style-export-skill'); p.add_argument('project'); p.add_argument('--style-json', required=True); p.add_argument('--output-dir', required=True); p.add_argument('--project-id'); p.add_argument('--zip-path'); p.add_argument('--json', action='store_true'); p.set_defaults(func=cmd_style_export_skill)
+    p=sub.add_parser('style-validate-skill'); p.add_argument('project'); p.add_argument('--skill-dir', required=True); p.add_argument('--zip-path'); p.add_argument('--json', action='store_true'); p.set_defaults(func=cmd_style_validate_skill)
     args = parser.parse_args(argv)
     args.func(args)
 

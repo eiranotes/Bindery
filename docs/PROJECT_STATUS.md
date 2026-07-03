@@ -1,10 +1,20 @@
 # Project Status
 
-Updated: 2026-07-03 (문체 시스템 Phase 2 시작)
+Updated: 2026-07-03 (문체 시스템 Phase 2 완료)
 
 ## Current State
 
-Bindery is a writing-first macOS/Svelte/Tauri app covering the full local novel workflow: episode management (create/switch/status), writing with scene jump and daily stats, materials (editable plot board, codex item creation), style replication with adjustable enforcement strength, an AI harness whose every step leaves file-synced artifacts that feed drafting (with author-tunable length/creativity/instructions), agent-based QA with style-compliance and continuity gates, snapshot compare/restore, project-wide search, and real TXT/HTML export. The shell now has a collapsible left navigator rail, tighter top navigation, and wider resilient analysis rows so dense Korean labels truncate or scroll instead of stacking into vertical text. The style analyzer follows the v3 MVP procedure locally first: normalize input, group scene candidates, code local features, generate evidence, apply globality decisions, build a surface profile, then hand semantic interpretation to the configured AI runner only where local regex analysis is insufficient. The structured style runtime now adds deterministic SceneClassification, StyleRouter, StyleStack merge, PromptCapsule, StyleMatchScore, and SkillPack export paths in TypeScript and Python. Storage is local-only by design.
+Bindery is a writing-first macOS/Svelte/Tauri app covering the full local novel workflow: episode management (create/switch/status), writing with scene jump and daily stats, materials (editable plot board, codex item creation), style replication with adjustable enforcement strength, an AI harness whose every step leaves file-synced artifacts that feed drafting (with author-tunable length/creativity/instructions), agent-based QA with style-compliance and continuity gates, snapshot compare/restore, project-wide search, and real TXT/HTML/EPUB export. The shell now has a collapsible left navigator rail, tighter top navigation, and wider resilient analysis rows so dense Korean labels truncate or scroll instead of stacking into vertical text. The style analyzer follows the v3 MVP procedure locally first: normalize input, group scene candidates, code local features, generate evidence, apply globality decisions, build a surface profile, then hand semantic interpretation to the configured AI runner only where local regex analysis is insufficient. The structured style runtime now includes repository sync, deterministic SceneClassification, StyleRouter, StyleStack merge, PromptCapsule, feature-based StyleMatchScore, Korean surface analysis, structured-output guards, and validated SkillPack export paths in TypeScript and Python. Storage is local-only by design; `styles/` JSON is the editable source and SQLite is the query/index cache.
+
+## Completed (2026-07-03, 문체 시스템 Phase 2 완료)
+
+- Added `novelctl style-sync`: project `styles/` JSON for profiles/presets/stacks/routers/classifications/reports is indexed into `.bindery/style-system.sqlite3`, with `styles/style-repository.json` documenting the sync result.
+- Added structured-output schema manifests for SceneClassification correction, paragraph function tags, score explanation, and suggestions; score guards keep local scoring authoritative.
+- Expanded Korean surface/NLP analysis with morphology-like counts, action verbs, judgment markers, relationship markers, emotion markers, and manual speaker correction policy.
+- Hardened style scoring with feature-based discourse/dialogue/lexical/fluency signals, leakage diagnostics, register mismatch penalties, and overfit/repetition penalties.
+- Added the `문체 시스템` UI stage with Preset Manager, Stack Mixer, Router Editor, scene classification override controls, Score Lab, Suggestion Lab, and SkillPack export preview.
+- Added SkillPack validation and zip export support, plus reference loading policy, structured schema manifest, Korean marker manifest, and regression fixture files.
+- Verified: `python3 -m unittest discover -s tests -v`, `node --experimental-strip-types tests/styleSystem.node.test.mjs`, `node --experimental-strip-types tests/styleAnalyzer.node.test.mjs`, `python3 -m compileall -q packages/novelctl-core/novelctl`, `python3 scripts/verify_static.py`, `npm --workspace apps/desktop run check`, `npm run build`, `cargo fmt --check`, `cargo check`, and Chrome DevTools visual QA at 1280/768/390.
 
 ## Completed (2026-07-03, 문체 시스템 패치 적용)
 

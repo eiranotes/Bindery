@@ -1,6 +1,24 @@
 # Decisions
 
-Updated: 2026-07-03 (문체 시스템 Phase 2 시작)
+Updated: 2026-07-03 (문체 시스템 Phase 2 완료)
+
+## Style JSON Is The Editable Source
+
+Decision: Project `styles/` JSON files are the editable source for style profiles, presets, stacks, routers, classifications, and reports. `.bindery/style-system.sqlite3` is a local query/index cache rebuilt by `novelctl style-sync`.
+
+Reason: Authors and tools can review, version, copy, and repair JSON files directly. SQLite gives fast lookup and future native queries without making the database the only durable source of truth.
+
+## Local Style Scoring Is Authoritative
+
+Decision: Structured LLM outputs may correct classifications, tag paragraph functions, explain scores, and suggest revisions, but they cannot set the authoritative `StyleMatchScore.total_score`.
+
+Reason: The score must be reproducible and inspectable. LLM prose is useful for explanation and suggestion, while deterministic feature scoring is safer for regression tests and user trust.
+
+## SkillPacks Must Be Self-Validating
+
+Decision: Exported style SkillPacks include reference loading policy, regression fixtures, structured-output schema manifests, Korean marker manifests, a validator script, and a validation report. Zip export is created only from the generated SkillPack directory.
+
+Reason: Style adapters are reusable artifacts. They need portable checks for required files, few-shot limits, score authority rules, and regression coverage before they are shared or loaded elsewhere.
 
 ## Native Style Commands Use The Python Runtime First
 

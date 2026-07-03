@@ -4,11 +4,12 @@
 
 - `bindery_style_system_patched_20260703.zip` has been applied for code, tests, and docs without replacing the existing long-running project history files.
 - Structured style runtime now exists in TypeScript and Python: SceneClassification, StyleRouter, StyleStack merge, PromptCapsule, StyleMatchScore, and SkillPack export.
-- Phase 2 has started: native Tauri style commands now call Python `novelctl` style subcommands, and the SQLite style schema now lives in `packages/novelctl-core/novelctl/migrations/001_style_system.sql`.
+- Phase 2 is complete: native Tauri style commands call Python `novelctl` style subcommands, the SQLite schema lives in `packages/novelctl-core/novelctl/migrations/001_style_system.sql`, `style-sync` indexes project `styles/` JSON into `.bindery/style-system.sqlite3`, and `StyleSystemPanel.svelte` provides Preset Manager, Stack Mixer, Router Editor, Scene Override, Score Lab, Suggestion Lab, and SkillPack export preview.
+- Structured-output guard schemas, Korean surface/NLP analysis, feature-based scoring hardening, SkillPack validator, zip exporter, reference policy, and regression fixture are implemented.
 - `StyleStudio.svelte` shows SceneClassification/register rows in addition to the existing local evidence bundle.
 - `styleAnalyzer.ts` now groups short sentence-like blocks into larger scene candidates, preventing one-scene-per-sentence analysis when pasted text contains blank lines after every sentence.
 - `phase2_backlog.md` is present and its remaining tasks are tracked in `docs/TASKS.md`.
-- Latest verification: Python style tests OK, TypeScript style smoke OK, scene grouping smoke OK, Python compileall OK, Svelte check 0 errors/0 warnings, Rust cargo check OK, Rust fmt check OK, production build OK, static project verification OK.
+- Latest verification: Python unittest OK (18 tests), TypeScript style smoke OK, scene grouping smoke OK, Python compileall OK, static verify OK, Svelte check 0 errors/0 warnings, production build OK with the known chunk-size warning, Rust fmt/check OK, and Chrome DevTools visual QA at 1280/768/390 OK.
 
 ## Current stage
 

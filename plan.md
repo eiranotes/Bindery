@@ -12,10 +12,12 @@ Completed:
 - [x] Reflected `phase2_backlog.md` in `docs/TASKS.md`.
 - [x] Phase 2 start: added native Tauri style commands backed by Python `novelctl`.
 - [x] Phase 2 start: moved the SQLite style schema into a migration file.
+- [x] Phase 2 finish: added `style-sync`, repository sync policy, Korean surface/NLP expansion, structured-output guard schemas, feature-based scoring hardening, SkillPack validator/zip export, and the `문체 시스템` UI.
 
 Next:
 
-- [ ] Implement the remaining Phase 2 items from `phase2_backlog.md`: repository sync between `styles/` JSON and SQLite, preset/stack/router editor UI, Korean NLP expansion, structured LLM correction, scoring hardening, and SkillPack validation/zip export.
+- [ ] Re-run full verification and visual QA evidence for the completed Phase 2 UI.
+- [ ] Continue non-Phase-2 backlog: sidebar collapsed preference, native folder picker, manual scene split/merge, plot board drag ordering, packaged app click-through, Windows runner.
 
 ## 현재 단계
 

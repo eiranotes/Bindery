@@ -9,6 +9,7 @@
 - API entrypoint: `apps/desktop/src/lib/api/commands.ts`
 - Tauri native commands: `apps/desktop/src-tauri/src/commands/style.rs`
 - CLI entrypoint: `packages/novelctl-core/novelctl/cli.py`
+- Phase 2 UI: `apps/desktop/src/lib/components/style/StyleSystemPanel.svelte`
 
 ## 핵심 흐름
 
@@ -20,8 +21,19 @@ Scene text
 → mergeStyleStack / merge_style_stack
 → buildPromptCapsule / build_prompt_capsule
 → scoreStyleMatch / score_style_match
-→ buildStyleSkillPackFiles / export_style_skill_pack
+→ validate/export SkillPack files / zip
 ```
+
+Storage sync:
+
+```text
+project/styles/*.json
+→ novelctl style-sync
+→ project/.bindery/style-system.sqlite3
+→ project/styles/style-repository.json
+```
+
+`styles/` JSON remains the editable source. SQLite is a local query/index cache rebuilt by sync.
 
 ## 구현된 schema
 
@@ -55,7 +67,13 @@ novelctl style-capsule <project> --payload-json capsule_payload.json --json
 novelctl style-score <project> --text "..." --style-json style.json --classification-json classification.json --json
 novelctl style-export-skill <project> --style-json style_payload.json --output-dir out --project-id proj --json
 novelctl style-sql <project> --json
+novelctl style-sync <project> --json
+novelctl style-structured-schemas <project> --json
+novelctl style-korean-nlp <project> --text "..." --speaker "에이라" --json
+novelctl style-validate-skill <project> --skill-dir out/bindery-style-runtime --zip-path out/bindery-style-runtime.zip --json
 ```
+
+`style-export-skill` also accepts `--zip-path`.
 
 ## Frontend API
 
@@ -69,6 +87,28 @@ exportStyleSkillPack(projectPath, projectId, presets, stacks, router, outputDir)
 ```
 
 In a Tauri runtime, wrappers with `projectPath` call native commands first. Browser/mock mode falls back to the deterministic TypeScript runtime.
+
+## Phase 2 UI
+
+The `문체 시스템` stage adds:
+
+- Preset Manager: create, edit, clone, archive.
+- Stack Mixer: adapter weight/scope and conflict policy preview.
+- Router Editor: rule CRUD, priority preview, active route preview, PromptCapsule preview.
+- Scene Override: manual primary/secondary/surface/register correction.
+- Score Lab and Suggestion Lab: feature-based scoring diagnostics and Korean surface signal review.
+- SkillPack export preview.
+
+## LLM Structured Output Guard
+
+Structured schema manifests are exported for:
+
+- SceneClassification correction.
+- Paragraph function tagging.
+- Style score explanation.
+- Style suggestions.
+
+The guard is explicit: LLM output may explain, tag, or suggest, but local runtime scoring remains authoritative and the LLM must not set `total_score`.
 
 ## Tauri Commands
 

@@ -258,6 +258,27 @@ export type StyleMatchReport = {
 
 export type StyleSkillPackFile = { path: string; content: string };
 
+export type KoreanSurfaceReport = {
+  morphology: {
+    eojeol_count: number;
+    unique_eojeol_ratio: number;
+    sentence_count: number;
+    ending_counts: Record<string, number>;
+    particle_counts: Record<string, number>;
+    honorific_counts: Record<string, number>;
+  };
+  action_verbs: Record<string, number>;
+  judgment_markers: Record<string, number>;
+  relationship_markers: Record<string, number>;
+  emotion_markers: Record<string, number>;
+  dialogue: {
+    quoted_block_count: number;
+    quoted_blocks: string[];
+    manual_speaker_correction_first: boolean;
+    speaker_candidates: Array<{ speaker: string; count: number; source: string }>;
+  };
+};
+
 const CORE_SCENE_TAGS: CoreSceneTag[] = ['OBS', 'DIA', 'ACT', 'INF', 'CON', 'MOV', 'AFT', 'TRN'];
 const OVERLAY_TAGS: SceneTag[] = ['REL', 'INT'];
 const ALL_SCENE_TAGS: SceneTag[] = ['OBS', 'DIA', 'ACT', 'INF', 'CON', 'MOV', 'AFT', 'TRN', 'INT', 'REL'];
@@ -306,6 +327,97 @@ const DEFAULT_NEGATIVE_RULES = [
   'primary_type의 register를 secondary overlay가 덮어쓰지 않게 한다.',
   '특정 장면의 사물 나열이나 동선 순서를 전역 문체로 반복하지 않는다.'
 ];
+const ACTION_VERB_MARKERS = [...new Set([...MARKERS.action_verb_density, '건넸', '꺼냈', '밀어', '눌렀', '찢', '접', '펼', '멈췄'])].sort();
+const JUDGMENT_MARKERS = [...new Set([...MARKERS.internal_judgment_density, '판단', '확신', '의심', '예상', '결론', '선택'])].sort();
+const RELATIONSHIP_MARKERS = [...new Set([...MARKERS.relationship_shift_density, '존댓말', '반말', '사과', '거절', '승낙', '경계'])].sort();
+const EMOTION_MARKERS = ['슬픔', '불안', '분노', '후회', '두려', '기쁨', '안도', '망설', '당황', '놀라'];
+
+export const STRUCTURED_OUTPUT_SCHEMAS = {
+  scene_classification: {
+    name: 'scene_classification_correction',
+    guard: 'LLM may correct fields but local classifier remains source of truth until manual acceptance.',
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['scene_id', 'primary_type', 'secondary_types', 'surface_mode', 'style_register', 'confidence', 'reason'],
+      properties: {
+        scene_id: { type: 'string' },
+        primary_type: { type: 'string', enum: ALL_SCENE_TAGS },
+        secondary_types: { type: 'array', items: { type: 'string', enum: ALL_SCENE_TAGS }, maxItems: 4 },
+        surface_mode: { type: 'string' },
+        style_register: { type: 'string' },
+        confidence: { type: 'number', minimum: 0, maximum: 1 },
+        reason: { type: 'string' },
+        manual_override: { type: 'boolean' }
+      }
+    }
+  },
+  paragraph_functions: {
+    name: 'paragraph_function_tags',
+    guard: 'Paragraph tags are explanatory overlays, not scene boundaries by themselves.',
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['scene_id', 'paragraphs'],
+      properties: {
+        scene_id: { type: 'string' },
+        paragraphs: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['index', 'function', 'evidence'],
+            properties: {
+              index: { type: 'integer', minimum: 0 },
+              function: { type: 'string' },
+              evidence: { type: 'string' }
+            }
+          }
+        }
+      }
+    }
+  },
+  scoring_explanation: {
+    name: 'style_score_explanation',
+    guard: 'local_score_used must be true; LLM must not set total_score.',
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['report_id', 'explanation', 'local_score_used'],
+      properties: {
+        report_id: { type: 'string' },
+        explanation: { type: 'string' },
+        local_score_used: { type: 'boolean', const: true },
+        risk_notes: { type: 'array', items: { type: 'string' } }
+      }
+    }
+  },
+  suggestion: {
+    name: 'style_suggestion',
+    guard: 'Suggestions require local evidence and cannot invent leakage verdicts.',
+    schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['suggestions', 'score_guard'],
+      properties: {
+        suggestions: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['issue', 'suggestion', 'local_evidence'],
+            properties: {
+              issue: { type: 'string' },
+              suggestion: { type: 'string' },
+              local_evidence: { type: 'string' }
+            }
+          }
+        },
+        score_guard: { type: 'string', enum: ['llm_must_not_set_total_score'] }
+      }
+    }
+  }
+} as const;
 
 function stableId(prefix: string, seed = ''): string {
   const source = seed || `${prefix}-${Date.now()}-${Math.random()}`;
@@ -346,20 +458,65 @@ function densityScore(text: string, markers: string[], divisor = 7): number {
   return clamp01(count / Math.max(divisor, sentences * 1.6));
 }
 
+function markerCounts(text: string, markers: string[]): Record<string, number> {
+  return Object.fromEntries(markers.map((marker) => [marker, text.split(marker).length - 1]).filter(([, count]) => Number(count) > 0));
+}
+
+function topCounts(items: string[], limit = 12): Record<string, number> {
+  const counts = new Map<string, number>();
+  for (const item of items) counts.set(item, (counts.get(item) ?? 0) + 1);
+  return Object.fromEntries([...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ko')).slice(0, limit));
+}
+
+export function analyzeKoreanSurface(text: string, speaker_aliases: string[] = []): KoreanSurfaceReport {
+  const eojeol = text.match(/[가-힣A-Za-z0-9]+/g) ?? [];
+  const endings = [...text.matchAll(/(습니다|습니까|세요|했다|였다|었다|았다|한다|된다|이다|다|요|죠|까|냐|네|군)(?:[.!?…"”’」』)]|\s|$)/g)].map((m) => m[1]);
+  const particles = [...text.matchAll(/[가-힣]+(은|는|이|가|을|를|에|에서|으로|와|과|도|만)(?:\s|$)/g)].map((m) => m[1]);
+  const quoted = [...text.matchAll(/[「『“"]([^」』”"]+)[」』”"]/g)].map((m) => m[1]).slice(0, 8);
+  const speakerCandidates = [
+    ...speaker_aliases.filter((alias) => alias && text.includes(alias)).map((alias) => ({ speaker: alias, count: text.split(alias).length - 1, source: 'provided_alias' })),
+    ...RELATIONSHIP_MARKERS.filter((marker) => text.includes(marker) && !speaker_aliases.includes(marker)).map((marker) => ({
+      speaker: marker,
+      count: text.split(marker).length - 1,
+      source: 'relationship_marker'
+    }))
+  ].slice(0, 12);
+  return {
+    morphology: {
+      eojeol_count: eojeol.length,
+      unique_eojeol_ratio: clamp01(new Set(eojeol).size / Math.max(1, eojeol.length)),
+      sentence_count: splitSentencesMvp(text).length,
+      ending_counts: topCounts(endings),
+      particle_counts: topCounts(particles),
+      honorific_counts: markerCounts(text, ['습니다', '습니까', '세요', '셨', '께서', '드립니다'])
+    },
+    action_verbs: markerCounts(text, ACTION_VERB_MARKERS),
+    judgment_markers: markerCounts(text, JUDGMENT_MARKERS),
+    relationship_markers: markerCounts(text, RELATIONSHIP_MARKERS),
+    emotion_markers: markerCounts(text, EMOTION_MARKERS),
+    dialogue: {
+      quoted_block_count: quoted.length,
+      quoted_blocks: quoted,
+      manual_speaker_correction_first: true,
+      speaker_candidates: speakerCandidates
+    }
+  };
+}
+
 export function computeSceneFeatureScores(scene_text: string): SceneFeatureScores {
   const sentences = splitSentencesMvp(scene_text);
   const dialogue = dialogueStats(scene_text, sentences);
   return {
     dialogue_ratio: clamp01(dialogue.ratio + (dialogue.lineCount > 0 ? 0.15 : 0) + (dialogue.quotedSentenceCount >= 2 ? 0.15 : 0)),
     observation_density: densityScore(scene_text, MARKERS.observation_density, 7),
-    action_verb_density: densityScore(scene_text, MARKERS.action_verb_density, 7),
+    action_verb_density: densityScore(scene_text, ACTION_VERB_MARKERS, 7),
     exposition_marker_density: densityScore(scene_text, MARKERS.exposition_marker_density, 5),
     conflict_intensity: densityScore(scene_text, MARKERS.conflict_intensity, 5),
     movement_marker_density: densityScore(scene_text, MARKERS.movement_marker_density, 5),
     aftermath_marker_density: densityScore(scene_text, MARKERS.aftermath_marker_density, 5),
     transition_marker_density: densityScore(scene_text, MARKERS.transition_marker_density, 5),
-    internal_judgment_density: densityScore(scene_text, MARKERS.internal_judgment_density, 5),
-    relationship_shift_density: densityScore(scene_text, MARKERS.relationship_shift_density, 5)
+    internal_judgment_density: densityScore(scene_text, JUDGMENT_MARKERS, 5),
+    relationship_shift_density: densityScore(scene_text, RELATIONSHIP_MARKERS, 5)
   };
 }
 
@@ -747,7 +904,7 @@ export function buildPromptCapsule(
 
 export const build_prompt_capsule = buildPromptCapsule;
 
-function textMetrics(text: string): Required<StyleMetricsBaseline> {
+function textMetrics(text: string): Required<StyleMetricsBaseline> & { sentence_count: number; comma_per_sentence: number } {
   const sentences = splitSentencesMvp(text);
   const lens = sentences.map((s) => s.replace(/\s/g, '').length);
   const avg = lens.length ? lens.reduce((a, b) => a + b, 0) / lens.length : 0;
@@ -759,7 +916,9 @@ function textMetrics(text: string): Required<StyleMetricsBaseline> {
     short_sentence_ratio: sentences.length ? short / sentences.length : 0,
     long_sentence_ratio: sentences.length ? long / sentences.length : 0,
     dialogue_ratio: dialogue.ratio,
-    paragraph_count: text.split(/\n\s*\n/).filter((p) => p.trim()).length
+    paragraph_count: text.split(/\n\s*\n/).filter((p) => p.trim()).length,
+    sentence_count: sentences.length,
+    comma_per_sentence: (text.match(/[,、，]/g) ?? []).length / Math.max(1, sentences.length)
   };
 }
 
@@ -820,9 +979,72 @@ function rhythmFit(text: string, baseline?: StyleMetricsBaseline): number {
   return clamp01(1 - diffs.reduce((a, b) => a + b, 0) / diffs.length);
 }
 
-function leakagePenalty(text: string, terms: string[]): number {
-  const hits = terms.filter((term) => term && text.includes(term));
+function discourseFit(expected: SceneClassification | null, inferred: SceneClassification): number {
+  if (!expected) return 0.7;
+  const expectedFunctions = new Set(expected.narrative_functions);
+  const inferredFunctions = new Set(inferred.narrative_functions);
+  const covered = [...expectedFunctions].filter((fn) => inferredFunctions.has(fn)).length / Math.max(1, expectedFunctions.size);
+  let featureAlignment = 0;
+  if (expectedFunctions.has('information_reveal')) featureAlignment += inferred.feature_scores.exposition_marker_density * 0.35;
+  if (expectedFunctions.has('movement')) featureAlignment += inferred.feature_scores.movement_marker_density * 0.35;
+  if (expectedFunctions.has('tension_escalation')) featureAlignment += inferred.feature_scores.conflict_intensity * 0.35;
+  if (expectedFunctions.has('relationship_shift')) featureAlignment += inferred.feature_scores.relationship_shift_density * 0.35;
+  if (expectedFunctions.has('emotional_shift')) featureAlignment += inferred.feature_scores.internal_judgment_density * 0.25;
+  if (expectedFunctions.has('scene_transition')) featureAlignment += inferred.feature_scores.transition_marker_density * 0.3;
+  return clamp01(0.48 + covered * 0.32 + Math.min(0.2, featureAlignment));
+}
+
+function dialogueFit(inferred: SceneClassification, expected: SceneClassification | null, baseline?: StyleMetricsBaseline): number {
+  if (expected?.style_register === 'dialogue') return clamp01(0.45 + inferred.scores.DIA * 0.55);
+  if (baseline?.dialogue_ratio !== undefined) return clamp01(1 - Math.min(1, Math.abs(inferred.scores.DIA - baseline.dialogue_ratio)));
+  return clamp01(0.82 - Math.max(0, inferred.scores.DIA - 0.35) * 0.45);
+}
+
+function leakageHits(text: string, terms: string[]): string[] {
+  return [...new Set(terms.filter((term) => term && text.includes(term)))].sort();
+}
+
+function leakagePenaltyForHits(hits: string[]): number {
   return clamp01(Math.min(0.35, hits.length * 0.05));
+}
+
+function repeatedNgramRatio(text: string, n = 3): number {
+  const words = text.match(/[가-힣A-Za-z0-9]{2,}/g) ?? [];
+  const grams = Array.from({ length: Math.max(0, words.length - n + 1) }, (_, i) => words.slice(i, i + n).join(' '));
+  if (!grams.length) return 0;
+  const counts = topCounts(grams, grams.length);
+  const repeated = Object.values(counts).reduce((sum, count) => sum + Math.max(0, count - 1), 0);
+  return repeated / grams.length;
+}
+
+function lexicalFit(text: string, rules: StyleRule[], contentTerms: string[]): number {
+  const words = text.match(/[가-힣A-Za-z0-9]{2,}/g) ?? [];
+  if (!words.length) return 0.2;
+  const uniqueRatio = new Set(words).size / words.length;
+  const ruleWords = new Set(rules.flatMap((rule) => rule.instruction.match(/[가-힣A-Za-z0-9]{2,}/g) ?? []).map((word) => word.toLowerCase()));
+  const textWords = new Set(words.map((word) => word.toLowerCase()));
+  const contact = [...ruleWords].filter((word) => textWords.has(word)).length / Math.max(1, Math.min(ruleWords.size, 12));
+  const leakCount = leakageHits(text, contentTerms).length;
+  return clamp01(0.42 + Math.min(0.3, uniqueRatio * 0.35) + Math.min(0.2, contact * 0.2) - Math.min(0.22, leakCount * 0.04));
+}
+
+function fluencyScore(text: string): number {
+  if (!text.trim()) return 0.2;
+  const m = textMetrics(text);
+  const punctuationNoise = (text.match(/[!?]{3,}|…{4,}/g) ?? []).length;
+  let score = 1;
+  if (m.avg_sentence_len < 6 || m.avg_sentence_len > 95) score -= 0.25;
+  if (m.comma_per_sentence > 4) score -= 0.15;
+  score -= Math.min(0.25, punctuationNoise * 0.05);
+  score -= Math.min(0.3, repeatedNgramRatio(text, 2) * 0.9);
+  return clamp01(score);
+}
+
+function overfitPenalty(text: string, hits: string[]): number {
+  const sentences = splitSentencesMvp(text).map((sentence) => sentence.replace(/\s+/g, ''));
+  const repeatedSentences = sentences.length - new Set(sentences).size;
+  const repeatedLeakage = hits.reduce((sum, term) => sum + Math.max(0, text.split(term).length - 2), 0);
+  return clamp01(Math.min(0.28, repeatedNgramRatio(text, 3) * 0.6 + repeatedSentences * 0.05 + repeatedLeakage * 0.025));
 }
 
 function registerMismatchPenalty(text: string, expected?: SceneClassification): number {
@@ -847,14 +1069,15 @@ export function scoreStyleMatch(
     ? clamp01(inferred.primary_type === scene_classification.primary_type ? 1 : inferred.style_register === scene_classification.style_register ? 0.78 : 0.55)
     : 0.7;
   const rhythm = rhythmFit(text, profile.baseline);
-  const dialogue_fit = scene_classification?.style_register === 'dialogue' ? clamp01(inferred.scores.DIA) : 0.72;
-  const leakage = leakagePenalty(text, profile.contentTerms);
+  const dialogue_fit = dialogueFit(inferred, scene_classification, profile.baseline);
+  const hits = leakageHits(text, profile.contentTerms);
+  const leakage = leakagePenaltyForHits(hits);
   const registerPenalty = registerMismatchPenalty(text, scene_classification ?? undefined);
-  const overfit = leakage > 0.15 ? 0.03 : 0;
-  const stack_blend_fit = 'stack_id' in style_profile ? 0.72 : 0.7;
-  const discourse_fit = 0.7;
-  const lexical_fit = 0.7;
-  const fluency = text.trim().length > 0 ? 0.76 : 0.2;
+  const overfit = overfitPenalty(text, hits);
+  const stack_blend_fit = 'stack_id' in style_profile ? clamp01(0.62 + Math.min(0.28, (style_profile.adapters ?? []).filter((adapter) => adapter.enabled !== false).length * 0.06)) : 0.7;
+  const discourse_fit = discourseFit(scene_classification, inferred);
+  const lexical_fit = lexicalFit(text, [...profile.global, ...registerRules], profile.contentTerms);
+  const fluency = fluencyScore(text);
   const total = clamp01(
     global_fit * 0.2 +
       register_fit * 0.2 +
@@ -872,8 +1095,12 @@ export function scoreStyleMatch(
   const diagnostics = [
     `inferred_primary=${inferred.primary_type}`,
     `expected_primary=${scene_classification?.primary_type ?? 'not_provided'}`,
-    `leakage_penalty=${leakage}`,
-    `register_mismatch_penalty=${registerPenalty}`
+    `leakage_hits=${hits.length}`,
+    `register_mismatch_penalty=${registerPenalty}`,
+    `discourse_fit=${discourse_fit}`,
+    `lexical_fit=${lexical_fit}`,
+    `fluency=${fluency}`,
+    `overfit_penalty=${overfit}`
   ];
   return {
     report_id: stableId('style_report', `${text.slice(0, 120)}:${Date.now()}`),
@@ -956,6 +1183,47 @@ function routerMarkdown(router: StyleRouter): string {
   ].join('\n');
 }
 
+function referencePolicyMarkdown(): string {
+  return [
+    '# Reference Loading Policy',
+    '',
+    '- Load preset and stack markdown only for the active route.',
+    '- Load at most two few-shot references per prompt capsule.',
+    '- Do not load more than 12 few-shot files across a single task.',
+    '- Keep total few-shot bytes under 120000.',
+    '- Treat source names, proper nouns, object lists, choreography, and event order as content, not style.',
+    '- LLM output may explain or suggest changes, but it must not set the authoritative StyleMatchScore.'
+  ].join('\n');
+}
+
+function regressionFixture(project_id: string, presets: StylePreset[], stacks: StyleStack[], router: StyleRouter): string {
+  return JSON.stringify(
+    {
+      schema_version: 'bindery.style.skillpack.regression.v1',
+      project_id,
+      checks: [
+        {
+          name: 'dialogue_relationship_overlay',
+          scene_text: '“선생님, 이 자료를 믿어도 됩니까?”\n“아직은요. 그래도 당신 말은 확인하겠습니다.”\n그 호칭은 조금 가까워져 있었다.',
+          expected_primary_type: 'DIA',
+          expected_secondary_type: 'REL',
+          score_guard: 'local_runtime_authoritative'
+        },
+        {
+          name: 'sentence_blocks_grouped',
+          scene_text: '에이라는 말없이 자료를 넘겼다.\n\n그 시선은 서류 아래쪽에서 멈췄다.\n\n주인공은 고개를 끄덕였다.\n\n잠시 뒤 방 안의 공기가 낮게 가라앉았다.',
+          expected_note: 'Sentence-separated samples are not one sentence per scene.'
+        }
+      ],
+      preset_count: presets.length,
+      stack_count: stacks.length,
+      router_rule_count: router.rules.length
+    },
+    null,
+    2
+  );
+}
+
 export function buildStyleSkillPackFiles(project_id: string, presets: StylePreset[], stacks: StyleStack[], router: StyleRouter): StyleSkillPackFile[] {
   const files: StyleSkillPackFile[] = [];
   files.push({
@@ -1007,6 +1275,40 @@ export function buildStyleSkillPackFiles(project_id: string, presets: StylePrese
   files.push({
     path: 'references/leakage-rules.md',
     content: ['# Leakage Rules', '', ...DEFAULT_NEGATIVE_RULES.map((rule) => `- ${rule}`)].join('\n')
+  });
+  files.push({ path: 'references/reference-policy.md', content: referencePolicyMarkdown() });
+  files.push({ path: 'references/regression-fixture.json', content: regressionFixture(project_id, presets, stacks, router) });
+  files.push({ path: 'references/structured-output-schemas.json', content: JSON.stringify(STRUCTURED_OUTPUT_SCHEMAS, null, 2) });
+  files.push({
+    path: 'references/korean-nlp-markers.json',
+    content: JSON.stringify(
+      {
+        action_verbs: ACTION_VERB_MARKERS,
+        judgment_markers: JUDGMENT_MARKERS,
+        relationship_markers: RELATIONSHIP_MARKERS,
+        emotion_markers: EMOTION_MARKERS,
+        speaker_policy: 'speaker_candidates_are_not_authoritative_manual_correction_first'
+      },
+      null,
+      2
+    )
+  });
+  files.push({
+    path: 'scripts/validate_skill_pack.py',
+    content: [
+      '#!/usr/bin/env python3',
+      'from pathlib import Path',
+      'import json, sys',
+      "REQUIRED = ['SKILL.md','agents/openai.yaml','references/reference-policy.md','references/regression-fixture.json','references/structured-output-schemas.json','references/korean-nlp-markers.json']",
+      'root = Path(sys.argv[1] if len(sys.argv) > 1 else ".")',
+      "errors = [f'missing {rel}' for rel in REQUIRED if not (root / rel).exists()]",
+      "fixture = root / 'references/regression-fixture.json'",
+      'if fixture.exists():',
+      '    try: json.loads(fixture.read_text(encoding="utf-8"))',
+      "    except json.JSONDecodeError as exc: errors.append(f'invalid regression fixture: {exc}')",
+      "print(json.dumps({'ok': not errors, 'errors': errors}, ensure_ascii=False, indent=2))",
+      'raise SystemExit(0 if not errors else 1)'
+    ].join('\n')
   });
   for (const preset of presets) files.push({ path: `references/presets/${preset.preset_id}.md`, content: presetMarkdown(preset) });
   for (const stack of stacks) files.push({ path: `references/stacks/${stack.stack_id}.md`, content: stackMarkdown(stack) });

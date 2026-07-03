@@ -62,5 +62,6 @@ CREATE TABLE IF NOT EXISTS style_match_reports (
   stack_id TEXT,
   total_score REAL,
   report_json TEXT NOT NULL,
-  created_at TEXT
+  created_at TEXT,
+  updated_at TEXT
 );

@@ -1,5 +1,6 @@
 <script lang="ts">
   import MarkdownPreview from '$lib/components/editor/MarkdownPreview.svelte';
+  import StyleSystemPanel from '$lib/components/style/StyleSystemPanel.svelte';
   import { styleStore, STRICTNESS_LABEL } from '$lib/stores/styleStore';
   import type { StyleStep, StyleStrictness } from '$lib/stores/styleStore';
   import { projectStore } from '$lib/stores/projectStore';
@@ -26,7 +27,8 @@
     { id: 'analyze', label: '장면 분석', desc: '정량 + 감성' },
     { id: 'guide', label: '작성 지침', desc: '지침·금지 목록' },
     { id: 'proof', label: '재현 테스트', desc: '새 장면 샘플' },
-    { id: 'final', label: '지침서', desc: '집필 반영' }
+    { id: 'final', label: '지침서', desc: '집필 반영' },
+    { id: 'system', label: '문체 시스템', desc: '프리셋·스택' }
   ];
 
   let running: StyleStep | null = null;
@@ -124,7 +126,8 @@
     analyze: (s.analysis ? { text: `장면 ${s.analysis.scenes.length}개${s.extract ? ' · 문체 추출됨' : ''}`, tone: s.extract ? 'ok' : 'warn' } : { text: '대기', tone: 'neutral' }) as StageState,
     guide: (s.guide ? { text: '지침 생성됨', tone: 'ok' } : { text: '대기', tone: 'neutral' }) as StageState,
     proof: (s.proof ? { text: '샘플 있음', tone: 'ok' } : { text: '대기', tone: 'neutral' }) as StageState,
-    final: (s.guideline ? { text: s.savedPath ? '저장·집필 반영' : '생성됨', tone: 'ok' } : { text: '대기', tone: 'neutral' }) as StageState
+    final: (s.guideline ? { text: s.savedPath ? '저장·집필 반영' : '생성됨', tone: 'ok' } : { text: '대기', tone: 'neutral' }) as StageState,
+    system: (s.presets.length ? { text: `${s.presets.length} preset · ${s.stacks.length} stack`, tone: 'ok' } : s.analysis ? { text: '생성 가능', tone: 'warn' } : { text: '대기', tone: 'neutral' }) as StageState
   } satisfies Record<StyleStep, StageState>;
 
   function projectRoot(): string {
@@ -224,7 +227,22 @@
   }
 
   function resetAll() {
-    styleStore.update((v) => ({ ...v, analysis: null, extract: null, guide: null, proof: null, guideline: null, savedPath: null, step: 'sample' }));
+    styleStore.update((v) => ({
+      ...v,
+      analysis: null,
+      extract: null,
+      guide: null,
+      proof: null,
+      guideline: null,
+      sceneClassifications: [],
+      presets: [],
+      stacks: [],
+      router: null,
+      activeStack: null,
+      promptCapsule: null,
+      savedPath: null,
+      step: 'sample'
+    }));
   }
 </script>
 
@@ -424,7 +442,7 @@
           {/if}
         {/if}
       </div>
-    {:else}
+    {:else if s.step === 'final'}
       <header class="stage-head">
         <span class="eyebrow">05 지침서</span>
         <h1>최종 문체 지침서</h1>
@@ -438,6 +456,7 @@
             <button class="primary" on:click={runFinalize} disabled={running !== null}>{running === 'final' ? '작성 중…' : s.guideline ? '지침서 다시 생성' : '지침서 생성'}</button>
             {#if s.guideline}
               <button class="ghost" on:click={saveGuideline} disabled={saving}>{saving ? '저장 중…' : s.savedPath ? '다시 저장' : '프로젝트에 저장'}</button>
+              <button class="ghost" on:click={() => goto('system')}>문체 시스템 →</button>
               <label class="apply-check">
                 <input type="checkbox" checked={s.applyToDraft} on:change={(e) => styleStore.update((v) => ({ ...v, applyToDraft: e.currentTarget.checked }))} />
                 집필 프롬프트에 반영
@@ -462,6 +481,15 @@
             <div class="md-output"><MarkdownPreview content={s.guideline} /></div>
           {/if}
         {/if}
+      </div>
+    {:else if s.step === 'system'}
+      <header class="stage-head">
+        <span class="eyebrow">06 문체 시스템</span>
+        <h1>프리셋, 스택, 라우터 관리</h1>
+        <p>분석 결과를 재사용 가능한 문체 프리셋과 라우팅 규칙으로 관리합니다. 장면 분류 보정, 점수 실험, SkillPack 내보내기를 여기서 마무리합니다.</p>
+      </header>
+      <div class="stage-body">
+        <StyleSystemPanel />
       </div>
     {/if}
   </section>
