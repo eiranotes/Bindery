@@ -1,5 +1,16 @@
 # log.md — Stage 3 Work Log
 
+## 2026-07-03 Pipeline Gap Closure + Writing-Focused Shell
+
+- Audited the style-analysis and AI writing pipelines end to end; verified local-first style analysis, native command delegation to the Python CLI, and propose→review→apply. Tests passed (Python 18, TS/analyzer smoke, svelte-check 0/0).
+- Closed three real gaps found in the audit:
+  - `context`/`summarize`/`commit` pipeline steps no longer emit fixed novelctl stubs. New action-layer functions in `apps/desktop/src/lib/actions/pipeline.ts` assemble a real context pack (previous summary + manuscript-detected codex items + open threads), summarize via the agent with an honest offline fallback that still feeds `canon/summaries/{ep}.md`, and commit creates a real snapshot plus a journal artifact.
+  - Wired StyleMatch scoring into candidate review: `CandidateDiffPanel.svelte` scores each candidate against the active style preset and shows the score.
+  - Injected the structured PromptCapsule from `문체 시스템` into draft/revise guidance in `guidance.ts` so scene-routed style rules reach the AI draft prompt.
+- Removed the AIStudio `novelctl()` stub runner and its now-unused imports.
+- Started the Pensive/Muvel-aligned UI cleanup: the chapter navigator now renders only on the writing screen (`AppShell.svelte`, `TopBar.svelte`, `app.css`), removing three-panel dispersion on the AI/style/materials/export surfaces.
+- Verified in the browser dev server: three pipeline steps produced real artifacts, candidate style scores rendered, the capsule appeared in the draft prompt preview, and the navigator gating worked, with zero console errors.
+
 ## 2026-07-03 Style System Patch
 
 - Inspected `bindery_style_system_patched_20260703.zip` and confirmed it adds a structured style runtime, Python CLI style subcommands, frontend local API entrypoints, SceneClassification UI rows, tests, and documentation.

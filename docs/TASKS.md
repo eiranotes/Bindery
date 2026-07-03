@@ -1,6 +1,19 @@
 # Tasks
 
-Updated: 2026-07-03 (GitHub 게시 준비)
+Updated: 2026-07-03 (파이프라인 갭 마감 + UI 재편 착수)
+
+## Done (2026-07-03 파이프라인 갭 마감 + 작업면 정리)
+
+- [x] Replace the `context`/`summarize`/`commit` novelctl stubs with real assembly/agent/snapshot behavior in the action layer.
+- [x] Wire StyleMatch scoring into the candidate review panel.
+- [x] Inject the PromptCapsule into draft/revise guidance so the structured style runtime reaches the AI draft prompt.
+- [x] Render the chapter navigator only on the writing screen to remove three-panel dispersion.
+
+## Next (UI 재편 — Pensive/뮤블 정렬)
+
+- [ ] Reduce top navigation: fold `문체`/`AI 작업`/`내보내기` under a Studio surface (Write + Studio model).
+- [ ] Replace rounded card nesting with hairline rows/full-width panels across materials, export, help, and style panels.
+- [ ] Unify the AI and style studio rails into one calm full-bleed surface language.
 
 ## Done
 

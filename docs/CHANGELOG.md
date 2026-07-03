@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-03 (파이프라인 갭 마감)
+
+- Made the AI pipeline `컨텍스트`/`요약`/`기록` steps produce real output instead of fixed novelctl stubs: context assembles the previous-episode summary, manuscript-detected codex items, and open threads; summarize calls the agent (with an offline fallback) and feeds `canon/summaries/{ep}.md`; commit creates a real snapshot with a journal artifact.
+- Scored draft candidates against the active style preset and showed the StyleMatch score in the candidate review panel.
+- Injected the structured PromptCapsule (scene-routed style rules) from `문체 시스템` into the draft/revise prompt guidance.
+
 ## 2026-07-03 (GitHub 게시 준비)
 
 - Ignored local Superloopy state/evidence and ad hoc source-text samples so they are not accidentally included when publishing the repository.
