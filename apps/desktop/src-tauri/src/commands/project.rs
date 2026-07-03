@@ -3,6 +3,7 @@ use serde::Serialize;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use tauri::{AppHandle, Manager};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -79,13 +80,64 @@ fn write_text(path: &Path, content: &str) -> AppResult<()> {
     Ok(())
 }
 
+fn seed_text(path: &Path, content: &str) -> AppResult<()> {
+    if path.exists() {
+        return Ok(());
+    }
+    write_text(path, content)
+}
+
+fn ensure_sample_project(app: &AppHandle) -> AppResult<PathBuf> {
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| app_error(format!("샘플 프로젝트 폴더를 준비할 수 없습니다: {e}")))?
+        .join("sample-project");
+
+    seed_text(
+        &root.join(".novelctl/config.yaml"),
+        "project:\n  title: Sample Novel\n  language: ko\nengine:\n  mock: true\n  geminiCliPath: gemini\nwriting:\n  source_of_truth: markdown\n  ai_apply_mode: candidate_diff_apply\n",
+    )?;
+    seed_text(
+        &root.join(".gemini/agents/context-architect.md"),
+        "# Context Architect\n\nSample agent notes for Bindery's local demo project.\n",
+    )?;
+    seed_text(
+        &root.join("story/chapters/ep001/index.md"),
+        "# EP001 작업 메모\n\n- 원고: manuscript.md\n- 컨텍스트: 대기\n- QA: 대기\n",
+    )?;
+    seed_text(
+        &root.join("story/chapters/ep001/manuscript.md"),
+        "---\nepisode: ep001\nstatus: draft\npov: protagonist\nlocation: guild-office\ncharacters:\n  - protagonist\n  - eira\n---\n\n# EP001 Manuscript\n\n에이라는 말없이 자료를 넘겼다.\n\n주인공은 고개를 끄덕였다. 하지만 그 침묵은 오래 가지 않았다.\n\n“숫자만 보면 통과예요.”\n\n에이라의 시선은 서류 아래쪽에서 멈췄다.\n\n“하지만 이 부상 이력은 그냥 넘기면 안 됩니다.”\n",
+    )?;
+    seed_text(
+        &root.join("canon/setting-bible.md"),
+        "# Setting Bible\n\n- Guild operations must remain internally consistent.\n",
+    )?;
+    seed_text(
+        &root.join("plot/open-threads.md"),
+        "# Open Threads\n\n- Medical director vacancy risk.\n",
+    )?;
+    seed_text(
+        &root.join("notes/inbox.md"),
+        "# Inbox\n\n- 에이라가 태클이 아니라 자료 제시로 장면을 여는 방식.\n",
+    )?;
+
+    Ok(root)
+}
+
 fn yaml_quote(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 #[tauri::command]
-pub fn open_project(path: String) -> AppResult<ProjectInfo> {
-    let root = expand_home(path.trim());
+pub fn open_project(app: AppHandle, path: String) -> AppResult<ProjectInfo> {
+    let trimmed = path.trim();
+    let root = if trimmed.is_empty() || trimmed == "sample-project" {
+        ensure_sample_project(&app)?
+    } else {
+        expand_home(trimmed)
+    };
     project_info(&root)
 }
 

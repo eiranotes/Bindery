@@ -1,10 +1,16 @@
 # Project Status
 
-Updated: 2026-07-03 (UI 정리와 접히는 사이드바)
+Updated: 2026-07-03 (패키지 앱 샘플 열기 수정)
 
 ## Current State
 
 Bindery is a writing-first macOS/Svelte/Tauri app covering the full local novel workflow: episode management (create/switch/status), writing with scene jump and daily stats, materials (editable plot board, codex item creation), style replication with adjustable enforcement strength, an AI harness whose every step leaves file-synced artifacts that feed drafting (with author-tunable length/creativity/instructions), agent-based QA with style-compliance and continuity gates, snapshot compare/restore, project-wide search, and real TXT/HTML export. The shell now has a collapsible left navigator rail, tighter top navigation, and wider resilient analysis rows so dense Korean labels truncate or scroll instead of stacking into vertical text. The style analyzer follows the v3 MVP procedure locally first: normalize input, segment scene candidates, code local features, generate evidence, apply globality decisions, build a surface profile, then hand semantic interpretation to the configured AI runner only where local regex analysis is insufficient. Storage is local-only by design.
+
+## Completed (2026-07-03, 패키지 앱 샘플 열기 수정)
+
+- Fixed packaged `.app`/DMG behavior for `sample-project`: the Tauri `open_project` command now seeds a writable sample project under the app data directory when the user opens the default sample path.
+- The seeding path only creates missing files, so edits inside the packaged sample are not overwritten on the next launch.
+- Verified: `cargo fmt --check`, `cargo check`, `npm --workspace apps/desktop run check`.
 
 ## Completed (2026-07-03, UI 정리와 접히는 사이드바)
 

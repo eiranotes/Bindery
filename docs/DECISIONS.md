@@ -1,6 +1,12 @@
 # Decisions
 
-Updated: 2026-07-03 (UI 정리와 접히는 사이드바)
+Updated: 2026-07-03 (패키지 앱 샘플 열기 수정)
+
+## Packaged Sample Uses App Data
+
+Decision: In a packaged Tauri app, `open_project("sample-project")` seeds and opens a writable sample project under the app data directory instead of treating `sample-project` as a relative filesystem path.
+
+Reason: Finder-launched `.app`/DMG builds do not run from the repository root, so the previous relative path failed. The sample must work out of the box and remain writable without depending on developer checkout paths.
 
 ## Studio Navigator Collapses To A Rail
 

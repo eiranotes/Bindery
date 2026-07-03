@@ -1,9 +1,10 @@
 # Tasks
 
-Updated: 2026-07-03 (UI 정리와 접히는 사이드바)
+Updated: 2026-07-03 (패키지 앱 샘플 열기 수정)
 
 ## Done
 
+- [x] Fix packaged DMG sample opening by resolving `sample-project` to a writable app-data sample project.
 - [x] Add a collapsible left binder sidebar with a compact rail for episode/file/bible navigation.
 - [x] Clean up the studio topbar and navigation widths so Korean tab labels do not collapse into vertical text.
 - [x] Rework the `문체` analyzer scene table into resilient four-column rows with responsive stacking.
@@ -33,6 +34,7 @@ Updated: 2026-07-03 (UI 정리와 접히는 사이드바)
 ## Next
 
 - [ ] Add a user preference to remember the sidebar collapsed state across app launches.
+- [ ] Add a native folder picker for `기존 폴더` so users do not need to paste absolute paths.
 - [ ] Add manual scene split/merge and evidence confirmation editing for the analyzer.
 - [ ] Drag-and-drop scene reordering on the plot board.
 - [ ] Automated click-through inside the packaged app; Windows runner validation.

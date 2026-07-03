@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-07-03 (패키지 앱 샘플 열기 수정)
+
+- Fixed `.app`/DMG sample project opening: `sample-project` now resolves to a writable app-data sample project in packaged builds instead of a repo-relative path.
+- The packaged sample project seeds only missing files, so user edits are not overwritten on later launches.
+
 ## 2026-07-03 (UI 정리와 접히는 사이드바)
 
 - Added a topbar sidebar toggle and compact binder rail so the left project navigator can collapse while keeping `회차`, `파일`, and `설정집` reachable.
