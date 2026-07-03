@@ -8,7 +8,7 @@
   import AIStudio from '$lib/components/ai/AIStudio.svelte';
   import StyleStudio from '$lib/components/style/StyleStudio.svelte';
   import HelpSurface from './HelpSurface.svelte';
-  import { uiStore } from '$lib/stores/uiStore';
+  import { uiStore, studioViews, gotoView } from '$lib/stores/uiStore';
   import { editorStore } from '$lib/stores/editorStore';
   import { projectStore } from '$lib/stores/projectStore';
   import { loadPlotAction } from '$lib/actions/pipeline';
@@ -39,10 +39,6 @@
         <p>프로젝트를 열면 보통 `manuscript.md`가 자동으로 선택됩니다. 직접 고르려면 왼쪽의 파일 탭을 사용하세요.</p>
       </div>
     {/if}
-  {:else if $uiStore.centerView === 'ai'}
-    <AIStudio />
-  {:else if $uiStore.centerView === 'style'}
-    <StyleStudio />
   {:else if $uiStore.centerView === 'materials'}
     <div class="surface-head compact">
       <div class="surface-copy">
@@ -56,20 +52,27 @@
       <section class="panel-slim"><CodexPanel /></section>
       <section class="panel-slim"><PlotGridPanel /></section>
     </div>
-  {:else if $uiStore.centerView === 'export'}
-    <div class="surface-head compact">
-      <div class="surface-copy">
-        <span class="eyebrow">내보내기</span>
-        <h1>출고와 기록</h1>
-        <p>합본을 출력하고, 스냅샷과 실행 기록, 집필 통계를 확인합니다.</p>
-      </div>
-    </div>
-    <div class="export-grid three">
-      <section class="panel-slim"><ExportPanel /></section>
-      <section class="panel-slim"><SnapshotPanel /></section>
-      <section class="panel-slim"><JobConsole /></section>
-    </div>
   {:else if $uiStore.centerView === 'help'}
     <HelpSurface />
+  {:else}
+    <!-- 작업실 — 문체·AI·내보내기 도구면. 상단 서브내비로 전환한다. -->
+    <nav class="studio-subnav" aria-label="작업실 도구">
+      {#each studioViews as v}
+        <button class:on={$uiStore.centerView === v.id} title={v.hint} on:click={() => gotoView(v.id)}>{v.label}</button>
+      {/each}
+    </nav>
+    <div class="studio-body">
+      {#if $uiStore.centerView === 'ai'}
+        <AIStudio />
+      {:else if $uiStore.centerView === 'style'}
+        <StyleStudio />
+      {:else if $uiStore.centerView === 'export'}
+        <div class="export-grid three">
+          <section class="panel-slim"><ExportPanel /></section>
+          <section class="panel-slim"><SnapshotPanel /></section>
+          <section class="panel-slim"><JobConsole /></section>
+        </div>
+      {/if}
+    </div>
   {/if}
 </section>

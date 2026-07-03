@@ -1,6 +1,6 @@
 <script lang="ts">
   import { projectStore } from '$lib/stores/projectStore';
-  import { mainViews, toggleSidebar, uiStore } from '$lib/stores/uiStore';
+  import { primaryViews, isStudioView, toggleSidebar, uiStore } from '$lib/stores/uiStore';
   import { themeStore, toggleTheme } from '$lib/stores/themeStore';
   import { settingsStore } from '$lib/stores/settingsStore';
   import { gotoStage } from '$lib/stores/pipelineStore';
@@ -22,6 +22,11 @@
   function openAIConnect() {
     gotoStage('connect');
     uiStore.update((s) => ({ ...s, centerView: 'ai' }));
+  }
+  // 작업실 탭 — 문체/AI/내보내기 도구면. 이미 도구면이면 그대로 두고, 아니면 파이프라인으로 진입.
+  $: studioActive = isStudioView($uiStore.centerView);
+  function openStudio() {
+    uiStore.update((s) => (isStudioView(s.centerView) ? s : { ...s, centerView: 'ai' }));
   }
 </script>
 
@@ -47,9 +52,10 @@
       <b>{$projectStore.current?.title}</b>
     </button>
     <nav class="main-tabs" aria-label="주요 화면">
-      {#each mainViews as view}
+      {#each primaryViews as view}
         <button class:on={$uiStore.centerView === view.id} title={view.hint} on:click={() => uiStore.update((s) => ({ ...s, centerView: view.id }))}>{view.label}</button>
       {/each}
+      <button class:on={studioActive} title="문체·AI·내보내기 작업실" on:click={openStudio}>작업실</button>
     </nav>
   </div>
 
