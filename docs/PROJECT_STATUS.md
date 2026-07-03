@@ -1,10 +1,25 @@
 # Project Status
 
-Updated: 2026-07-03 (문체 시스템 Phase 2 완료)
+Updated: 2026-07-03 (GitHub 게시 준비)
 
 ## Current State
 
-Bindery is a writing-first macOS/Svelte/Tauri app covering the full local novel workflow: episode management (create/switch/status), writing with scene jump and daily stats, materials (editable plot board, codex item creation), style replication with adjustable enforcement strength, an AI harness whose every step leaves file-synced artifacts that feed drafting (with author-tunable length/creativity/instructions), agent-based QA with style-compliance and continuity gates, snapshot compare/restore, project-wide search, and real TXT/HTML/EPUB export. The shell now has a collapsible left navigator rail, tighter top navigation, and wider resilient analysis rows so dense Korean labels truncate or scroll instead of stacking into vertical text. The style analyzer follows the v3 MVP procedure locally first: normalize input, group scene candidates, code local features, generate evidence, apply globality decisions, build a surface profile, then hand semantic interpretation to the configured AI runner only where local regex analysis is insufficient. The structured style runtime now includes repository sync, deterministic SceneClassification, StyleRouter, StyleStack merge, PromptCapsule, feature-based StyleMatchScore, Korean surface analysis, structured-output guards, and validated SkillPack export paths in TypeScript and Python. Storage is local-only by design; `styles/` JSON is the editable source and SQLite is the query/index cache.
+Bindery is a writing-first macOS/Svelte/Tauri app covering the full local novel workflow: episode management (create/switch/status), writing with scene jump and daily stats, materials (editable plot board, codex item creation), style replication with adjustable enforcement strength, an AI harness whose every step leaves file-synced artifacts that feed drafting (with author-tunable length/creativity/instructions), agent-based QA with style-compliance and continuity gates, snapshot compare/restore, project-wide search, and real TXT/HTML/EPUB export. The shell now keeps the collapsible binder navigator on the writing screen and gives AI/materials/export surfaces a single focused work area; top navigation and analysis rows remain resilient so dense Korean labels truncate or scroll instead of stacking into vertical text. The style analyzer follows the v3 MVP procedure locally first: normalize input, group scene candidates, code local features, generate evidence, apply globality decisions, build a surface profile, then hand semantic interpretation to the configured AI runner only where local regex analysis is insufficient. The structured style runtime now includes repository sync, deterministic SceneClassification, StyleRouter, StyleStack merge, PromptCapsule, feature-based StyleMatchScore, Korean surface analysis, structured-output guards, and validated SkillPack export paths in TypeScript and Python. Storage is local-only by design; `styles/` JSON is the editable source and SQLite is the query/index cache.
+
+## Completed (2026-07-03, GitHub 게시 준비)
+
+- Prepared repository hygiene for GitHub publishing by excluding local Superloopy state/evidence and personal sample source text from version control.
+- Confirmed the repository has no configured GitHub remote yet; publishing still requires GitHub authentication or a manually created remote URL.
+- Verified publish-ready state with `git diff --check`, `npm --workspace apps/desktop run check`, `bash scripts/verify_ai_pipeline.sh`, `npm run build`, and `python3 scripts/verify_static.py`.
+
+## Completed (2026-07-03, 작업면 집중도 정리)
+
+- Hid the binder navigator outside the writing screen so AI/materials/export work surfaces are no longer split into duplicate side rails.
+
+## Completed (2026-07-03, AI 작성 파이프라인 문서화)
+
+- Added `docs/AI_WRITING_PIPELINE_FLOW_20260703.md`, a Korean user-flow document explaining `AI 작업` from project open through CLI connection, bible handling, seven pipeline steps, artifact storage, candidate diff/apply, fallbacks, and verification commands.
+- Verified the default local AI adapter smoke path with `bash scripts/verify_ai_pipeline.sh` (`AI pipeline adapter smoke: PASS (codex)`).
 
 ## Completed (2026-07-03, 문체 시스템 Phase 2 완료)
 

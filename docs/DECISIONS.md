@@ -1,6 +1,18 @@
 # Decisions
 
-Updated: 2026-07-03 (문체 시스템 Phase 2 완료)
+Updated: 2026-07-03 (GitHub 게시 준비)
+
+## Local Evidence And Source Text Stay Out Of Git
+
+Decision: Local Superloopy state/evidence under `.superloopy/` and ad hoc source-text samples under `sample/` are ignored and are not part of the publishable GitHub repository.
+
+Reason: Superloopy files are local QA/work-session artifacts, and copied prose samples may be private or copyrighted. The tracked `sample-project/` remains the safe app fixture.
+
+## Binder Belongs To The Writing Surface
+
+Decision: The left binder navigator is shown only on the writing screen. AI work, materials, style analysis, and export screens use their own focused work areas without the extra binder column.
+
+Reason: Non-writing screens already have their own rails, panels, and review stages. Keeping the binder visible everywhere created duplicate navigation density and reduced room for dense Korean labels and analysis output.
 
 ## Style JSON Is The Editable Source
 

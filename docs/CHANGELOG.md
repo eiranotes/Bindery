@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-07-03 (GitHub 게시 준비)
+
+- Ignored local Superloopy state/evidence and ad hoc source-text samples so they are not accidentally included when publishing the repository.
+
+## 2026-07-03 (작업면 집중도 정리)
+
+- Hid the binder navigator outside the writing screen so AI/materials/export work surfaces use a single focused layout.
+
+## 2026-07-03 (AI 작성 파이프라인 문서화)
+
+- Added `docs/AI_WRITING_PIPELINE_FLOW_20260703.md`, explaining the current Korean AI writing pipeline from project open, CLI connection, bible handling, seven execution steps, artifact storage, candidate review/apply, fallback behavior, and verification commands.
+
 ## 2026-07-03 (문체 시스템 Phase 2 완료)
 
 - Added `novelctl style-sync` for syncing project `styles/` JSON into `.bindery/style-system.sqlite3` with a `styles/style-repository.json` summary.

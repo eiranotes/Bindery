@@ -6,7 +6,8 @@ target/
 *.log
 browser-smoke.png
 .snapshots/
-.superloopy/evidence/
+.superloopy/
+sample/
 apps/desktop/src-tauri/target/
 apps/desktop/.svelte-kit/
 apps/desktop/build/

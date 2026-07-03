@@ -1,9 +1,12 @@
 # Tasks
 
-Updated: 2026-07-03 (문체 시스템 Phase 2 완료)
+Updated: 2026-07-03 (GitHub 게시 준비)
 
 ## Done
 
+- [x] Hide the binder navigator outside the writing screen so AI/materials/export surfaces stay focused.
+- [x] Prepare GitHub publish hygiene by ignoring local Superloopy state/evidence and personal sample source text.
+- [x] Document the current AI writing pipeline user flow in Korean (`docs/AI_WRITING_PIPELINE_FLOW_20260703.md`) and verify the default Codex adapter smoke path.
 - [x] Apply `bindery_style_system_patched_20260703.zip` structured style system patch.
 - [x] Add deterministic SceneClassification, StyleRouter, StyleStack merge, PromptCapsule, StyleMatchScore, and SkillPack export runtime paths in TypeScript/Python.
 - [x] Add `novelctl` style subcommands and local frontend style API entrypoints.
@@ -47,6 +50,7 @@ Updated: 2026-07-03 (문체 시스템 Phase 2 완료)
 
 ## Next
 
+- [ ] Authenticate GitHub on this Mac or provide a remote URL, then add `origin` and push `main`.
 - [ ] Add a user preference to remember the sidebar collapsed state across app launches.
 - [ ] Add a native folder picker for `기존 폴더` so users do not need to paste absolute paths.
 - [ ] Add manual scene split/merge and evidence confirmation editing for the analyzer.
