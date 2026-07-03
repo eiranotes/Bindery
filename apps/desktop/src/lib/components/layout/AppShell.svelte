@@ -25,6 +25,10 @@
       });
     }
   });
+
+  // 왼쪽 챕터 네비게이터는 집필할 때만 쓰인다. AI 작업·문체·자료·내보내기 화면은
+  // 각자 단계 레일을 가지므로 바인더를 숨겨 3단 분산과 중복을 없앤다.
+  $: showBinder = !$writingModeStore.zen && $uiStore.centerView === 'write';
 </script>
 
 {#if !$projectStore.current}
@@ -35,8 +39,8 @@
 {:else}
   <div class="app" class:zen={$writingModeStore.zen}>
     <TopBar />
-    <main class="studio-grid" class:zen={$writingModeStore.zen} class:sidebar-collapsed={$uiStore.sidebarCollapsed}>
-      {#if !$writingModeStore.zen}<BinderPanel collapsed={$uiStore.sidebarCollapsed} />{/if}
+    <main class="studio-grid" class:zen={$writingModeStore.zen} class:sidebar-collapsed={$uiStore.sidebarCollapsed} class:no-binder={!showBinder}>
+      {#if showBinder}<BinderPanel collapsed={$uiStore.sidebarCollapsed} />{/if}
       <MainSurface />
     </main>
     <ToastHost />

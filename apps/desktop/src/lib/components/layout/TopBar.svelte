@@ -31,15 +31,17 @@
   </button>
 
   <div class="project-zone">
-    <button
-      class="ghost icon sidebar-toggle"
-      on:click={toggleSidebar}
-      title={$uiStore.sidebarCollapsed ? '사이드바 펼치기' : '사이드바 접기'}
-      aria-label={$uiStore.sidebarCollapsed ? '사이드바 펼치기' : '사이드바 접기'}
-      aria-pressed={$uiStore.sidebarCollapsed}
-    >
-      <span>{$uiStore.sidebarCollapsed ? '›' : '‹'}</span>
-    </button>
+    {#if $uiStore.centerView === 'write'}
+      <button
+        class="ghost icon sidebar-toggle"
+        on:click={toggleSidebar}
+        title={$uiStore.sidebarCollapsed ? '사이드바 펼치기' : '사이드바 접기'}
+        aria-label={$uiStore.sidebarCollapsed ? '사이드바 펼치기' : '사이드바 접기'}
+        aria-pressed={$uiStore.sidebarCollapsed}
+      >
+        <span>{$uiStore.sidebarCollapsed ? '›' : '‹'}</span>
+      </button>
+    {/if}
     <button class="project-chip" on:click={backToBooks} title={$projectStore.current?.rootPath}>
       <span>작품</span>
       <b>{$projectStore.current?.title}</b>

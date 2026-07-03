@@ -439,6 +439,8 @@ input::placeholder { color: var(--faint); }
 }
 .studio-grid.sidebar-collapsed { grid-template-columns: 54px minmax(0, 1fr); }
 .studio-grid.zen { grid-template-columns: 1fr; }
+/* 집필 외 화면은 바인더를 숨겨 단일 작업면으로 — 3단 분산 제거 */
+.studio-grid.no-binder { grid-template-columns: minmax(0, 1fr); }
 .studio-topbar { height: 56px; }
 .logo-button { border: 0; padding: 4px 8px 4px 0; color: var(--text); }
 .agent-pill {
