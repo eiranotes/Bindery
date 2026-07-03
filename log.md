@@ -1,5 +1,12 @@
 # log.md — Stage 3 Work Log
 
+## 2026-07-03 Studio Surface + Card Flattening
+
+- Reduced the top navigation from five tabs to three by folding `문체`/`AI`/`내보내기` under a single `작업실` surface with a slim sub-nav (`uiStore.ts` `primaryViews`/`studioViews`/`isStudioView`, `TopBar.svelte`, `MainSurface.svelte`). The AI and style tools stay as separate screens but no longer crowd the top bar.
+- Flattened the materials, export, and help surfaces: `panel-slim` and `help-panel` dropped their rounded card/background chrome in favor of hairline-divided full-width sections, with the column divider switching to a top divider when the grids stack on narrow widths (`app.css`).
+- Confirmed `StyleSystemPanel.svelte` already uses hairline bands rather than nested cards, so it needed no change.
+- Verified in the browser: three top tabs, the `작업실` sub-nav switching 문체/AI/내보내기, the navigator showing only while writing, and flattened panels, all with zero console errors; svelte-check 0/0.
+
 ## 2026-07-03 Pipeline Gap Closure + Writing-Focused Shell
 
 - Audited the style-analysis and AI writing pipelines end to end; verified local-first style analysis, native command delegation to the Python CLI, and propose→review→apply. Tests passed (Python 18, TS/analyzer smoke, svelte-check 0/0).

@@ -1,6 +1,6 @@
 # state.md — Current Handoff State
 
-## 2026-07-03 Pipeline Gap Closure + UI Restructure (in progress)
+## 2026-07-03 Pipeline Gap Closure + UI Restructure
 
 - Audit conclusion: style-analysis and AI writing pipelines run end to end (local-first analysis, native→Python CLI delegation, propose→review→apply). Three gaps were closed this pass.
 - Gap fixes (done, browser-verified):
@@ -8,10 +8,14 @@
   - StyleMatch score shown per candidate in `CandidateDiffPanel.svelte` (uses the active `styleStore.presets[0]`).
   - PromptCapsule injected into draft/revise guidance in `guidance.ts`.
   - `AIStudio.svelte` no longer routes context/summarize/commit through the `novelctl()` stub.
-- UI restructure toward Pensive (pensive.so) + Muvel (뮤블) references — reduce top-tab clutter, cut three-panel dispersion, keep the chapter navigator to the writing screen, and remove rounded-card nesting:
-  - Done: chapter navigator renders only on the writing screen (`AppShell.svelte`/`TopBar.svelte`/`app.css`).
-  - Next: fold `문체`/`AI 작업`/`내보내기` under a Studio surface to shrink the top nav; replace `panel-slim`/`help-panel`/`proc-step`/`strict-opt` rounded cards with hairline rows/full-width panels.
-- Verification this pass: svelte-check 0/0, Python 18 tests OK, TS/analyzer smoke OK, browser click-through with 0 console errors.
+- UI restructure toward Pensive (pensive.so) + Muvel (뮤블) references (done, browser-verified):
+  - Chapter navigator renders only on the writing screen (`AppShell.svelte`/`TopBar.svelte`).
+  - Top navigation reduced from five tabs to three (`집필 · 자료 · 작업실`); `문체`/`AI`/`내보내기` are folded under one `작업실` surface with a slim sub-nav in `MainSurface.svelte` (`studioViews`/`isStudioView` in `uiStore.ts`).
+  - Flattened the materials/export/help surfaces: `panel-slim` and `help-panel` lost their rounded card/background chrome in favor of hairline-divided full-width sections (`app.css`).
+  - `StyleSystemPanel.svelte` was already band/hairline based, so it was left as-is.
+  - Remaining polish (not blocking): unify the AI/style rails into one full-bleed surface; Muvel-style editor widgets; a Pensive-style per-episode book map.
+- Verification this pass: svelte-check 0/0, Python 18 tests OK, TS/analyzer smoke OK, browser click-through (3 top tabs, studio sub-nav, navigator gating, flattened panels) with 0 console errors.
+- Coordination note: Codex was actively committing during this session and swept the working tree into its commits (`501064e`, `e676d1e`); this session's later work is committed under `2931f49`, `e4dfd54`, and the docs commit that follows.
 
 ## 2026-07-03 Style System Patch State
 

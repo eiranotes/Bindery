@@ -9,11 +9,16 @@ Updated: 2026-07-03 (파이프라인 갭 마감 + UI 재편 착수)
 - [x] Inject the PromptCapsule into draft/revise guidance so the structured style runtime reaches the AI draft prompt.
 - [x] Render the chapter navigator only on the writing screen to remove three-panel dispersion.
 
-## Next (UI 재편 — Pensive/뮤블 정렬)
+## Done (2026-07-03 UI 재편 — Pensive/뮤블 정렬)
 
-- [ ] Reduce top navigation: fold `문체`/`AI 작업`/`내보내기` under a Studio surface (Write + Studio model).
-- [ ] Replace rounded card nesting with hairline rows/full-width panels across materials, export, help, and style panels.
+- [x] Reduce top navigation: folded `문체`/`AI`/`내보내기` under a `작업실` surface with a slim sub-nav (three top tabs).
+- [x] Replace rounded card nesting with hairline full-width sections across materials, export, and help surfaces.
+
+## Next (UI 재편 — 후속 폴리시)
+
 - [ ] Unify the AI and style studio rails into one calm full-bleed surface language.
+- [ ] Add Muvel-style optional editor widgets (timer, quick memo, dictionary, episode reference).
+- [ ] Add a Pensive-style book map (per-episode planned/drafted/QA/snapshot status).
 
 ## Done
 

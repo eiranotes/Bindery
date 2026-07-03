@@ -588,10 +588,8 @@ input::placeholder { color: var(--faint); }
 }
 .help-panel {
   min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  background: var(--bg-2);
-  padding: 12px;
+  padding: 14px 0 2px;
+  border-top: 1px solid var(--line);
 }
 .help-panel.full { grid-column: 1 / -1; }
 .state-table { margin: 0; display: grid; border-top: 1px solid var(--line); }

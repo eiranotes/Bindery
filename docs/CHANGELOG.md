@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-07-03 (작업실 재편 + 카드 평탄화)
+
+- Reduced the top navigation from five tabs to three (`집필 · 자료 · 작업실`); `문체`/`AI`/`내보내기` now live under one `작업실` surface with a slim sub-nav, keeping the AI and style tools as separate screens without top-tab clutter.
+- Flattened the materials, export, and help surfaces: removed rounded card nesting in favor of hairline-divided full-width sections, aligned with the Pensive/Muvel calm-surface direction and the DESIGN.md anti-card-nesting lock.
+
 ## 2026-07-03 (파이프라인 갭 마감)
 
 - Made the AI pipeline `컨텍스트`/`요약`/`기록` steps produce real output instead of fixed novelctl stubs: context assembles the previous-episode summary, manuscript-detected codex items, and open threads; summarize calls the agent (with an offline fallback) and feeds `canon/summaries/{ep}.md`; commit creates a real snapshot with a journal artifact.
