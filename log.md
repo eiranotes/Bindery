@@ -1,5 +1,15 @@
 # log.md — Stage 3 Work Log
 
+## 2026-07-03 Style System Patch
+
+- Inspected `bindery_style_system_patched_20260703.zip` and confirmed it adds a structured style runtime, Python CLI style subcommands, frontend local API entrypoints, SceneClassification UI rows, tests, and documentation.
+- Applied the patch code/docs/tests while preserving existing project status history.
+- Checked the reported scene segmentation issue and confirmed the archive itself did not fix it: current and patched `styleAnalyzer.ts` both mapped every paragraph candidate to a scene record.
+- Fixed `paragraphCandidates()` so explicit separators/headings remain hard scene boundaries, while short sentence-like blocks are grouped into larger scene candidates.
+- Added `tests/styleAnalyzer.node.test.mjs` to cover text pasted with blank lines after every sentence.
+- Updated `docs/PROJECT_STATUS.md`, `docs/TASKS.md`, `docs/DECISIONS.md`, `docs/CHANGELOG.md`, and `docs/STYLE_ANALYSIS_METHOD.md`.
+- Verification passed: Python unittest, TypeScript style smoke, scene grouping smoke, Python compileall, Svelte check, production build, and static project verification.
+
 ## 2026-07-01
 
 - Unpacked `bindery design v0.2`.

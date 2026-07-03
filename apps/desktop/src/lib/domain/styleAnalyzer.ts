@@ -172,19 +172,74 @@ const DIALOGUE_TAG_MARKERS = ['말했다', '물었다', '대답했다', '중얼�
 const PARTICLE_MARKERS = ['은', '는', '이', '가', '을', '를', '에', '에서', '으로', '와', '과', '도', '만'];
 const HONORIFIC_MARKERS = ['습니다', '습니까', '세요', '셨', '께서', '드렸', '드립니다'];
 const ADDRESS_TERMS = ['선생', '님', '형', '누나', '오빠', '언니', '야', '씨', '각하', '대장'];
+const HARD_SCENE_BOUNDARY_RE = /^(?:\*\s*\*\s*\*|---+|={3,}|-{3,})$/;
+const HEADING_SCENE_BOUNDARY_RE = /^#{1,3}\s+\S+/;
+const MIN_SCENE_SENTENCES = 4;
+const MIN_SCENE_CHARS = 420;
+const SOFT_MAX_SCENE_CHARS = 1400;
 
 function id(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
 }
 
 export function paragraphCandidates(rawText: string): string[] {
-  return rawText
+  const blocks = rawText
     .replace(/\r\n/g, '\n')
-    .replace(/\n\s*(?:\*\s*\*\s*\*|---+|#{1,3}\s+[^\n]*)\s*\n/g, '\n\n')
+    .replace(/^\s*(?:\*\s*\*\s*\*|---+|={3,}|-{3,})\s*$/gm, (line) => `\n\n${line.trim()}\n\n`)
+    .replace(/^\s*(#{1,3}\s+\S.*)$/gm, (_line, heading: string) => `\n\n${heading.trim()}\n\n`)
     .trim()
     .split(/\n\s*\n/)
     .map((p) => p.trim())
     .filter(Boolean);
+
+  if (!blocks.length) return [];
+
+  const scenes: string[] = [];
+  let current: string[] = [];
+
+  function flush() {
+    if (!current.length) return;
+    scenes.push(current.join('\n\n').trim());
+    current = [];
+  }
+
+  function currentText() {
+    return current.join('\n\n');
+  }
+
+  function currentStats() {
+    const text = currentText();
+    return {
+      chars: text.replace(/\s/g, '').length,
+      sentences: splitSentences(text).length
+    };
+  }
+
+  for (const block of blocks) {
+    if (HARD_SCENE_BOUNDARY_RE.test(block)) {
+      flush();
+      continue;
+    }
+
+    if (HEADING_SCENE_BOUNDARY_RE.test(block) && current.length) flush();
+
+    const stats = currentStats();
+    const enoughSceneMass = stats.sentences >= MIN_SCENE_SENTENCES && stats.chars >= MIN_SCENE_CHARS;
+    const nextLooksLikeShift =
+      TRANSITION_MARKERS.some((marker) => block.includes(marker)) ||
+      CONFLICT_MARKERS.some((marker) => block.includes(marker)) ||
+      HEADING_SCENE_BOUNDARY_RE.test(block);
+
+    if (current.length && (stats.chars >= SOFT_MAX_SCENE_CHARS || (enoughSceneMass && nextLooksLikeShift))) {
+      flush();
+    }
+
+    current.push(block);
+  }
+
+  flush();
+
+  return scenes.length ? scenes : blocks;
 }
 
 export function splitSentences(text: string): string[] {
@@ -354,7 +409,7 @@ function normalizeInput(rawText: string, title?: string): InputProfile {
     estimatedSceneCount: Math.max(1, Math.min(paragraphs.length, 12)),
     hasDialogue: DIALOGUE_RE.test(rawText),
     hasJapaneseInsertions,
-    normalizationNotes: ['MVP regex analyzer. Tokenizer and model-backed coding can be added later.']
+    normalizationNotes: ['MVP regex analyzer. Short sentence-like blocks are grouped into scene candidates before feature coding. Tokenizer and model-backed coding can be added later.']
   };
 }
 

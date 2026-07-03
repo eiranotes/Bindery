@@ -1,5 +1,14 @@
 # state.md — Current Handoff State
 
+## 2026-07-03 Style System Patch State
+
+- `bindery_style_system_patched_20260703.zip` has been applied for code, tests, and docs without replacing the existing long-running project history files.
+- Structured style runtime now exists in TypeScript and Python: SceneClassification, StyleRouter, StyleStack merge, PromptCapsule, StyleMatchScore, and SkillPack export.
+- `StyleStudio.svelte` shows SceneClassification/register rows in addition to the existing local evidence bundle.
+- `styleAnalyzer.ts` now groups short sentence-like blocks into larger scene candidates, preventing one-scene-per-sentence analysis when pasted text contains blank lines after every sentence.
+- `phase2_backlog.md` is present and its remaining tasks are tracked in `docs/TASKS.md`.
+- Latest verification: Python style tests OK, TypeScript style smoke OK, scene grouping smoke OK, Python compileall OK, Svelte check 0 errors/0 warnings, production build OK, static project verification OK.
+
 ## Current stage
 
 Stage 3.11 — Runtime Readiness, Manual, Naming Pass. Stage 3.9 UI/UX 기능은 유지하고, mock 기본값 OFF, 컴파일/검증 재현성 최소수정, 운영 매뉴얼, 이름 후보 문서를 추가한 상태.

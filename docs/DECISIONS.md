@@ -1,6 +1,18 @@
 # Decisions
 
-Updated: 2026-07-03 (패키지 앱 샘플 열기 수정)
+Updated: 2026-07-03 (문체 시스템 패치 적용)
+
+## Structured Style Runtime Lives Beside The Existing Analyzer
+
+Decision: Keep the existing local-first `styleAnalyzer.ts` evidence pipeline, and add the new structured style runtime as a separate TypeScript/Python layer for SceneClassification, StyleRouter, StyleStack merge, PromptCapsule, StyleMatchScore, and SkillPack export.
+
+Reason: The existing analyzer already feeds the current `문체` workflow and prompt builders. The structured runtime is a routing/generation contract, not a replacement for the evidence bundle, so separating the layers avoids breaking current analysis artifacts while making Phase 2 storage/API/UI work possible.
+
+## Scene Candidates Are Grouped, Not Sentence-Split
+
+Decision: The analyzer treats explicit separators (`***`, `---`, headings) as hard scene boundaries, but otherwise merges short paragraph or sentence-like blocks until they have enough scene mass before creating a scene record.
+
+Reason: Many pasted novels or OCR/text exports put a blank line after every sentence. Treating each block as a scene made “장면별 분석” degenerate into sentence-by-sentence analysis. Scene classification needs larger units unless the author explicitly marks a boundary.
 
 ## Packaged Sample Uses App Data
 

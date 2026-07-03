@@ -514,3 +514,7 @@ ${a.bundle.evidenceRecords.length ? a.bundle.evidenceRecords.map((e) => `- ${e.f
 4. 대사 태그를 지울 수 있는가?
 5. 원문 샘플의 문장을 복사하지 않았는가?`;
 }
+
+// Structured style system MVP exports: scene classification, style routing,
+// style stack merge, PromptCapsule, scoring, and SkillPack file generation.
+export * from './styleSystem';

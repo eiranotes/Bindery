@@ -1,9 +1,15 @@
 # Tasks
 
-Updated: 2026-07-03 (패키지 앱 샘플 열기 수정)
+Updated: 2026-07-03 (문체 시스템 패치 적용)
 
 ## Done
 
+- [x] Apply `bindery_style_system_patched_20260703.zip` structured style system patch.
+- [x] Add deterministic SceneClassification, StyleRouter, StyleStack merge, PromptCapsule, StyleMatchScore, and SkillPack export runtime paths in TypeScript/Python.
+- [x] Add `novelctl` style subcommands and local frontend style API entrypoints.
+- [x] Show SceneClassification/register rows in the `문체` analyzer UI.
+- [x] Fix scene candidate segmentation so sentence-separated text is grouped instead of treating every sentence-like paragraph as a separate scene.
+- [x] Add regression coverage for sentence-separated style samples.
 - [x] Fix packaged DMG sample opening by resolving `sample-project` to a writable app-data sample project.
 - [x] Add a collapsible left binder sidebar with a compact rail for episode/file/bible navigation.
 - [x] Clean up the studio topbar and navigation widths so Korean tab labels do not collapse into vertical text.
@@ -33,6 +39,13 @@ Updated: 2026-07-03 (패키지 앱 샘플 열기 수정)
 
 ## Next
 
+- [ ] Move `SQLITE_SCHEMA` from MVP constants into real migration files and repository sync between project `styles/` JSON and SQLite.
+- [ ] Add native Tauri style commands or explicitly route native style actions through the Python CLI.
+- [ ] Build Preset Manager, Stack Mixer, Router Editor, scene classification override editor, Score Lab, and Suggestion Lab.
+- [ ] Add Korean NLP expansion for morphology, action verbs, judgment markers, relationship markers, emotion dictionaries, and manual speaker correction.
+- [ ] Add structured LLM correction schemas for SceneClassification, paragraph function tagging, scoring explanation, and suggestions while keeping local scoring authoritative.
+- [ ] Harden scoring with feature-based rhythm/discourse/dialogue/lexical/fluency, content leakage review, and overfit penalties.
+- [ ] Add SkillPack validator, zip exporter, reference loading policy, and regression fixtures.
 - [ ] Add a user preference to remember the sidebar collapsed state across app launches.
 - [ ] Add a native folder picker for `기존 폴더` so users do not need to paste absolute paths.
 - [ ] Add manual scene split/merge and evidence confirmation editing for the analyzer.

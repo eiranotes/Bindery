@@ -6,6 +6,26 @@ import { scanDynamicLinks } from '$lib/domain/codex';
 import type { PlotGrid } from '$lib/domain/plot';
 import { MOCK_CODEX, MOCK_QA_REPORT, MOCK_REVISION_PLAN, MOCK_CANDIDATE } from '$lib/mock/data';
 import { MOCK_PLOT_GRID } from '$lib/domain/plot';
+import type {
+  ActiveStyleStack,
+  PromptCapsule,
+  SceneClassification,
+  StyleGenerationContext,
+  StyleMatchReport,
+  StyleProfile,
+  StylePreset,
+  StyleRouter,
+  StyleRouteContext,
+  StyleStack,
+  StyleSkillPackFile
+} from '$lib/domain/style';
+import {
+  buildPromptCapsule,
+  buildStyleSkillPackFiles,
+  classifyScene,
+  resolveActiveStyleStack,
+  scoreStyleMatch
+} from '$lib/domain/style';
 
 const sampleMd = `---
 episode: ep001
@@ -278,4 +298,52 @@ export async function getPlotGrid(projectPath: string): Promise<PlotGrid> {
 
 function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+
+// ---------------------------------------------------------------------------
+// Structured style system MVP — browser-safe local entry points.
+// Tauri backends can later expose matching commands; for now the UI and tests
+// can exercise schema, classifier, router, capsule, scorer, and SkillPack file
+// generation without provider calls.
+// ---------------------------------------------------------------------------
+
+export async function classifyStyleSceneText(
+  sceneText: string,
+  metadata: Record<string, unknown> | null = null
+): Promise<SceneClassification> {
+  return classifyScene(sceneText, metadata);
+}
+
+export async function resolveStyleRouteLocal(
+  context: StyleRouteContext,
+  router: StyleRouter
+): Promise<ActiveStyleStack> {
+  return resolveActiveStyleStack(context, router);
+}
+
+export async function buildPromptCapsuleLocal(
+  context: StyleGenerationContext,
+  activeStack: ActiveStyleStack,
+  maxRules = 18,
+  tokenBudget = 1200
+): Promise<PromptCapsule> {
+  return buildPromptCapsule(context, activeStack, maxRules, tokenBudget);
+}
+
+export async function scoreStyleMatchLocal(
+  text: string,
+  styleProfile: StyleProfile | StylePreset | StyleStack,
+  sceneClassification: SceneClassification | null = null
+): Promise<StyleMatchReport> {
+  return scoreStyleMatch(text, styleProfile, sceneClassification);
+}
+
+export async function buildStyleSkillPackLocal(
+  projectId: string,
+  presets: StylePreset[],
+  stacks: StyleStack[],
+  router: StyleRouter
+): Promise<StyleSkillPackFile[]> {
+  return buildStyleSkillPackFiles(projectId, presets, stacks, router);
 }

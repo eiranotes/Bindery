@@ -1,10 +1,18 @@
 # Project Status
 
-Updated: 2026-07-03 (패키지 앱 샘플 열기 수정)
+Updated: 2026-07-03 (문체 시스템 패치 적용)
 
 ## Current State
 
-Bindery is a writing-first macOS/Svelte/Tauri app covering the full local novel workflow: episode management (create/switch/status), writing with scene jump and daily stats, materials (editable plot board, codex item creation), style replication with adjustable enforcement strength, an AI harness whose every step leaves file-synced artifacts that feed drafting (with author-tunable length/creativity/instructions), agent-based QA with style-compliance and continuity gates, snapshot compare/restore, project-wide search, and real TXT/HTML export. The shell now has a collapsible left navigator rail, tighter top navigation, and wider resilient analysis rows so dense Korean labels truncate or scroll instead of stacking into vertical text. The style analyzer follows the v3 MVP procedure locally first: normalize input, segment scene candidates, code local features, generate evidence, apply globality decisions, build a surface profile, then hand semantic interpretation to the configured AI runner only where local regex analysis is insufficient. Storage is local-only by design.
+Bindery is a writing-first macOS/Svelte/Tauri app covering the full local novel workflow: episode management (create/switch/status), writing with scene jump and daily stats, materials (editable plot board, codex item creation), style replication with adjustable enforcement strength, an AI harness whose every step leaves file-synced artifacts that feed drafting (with author-tunable length/creativity/instructions), agent-based QA with style-compliance and continuity gates, snapshot compare/restore, project-wide search, and real TXT/HTML export. The shell now has a collapsible left navigator rail, tighter top navigation, and wider resilient analysis rows so dense Korean labels truncate or scroll instead of stacking into vertical text. The style analyzer follows the v3 MVP procedure locally first: normalize input, group scene candidates, code local features, generate evidence, apply globality decisions, build a surface profile, then hand semantic interpretation to the configured AI runner only where local regex analysis is insufficient. The structured style runtime now adds deterministic SceneClassification, StyleRouter, StyleStack merge, PromptCapsule, StyleMatchScore, and SkillPack export paths in TypeScript and Python. Storage is local-only by design.
+
+## Completed (2026-07-03, 문체 시스템 패치 적용)
+
+- Applied `bindery_style_system_patched_20260703.zip`: added the structured style runtime, Python CLI style subcommands, local frontend API entrypoints, SceneClassification UI rows, docs, and tests.
+- Fixed the analyzer scene segmentation regression: sentence-like blocks separated by blank lines are now grouped into larger scene candidates unless explicit scene separators or headings indicate a hard boundary.
+- Added a regression smoke test for the sentence-separated sample case so future changes do not return to one sentence per scene.
+- Captured remaining Phase 2 items from `phase2_backlog.md`: SQLite repository/migrations, native Tauri style commands, preset/stack/router manager UI, Korean NLP expansion, LLM structured correction, scoring hardening, and SkillPack validation/zip export.
+- Verified: `python3 -m unittest discover -s tests -v`, `node --experimental-strip-types tests/styleSystem.node.test.mjs`, `node --experimental-strip-types tests/styleAnalyzer.node.test.mjs`, `python3 -m compileall -q packages/novelctl-core/novelctl`, `npm --workspace apps/desktop run check`, `npm run build`, `python3 scripts/verify_static.py`.
 
 ## Completed (2026-07-03, 패키지 앱 샘플 열기 수정)
 

@@ -1,5 +1,19 @@
 #!/usr/bin/env python3
 import argparse, json, pathlib, sys, shutil, hashlib, datetime, re
+try:
+    from .style_system import (
+        classify_scene, to_plain, load_style_payload, _scene_classification_from_dict,
+        _style_stack_from_dict, _router_from_dict, _preset_from_dict, StyleRouteContext, ActiveStyleStack, StyleProfile, _router_rule_from_dict, _rules_from_dict, _rules_map,
+        resolve_active_style_stack, build_prompt_capsule, score_style_match,
+        export_style_skill_pack, SQLITE_SCHEMA
+    )
+except ImportError:  # direct script execution
+    from style_system import (
+        classify_scene, to_plain, load_style_payload, _scene_classification_from_dict,
+        _style_stack_from_dict, _router_from_dict, _preset_from_dict, StyleRouteContext, ActiveStyleStack, StyleProfile, _router_rule_from_dict, _rules_from_dict, _rules_map,
+        resolve_active_style_stack, build_prompt_capsule, score_style_match,
+        export_style_skill_pack, SQLITE_SCHEMA
+    )
 
 WATCH = ["시선","침묵","숨","어깨","고개","미소","눈빛","공기","순간","말없이","입을 열었다","고개를 끄덕였다"]
 
@@ -80,6 +94,85 @@ def cmd_snapshot(args):
     (dst.parent/'metadata.json').write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding='utf-8')
     write_json(envelope(command=['snapshot', args.path], stdout=f'snapshot {sid}', output_files=[str(dst.relative_to(root))], data=meta))
 
+
+def _text_arg(args):
+    root = pathlib.Path(args.project)
+    if getattr(args, 'text', None):
+        return args.text
+    if getattr(args, 'path', None):
+        return (root / args.path).read_text(encoding='utf-8')
+    data = sys.stdin.read()
+    if data.strip():
+        return data
+    raise SystemExit('provide --text, --path, or stdin')
+
+def cmd_style_classify(args):
+    cls = classify_scene(_text_arg(args), {'scene_id': args.scene_id, 'chapter_id': args.chapter_id, 'manual_override': args.manual_override})
+    write_json(envelope(command=['style-classify'], stdout='style classification ok', data=to_plain(cls)))
+
+def cmd_style_sql(args):
+    write_json(envelope(command=['style-sql'], stdout=SQLITE_SCHEMA, data={'schema': SQLITE_SCHEMA}))
+
+def cmd_style_route(args):
+    payload = load_style_payload(pathlib.Path(args.context_json))
+    classification = _scene_classification_from_dict(payload['classification'])
+    context = StyleRouteContext(
+        scene_id=payload.get('scene_id', classification.scene_id),
+        classification=classification,
+        project_id=payload.get('project_id'),
+        arc_id=payload.get('arc_id'),
+        chapter_id=payload.get('chapter_id') or classification.chapter_id,
+        character_id=payload.get('character_id'),
+        dialogue_speakers=payload.get('dialogue_speakers', []),
+        manual_override_stack_id=payload.get('manual_override_stack_id'),
+        revision_pass=payload.get('revision_pass'),
+    )
+    router = _router_from_dict(load_style_payload(pathlib.Path(args.router_json)))
+    active = resolve_active_style_stack(context, router)
+    write_json(envelope(command=['style-route'], stdout='style route ok', data=to_plain(active)))
+
+def cmd_style_capsule(args):
+    payload = load_style_payload(pathlib.Path(args.payload_json))
+    active_raw = payload['active_stack']
+    from_obj = active_raw if hasattr(active_raw, 'primary_stack_id') else type('ActiveRaw', (), {})
+    if isinstance(active_raw, dict):
+        active = ActiveStyleStack(active_raw['primary_stack_id'], active_raw.get('overlay_stack_ids', []), [_router_rule_from_dict(r) for r in active_raw.get('matched_rules', [])], active_raw.get('routing_reason', 'loaded'))
+    else:
+        active = from_obj
+    capsule = build_prompt_capsule(payload['context'], active, args.max_rules, args.token_budget)
+    write_json(envelope(command=['style-capsule'], stdout='prompt capsule ok', data=to_plain(capsule)))
+
+def cmd_style_score(args):
+    text = _text_arg(args)
+    style_raw = load_style_payload(pathlib.Path(args.style_json))
+    if 'stack_id' in style_raw:
+        style = _style_stack_from_dict(style_raw)
+    elif 'preset_id' in style_raw:
+        style = _preset_from_dict(style_raw)
+    else:
+        style = StyleProfile(
+            profile_id=style_raw.get('profile_id', 'profile_cli'),
+            language=style_raw.get('language', 'ko'),
+            global_rules=_rules_from_dict(style_raw.get('global_rules')),
+            register_rules=_rules_map(style_raw.get('register_rules')),
+            overlay_rules=_rules_map(style_raw.get('overlay_rules')),
+            negative_rules=style_raw.get('negative_rules', []),
+            content_terms=style_raw.get('content_terms', []),
+            metrics_baseline=style_raw.get('metrics_baseline', {}),
+        )
+    classification = _scene_classification_from_dict(load_style_payload(pathlib.Path(args.classification_json))) if args.classification_json else None
+    report = score_style_match(text, style, classification)
+    write_json(envelope(command=['style-score'], stdout='style score ok', data=to_plain(report)))
+
+def cmd_style_export_skill(args):
+    payload = load_style_payload(pathlib.Path(args.style_json))
+    presets = [_preset_from_dict(x) for x in payload.get('presets', [])]
+    stacks = [_style_stack_from_dict(x) for x in payload.get('stacks', [])]
+    router = _router_from_dict(payload.get('router', {'router_id': 'router_default', 'rules': []}))
+    out = export_style_skill_pack(args.project_id or pathlib.Path(args.project).name, presets, stacks, router, pathlib.Path(args.output_dir))
+    files = [str(p.relative_to(out)) for p in sorted(out.rglob('*')) if p.is_file()]
+    write_json(envelope(command=['style-export-skill'], stdout=f'exported {out}', output_files=[str(out)], data={'path': str(out), 'files': files}))
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='novelctl')
     sub = parser.add_subparsers(dest='cmd', required=True)
@@ -89,6 +182,12 @@ def main(argv=None):
         p=sub.add_parser(name); p.add_argument('project'); p.add_argument('episode', nargs='?', default='ep001'); p.add_argument('--json', action='store_true'); p.set_defaults(func=fn)
     p=sub.add_parser('analyze'); p.add_argument('project'); p.add_argument('path'); p.add_argument('--json', action='store_true'); p.set_defaults(func=cmd_analyze)
     p=sub.add_parser('snapshot'); p.add_argument('project'); p.add_argument('path'); p.add_argument('--label'); p.add_argument('--json', action='store_true'); p.set_defaults(func=cmd_snapshot)
+    p=sub.add_parser('style-classify'); p.add_argument('project'); p.add_argument('--path'); p.add_argument('--text'); p.add_argument('--scene-id', default='S001'); p.add_argument('--chapter-id'); p.add_argument('--manual-override', action='store_true'); p.add_argument('--json', action='store_true'); p.set_defaults(func=cmd_style_classify)
+    p=sub.add_parser('style-sql'); p.add_argument('project'); p.add_argument('--json', action='store_true'); p.set_defaults(func=cmd_style_sql)
+    p=sub.add_parser('style-route'); p.add_argument('project'); p.add_argument('--context-json', required=True); p.add_argument('--router-json', required=True); p.add_argument('--json', action='store_true'); p.set_defaults(func=cmd_style_route)
+    p=sub.add_parser('style-capsule'); p.add_argument('project'); p.add_argument('--payload-json', required=True); p.add_argument('--max-rules', type=int, default=18); p.add_argument('--token-budget', type=int, default=1200); p.add_argument('--json', action='store_true'); p.set_defaults(func=cmd_style_capsule)
+    p=sub.add_parser('style-score'); p.add_argument('project'); p.add_argument('--path'); p.add_argument('--text'); p.add_argument('--style-json', required=True); p.add_argument('--classification-json'); p.add_argument('--json', action='store_true'); p.set_defaults(func=cmd_style_score)
+    p=sub.add_parser('style-export-skill'); p.add_argument('project'); p.add_argument('--style-json', required=True); p.add_argument('--output-dir', required=True); p.add_argument('--project-id'); p.add_argument('--json', action='store_true'); p.set_defaults(func=cmd_style_export_skill)
     args = parser.parse_args(argv)
     args.func(args)
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-07-03 (문체 시스템 패치 적용)
+
+- Applied the structured style system patch: deterministic scene classification, style routing, stack merge, prompt capsule, scoring, SkillPack export, Python CLI subcommands, frontend local API entrypoints, docs, and tests.
+- Added SceneClassification/register rows to the `문체` analyzer so the local scene bundle now feeds a clearer primary/secondary/register view.
+- Fixed scene candidate segmentation: pasted text with blank lines after every sentence is grouped into larger scene candidates instead of producing one scene per sentence-like block.
+- Added regression coverage for the sentence-separated sample case.
+
 ## 2026-07-03 (패키지 앱 샘플 열기 수정)
 
 - Fixed `.app`/DMG sample project opening: `sample-project` now resolves to a writable app-data sample project in packaged builds instead of a repo-relative path.

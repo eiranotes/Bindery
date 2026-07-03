@@ -17,7 +17,8 @@
     mockExtract,
     mockGuide,
     mockProof,
-    mockGuideline
+    mockGuideline,
+    classifyScene
   } from '$lib/domain/style';
 
   const stages: Array<{ id: StyleStep; label: string; desc: string }> = [
@@ -43,6 +44,9 @@
   $: evidenceCount = s.analysis?.bundle.evidenceRecords.length ?? 0;
   $: globalRuleCount =
     s.analysis?.bundle.evidenceRecords.filter((e) => e.globalityDecision === 'global_medium' || e.globalityDecision === 'global_strong').length ?? 0;
+  $: sceneClassifications = s.sceneClassifications.length
+    ? s.sceneClassifications
+    : s.analysis?.scenes.map((sc) => classifyScene(sc.text, { scene_id: sc.sceneId, chapter_id: 'CH001' })) ?? [];
 
   function procedureStatus(owner: 'local' | 'ai') {
     if (owner === 'local') return s.analysis ? '완료' : '대기';
@@ -78,10 +82,19 @@
     conflict: '긴장',
     aftermath: '후처리',
     quiet_transition: '전환',
+    OBS: '관찰',
+    DIA: '대화',
+    ACT: '행동',
+    INF: '정보',
+    CON: '갈등',
+    MOV: '이동',
+    AFT: '후처리',
+    TRN: '전환',
+    INT: '내면',
+    REL: '관계',
     short_burst: '단문',
     medium_controlled: '중간',
     compressed_long_sentence: '장문',
-    action: '행동',
     sensory: '감각',
     judgment_delay: '유예',
     question: '질문',
@@ -135,7 +148,8 @@
       return;
     }
     const analysis = analyzeStyle(s.sampleText);
-    styleStore.update((v) => ({ ...v, analysis, extract: null, step: 'analyze' }));
+    const sceneClassifications = analysis.scenes.map((sc) => classifyScene(sc.text, { scene_id: sc.sceneId, chapter_id: 'CH001' }));
+    styleStore.update((v) => ({ ...v, analysis, sceneClassifications, extract: null, activeStack: null, promptCapsule: null, step: 'analyze' }));
     toasts.push(`장면 ${analysis.scenes.length}개로 나눠 분석했습니다`, 'ok');
   }
 
@@ -289,7 +303,7 @@
           <div class="local-summary" aria-label="로컬 분석 요약">
             <div>
               <b>{s.analysis.bundle.inputProfile.paragraphCount}</b>
-              <span>문단 후보</span>
+              <span>묶음 후보</span>
             </div>
             <div>
               <b>{s.analysis.scenes.length}</b>
@@ -303,6 +317,20 @@
               <b>{globalRuleCount}</b>
               <span>전역 규칙</span>
             </div>
+          </div>
+
+          <div class="scene-table route-table" role="table" aria-label="장면분류 및 register">
+            <div class="scene-row head" role="row">
+              <span>장면</span><span>Primary</span><span>Secondary</span><span>Register</span>
+            </div>
+            {#each sceneClassifications as cls}
+              <div class="scene-row" role="row">
+                <span class="sc-title">{cls.scene_id}</span>
+                <span class="sc-type">{featureLabel(cls.primary_type)} · {(cls.confidence * 100).toFixed(0)}%</span>
+                <span class="sc-metrics">{cls.secondary_types.length ? cls.secondary_types.map(featureLabel).join(', ') : '없음'} · {cls.surface_mode}</span>
+                <span class="sc-surface">{featureLabel(cls.style_register)} · {cls.narrative_functions.join(', ') || '기능 없음'}</span>
+              </div>
+            {/each}
           </div>
 
           <div class="scene-table" role="table" aria-label="장면별 정량 분석">

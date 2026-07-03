@@ -1,5 +1,20 @@
 # plan.md — Stage 3.11 Plan
 
+## 2026-07-03 Style System Patch Plan
+
+Current goal: apply `bindery_style_system_patched_20260703.zip`, verify the structured style system, and fix the scene segmentation issue where sentence-separated text became one scene per sentence.
+
+Completed:
+
+- [x] Imported structured style runtime, CLI, frontend API, UI, docs, and tests from the patch archive.
+- [x] Fixed scene candidate grouping so short sentence/paragraph blocks merge unless an explicit separator marks a boundary.
+- [x] Added a Node smoke test for sentence-separated style samples.
+- [x] Reflected `phase2_backlog.md` in `docs/TASKS.md`.
+
+Next:
+
+- [ ] Implement the larger Phase 2 items from `phase2_backlog.md`: SQLite repository/migrations, native Tauri style commands, preset/stack/router editor UI, Korean NLP expansion, structured LLM correction, scoring hardening, and SkillPack validation/zip export.
+
 ## 현재 단계
 
 Stage 3.11 — Runtime Readiness, Manual, Naming Pass
