@@ -52,7 +52,16 @@ function load(): StyleState {
   if (typeof localStorage === 'undefined') return initial;
   try {
     const raw = localStorage.getItem(KEY);
-    return raw ? { ...initial, ...(JSON.parse(raw) as Partial<StyleState>) } : initial;
+    if (!raw) return initial;
+    const parsed = JSON.parse(raw) as Partial<StyleState>;
+    const state = { ...initial, ...parsed };
+    // 2026-07 analyzer migration: old persisted analyses did not contain the
+    // local MVP bundle required by the new UI. Keep the final guideline, but
+    // ask the user to rerun analysis instead of crashing on stale structure.
+    if (state.analysis && !('bundle' in state.analysis)) {
+      return { ...state, step: 'sample', analysis: null, extract: null, guide: null, proof: null };
+    }
+    return state;
   } catch {
     return initial;
   }

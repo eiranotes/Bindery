@@ -13,10 +13,15 @@ export const mainViews: Array<{ id: CenterView; label: string; hint: string }> =
 export const uiStore = writable<{
   centerView: CenterView;
   binderTab: 'episodes' | 'files' | 'bible';
+  sidebarCollapsed: boolean;
   prefsOpen: boolean;
   searchOpen: boolean;
-}>({ centerView: 'write', binderTab: 'episodes', prefsOpen: false, searchOpen: false });
+}>({ centerView: 'write', binderTab: 'episodes', sidebarCollapsed: false, prefsOpen: false, searchOpen: false });
 
 export function gotoView(view: CenterView) {
   uiStore.update((s) => ({ ...s, centerView: view }));
+}
+
+export function toggleSidebar() {
+  uiStore.update((s) => ({ ...s, sidebarCollapsed: !s.sidebarCollapsed }));
 }

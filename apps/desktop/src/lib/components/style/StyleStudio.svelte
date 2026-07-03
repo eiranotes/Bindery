@@ -9,6 +9,7 @@
   import { runAgentText, writeFile, listTree } from '$lib/api/commands';
   import {
     analyzeStyle,
+    STYLE_ANALYSIS_PROCEDURE,
     buildExtractPrompt,
     buildGuidePrompt,
     buildProofPrompt,
@@ -31,14 +32,74 @@
   let offlineNotice = false;
   const strictnessOptions = Object.keys(STRICTNESS_LABEL) as StyleStrictness[];
   const strictnessHint: Record<StyleStrictness, string> = {
-    flexible: '지침은 지향점 — 장면이 우선, 금지 목록만 준수',
+    flexible: '지침은 지향점. 장면이 우선, 금지 목록만 준수',
     balanced: '기본 준수 + 장면 필요 시 20% 내외 이탈 허용',
-    strict: '엄격 준수 — 금지 위반은 실패로 간주'
+    strict: '엄격 준수. 금지 위반은 실패로 간주'
   };
 
   $: s = $styleStore;
   $: sampleChars = s.sampleText.replace(/\s/g, '').length;
   $: agentReady = Boolean($settingsStore.agentCliPath) && !$settingsStore.mockMode;
+  $: evidenceCount = s.analysis?.bundle.evidenceRecords.length ?? 0;
+  $: globalRuleCount =
+    s.analysis?.bundle.evidenceRecords.filter((e) => e.globalityDecision === 'global_medium' || e.globalityDecision === 'global_strong').length ?? 0;
+
+  function procedureStatus(owner: 'local' | 'ai') {
+    if (owner === 'local') return s.analysis ? '완료' : '대기';
+    if (s.extract) return '완료';
+    return s.analysis ? 'AI 보강 필요' : '대기';
+  }
+
+  function procedureTone(owner: 'local' | 'ai') {
+    if (owner === 'local') return s.analysis ? 'ok' : 'neutral';
+    if (s.extract) return 'ok';
+    return s.analysis ? 'warn' : 'neutral';
+  }
+
+  function decisionLabel(decision: string) {
+    return decision === 'global_strong'
+      ? '전역 강함'
+      : decision === 'global_medium'
+        ? '전역'
+        : decision === 'register_specific'
+          ? '유형 한정'
+          : decision === 'local'
+            ? '장면 한정'
+            : decision === 'prohibited'
+              ? '전이 금지'
+              : '불확실';
+  }
+
+  const featureLabels: Record<string, string> = {
+    observation: '관찰',
+    dialogue: '대화',
+    exposition: '설명',
+    movement: '동선',
+    conflict: '긴장',
+    aftermath: '후처리',
+    quiet_transition: '전환',
+    short_burst: '단문',
+    medium_controlled: '중간',
+    compressed_long_sentence: '장문',
+    action: '행동',
+    sensory: '감각',
+    judgment_delay: '유예',
+    question: '질문',
+    emphasis: '강조',
+    statement: '평서',
+    direct_naming: '직접',
+    indirect_or_deferred: '우회',
+    neutral_or_unmarked: '중립',
+    surface_closure: '마감',
+    pacing: '박자',
+    emotion_handling: '감정',
+    dialogue_rhythm: '대화',
+    information_distribution: '정보'
+  };
+
+  function featureLabel(value: string) {
+    return featureLabels[value] ?? value;
+  }
 
   function goto(step: StyleStep) {
     styleStore.update((v) => ({ ...v, step }));
@@ -57,7 +118,7 @@
     return $projectStore.current?.rootPath || 'sample-project';
   }
 
-  /** AI 실행 — 실패하거나 오프라인이면 정량 분석 기반 기본 문서로 대체하고 표시한다. */
+  /** AI 실행: 실패하거나 오프라인이면 정량 분석 기반 기본 문서로 대체하고 표시한다. */
   async function agentOrMock(prompt: string, label: string, mock: string): Promise<string> {
     const r = await runAgentText(projectRoot(), prompt, label);
     if (r.ok && r.text.trim()) {
@@ -109,7 +170,7 @@
     try {
       const text = await agentOrMock(buildProofPrompt(s.guide, s.extract ?? '', s.sampleText), 'style-proof', mockProof());
       styleStore.update((v) => ({ ...v, proof: text }));
-      toasts.push(offlineNotice ? '오프라인 샘플을 생성했습니다' : '재현 샘플 생성 완료 — 원문 느낌과 비교해보세요', offlineNotice ? 'warn' : 'ok');
+      toasts.push(offlineNotice ? '오프라인 샘플을 생성했습니다' : '재현 샘플 생성 완료. 원문 느낌과 비교해보세요', offlineNotice ? 'warn' : 'ok');
     } finally {
       running = null;
     }
@@ -140,7 +201,7 @@
       const nodes = await listTree(projectRoot());
       fileTreeStore.update((v) => ({ ...v, nodes }));
       styleStore.update((v) => ({ ...v, savedPath: 'canon/style-guide.md' }));
-      toasts.push('지침서 저장됨: canon/style-guide.md — AI 작업 바이블에서도 보입니다', 'ok');
+      toasts.push('지침서 저장됨: canon/style-guide.md. AI 작업 바이블에서도 보입니다', 'ok');
     } catch (e) {
       toasts.push(`저장 실패: ${e instanceof Error ? e.message : String(e)}`, 'bad');
     } finally {
@@ -158,7 +219,7 @@
     <div class="rail-head">
       <span class="eyebrow">문체</span>
       <h2>문체 재현</h2>
-      <p class="rail-target">{agentReady ? 'AI 연결됨' : '오프라인 — 기본 생성'}</p>
+      <p class="rail-target">{agentReady ? 'AI 연결됨' : '오프라인: 기본 생성'}</p>
     </div>
 
     <nav class="rail-stages">
@@ -202,28 +263,87 @@
       <header class="stage-head">
         <span class="eyebrow">02 장면 분석</span>
         <h1>장면별 구조와 문체 추출</h1>
-        <p>먼저 정량 참고치(문장 길이, 대화 비중, 감정어, 종결 습관)를 만들고, AI가 그 위에서 호흡·온도·거리감 같은 감성 층위를 분석합니다.</p>
+        <p>먼저 로컬 MVP 절차로 scene, feature, evidence, capsule을 만들고, AI는 그 위에서 호흡·온도·거리감 같은 감성 층위를 보강합니다.</p>
       </header>
       <div class="stage-body">
         {#if !s.analysis}
           <p class="stage-note">샘플이 없습니다. 01 단계에서 텍스트를 먼저 붙여넣으세요.</p>
         {:else}
+          <div class="procedure-panel" aria-label="문체 분석 절차">
+            <div class="procedure-head">
+              <span class="line-label">MVP 분석 절차</span>
+              <strong>로컬 분석 먼저, AI는 해석 보강</strong>
+            </div>
+            <div class="procedure-grid">
+              {#each STYLE_ANALYSIS_PROCEDURE as step}
+                <div class="proc-step {procedureTone(step.owner)}" class:ai={step.owner === 'ai'}>
+                  <span class="proc-owner">{step.owner === 'local' ? '로컬' : 'AI'}</span>
+                  <b>{step.label}</b>
+                  <small>{step.output}</small>
+                  <em>{procedureStatus(step.owner)}</em>
+                </div>
+              {/each}
+            </div>
+          </div>
+
+          <div class="local-summary" aria-label="로컬 분석 요약">
+            <div>
+              <b>{s.analysis.bundle.inputProfile.paragraphCount}</b>
+              <span>문단 후보</span>
+            </div>
+            <div>
+              <b>{s.analysis.scenes.length}</b>
+              <span>scene 기록</span>
+            </div>
+            <div>
+              <b>{evidenceCount}</b>
+              <span>F_RULE evidence</span>
+            </div>
+            <div>
+              <b>{globalRuleCount}</b>
+              <span>전역 규칙</span>
+            </div>
+          </div>
+
           <div class="scene-table" role="table" aria-label="장면별 정량 분석">
             <div class="scene-row head" role="row">
-              <span>장면</span><span>문장</span><span>평균 길이</span><span>대화</span><span>감정어/1k</span><span>변칙 종결</span><span>주요 어미</span>
+              <span>장면</span><span>기능</span><span>수치</span><span>표층</span>
             </div>
             {#each s.analysis.scenes as sc}
               <div class="scene-row" role="row">
                 <span class="sc-title" title={sc.title}>{sc.index}. {sc.title}</span>
-                <span>{sc.sentenceCount}</span>
-                <span>{sc.avgSentenceLen}자</span>
-                <span>{sc.dialogueRatio}%</span>
-                <span>{sc.emotionDensity}</span>
-                <span>{sc.inversionRatio}%</span>
-                <span class="sc-endings">{sc.endings.slice(0, 3).map((e) => e.form).join(' · ')}</span>
+                <span class="sc-type" title={sc.sceneFunction}>{sc.sceneTypes.map(featureLabel).join(', ')}</span>
+                <span class="sc-metrics">문장 {sc.sentenceCount} · 평균 {sc.avgSentenceLen}자 · 대사 {sc.dialogueRatio}%</span>
+                <span
+                  class="sc-surface"
+                  title={`${featureLabel(sc.pacingDuration)} · ${featureLabel(sc.closingDevice)} · ${featureLabel(sc.emotionDistance)} · ${sc.endings.slice(0, 3).map((e) => e.form).join(' · ') || '어미 없음'}`}
+                >
+                  {featureLabel(sc.pacingDuration)} · {featureLabel(sc.closingDevice)} · {featureLabel(sc.emotionDistance)} · {sc.endings.slice(0, 3).map((e) => e.form).join(' · ') || '어미 없음'}
+                </span>
               </div>
             {/each}
           </div>
+
+          {#if s.analysis.bundle.evidenceRecords.length}
+            <div class="evidence-panel" aria-label="Evidence rules">
+              <div class="procedure-head">
+                <span class="line-label">Evidence</span>
+                <strong>반복 feature에서 생성된 규칙 후보</strong>
+              </div>
+              <div class="evidence-list">
+                {#each s.analysis.bundle.evidenceRecords.slice(0, 6) as evidence}
+                  <div class="evidence-row">
+                    <span class="evidence-id">{evidence.featureId}</span>
+                    <b>{decisionLabel(evidence.globalityDecision)}</b>
+                    <span title={evidence.axis}>{featureLabel(evidence.axis)}</span>
+                    <p>{evidence.candidateRule}</p>
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {:else}
+            <p class="stage-note">반복 feature가 부족해 evidence는 아직 생성되지 않았습니다. 샘플 장면을 더 넣으면 전역 규칙 후보가 늘어납니다.</p>
+          {/if}
 
           <div class="stage-actions">
             <button class="primary" on:click={runExtract} disabled={running !== null}>{running === 'analyze' ? '추출 중…' : s.extract ? '문체 다시 추출 (AI)' : '문체 추출 (AI)'}</button>
@@ -239,7 +359,7 @@
       <header class="stage-head">
         <span class="eyebrow">03 작성 지침</span>
         <h1>장면별 지침과 금지 목록</h1>
-        <p>분석을 실행 지침으로 바꿉니다 — 장면 유형별로 무엇을 하고, 어떤 단어·묘사가 이 문체를 깨뜨리는지 명시합니다.</p>
+        <p>분석을 실행 지침으로 바꿉니다. 장면 유형별로 무엇을 하고, 어떤 단어·묘사가 이 문체를 깨뜨리는지 명시합니다.</p>
       </header>
       <div class="stage-body">
         {#if !s.analysis}
@@ -298,7 +418,7 @@
           </div>
           {#if s.guideline}
             <div class="strictness-row">
-              <span class="line-label">적용 강도 — 너무 강하게 강제하면 문장이 딱딱해집니다</span>
+              <span class="line-label">적용 강도: 너무 강하게 강제하면 문장이 딱딱해집니다</span>
               <div class="strictness-opts">
                 {#each strictnessOptions as st}
                   <button class="strict-opt" class:on={s.strictness === st} on:click={() => styleStore.update((v) => ({ ...v, strictness: st }))}>
@@ -309,7 +429,7 @@
               </div>
             </div>
           {/if}
-          {#if s.savedPath}<p class="stage-note ok">저장됨: {s.savedPath} — AI 작업 02 바이블과 산출물 보관함에서 확인할 수 있습니다.</p>{/if}
+          {#if s.savedPath}<p class="stage-note ok">저장됨: {s.savedPath}. AI 작업 02 바이블과 산출물 보관함에서 확인할 수 있습니다.</p>{/if}
           {#if s.guideline}
             <div class="md-output"><MarkdownPreview content={s.guideline} /></div>
           {/if}
@@ -320,7 +440,7 @@
 </div>
 
 <style>
-  .style-studio { min-height: 0; display: grid; grid-template-columns: 250px minmax(0, 1fr); }
+  .style-studio { min-height: 0; display: grid; grid-template-columns: 236px minmax(0, 1fr); }
   .st-rail {
     display: grid;
     grid-template-rows: auto 1fr auto;
@@ -356,15 +476,63 @@
   .rail-note { margin: 0; color: var(--faint); font-size: 11.5px; line-height: 1.6; border-top: 1px solid var(--line); padding-top: 12px; }
   .rail-note b { color: var(--muted); }
 
-  .st-stage { min-height: 0; overflow: auto; padding: 22px 26px; }
-  .stage-head { max-width: 760px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+  .st-stage { min-height: 0; overflow: auto; padding: 22px 26px; min-width: 0; }
+  .stage-head { max-width: 820px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
   .stage-head h1 { margin: 4px 0 7px; font-size: 24px; line-height: 1.12; letter-spacing: 0; }
   .stage-head p { margin: 0; color: var(--muted); line-height: 1.65; }
   .stage-head code { background: var(--accent-soft); border-radius: 4px; padding: 1px 5px; font-family: ui-monospace, monospace; font-size: .9em; }
-  .stage-body { padding-top: 18px; display: grid; gap: 16px; align-content: start; max-width: 860px; }
+  .stage-body { padding-top: 18px; display: grid; gap: 16px; align-content: start; max-width: min(1120px, 100%); min-width: 0; }
   .stage-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .stage-note { margin: 0; color: var(--faint); font-size: 12px; line-height: 1.6; }
   .stage-note.ok { color: var(--ok); }
+
+  .procedure-panel,
+  .evidence-panel {
+    display: grid;
+    gap: var(--space-3);
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    padding: var(--space-3) 0;
+  }
+  .procedure-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); min-width: 0; }
+  .procedure-head strong { color: var(--text); font-size: 13px; line-height: 1.35; min-width: 0; text-align: right; }
+  .procedure-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(152px, 1fr)); gap: var(--space-2); }
+  .proc-step {
+    min-width: 0;
+    display: grid;
+    gap: 3px;
+    padding: var(--space-3);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--bg-2);
+  }
+  .proc-step.ok { border-color: color-mix(in srgb, var(--ok) 42%, var(--line)); background: var(--ok-soft); }
+  .proc-step.warn { border-color: color-mix(in srgb, var(--warn) 42%, var(--line)); background: var(--warn-soft); }
+  .proc-step b { color: var(--text); font-size: 12.5px; line-height: 1.25; }
+  .proc-step small { color: var(--muted); font-size: 10.5px; line-height: 1.35; min-height: 28px; }
+  .proc-step em { color: var(--faint); font-style: normal; font-size: 10.5px; font-weight: 700; }
+  .proc-owner {
+    width: fit-content;
+    color: var(--faint);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    padding: 1px 5px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0;
+  }
+  .proc-step.ai .proc-owner { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 38%, var(--line)); }
+
+  .local-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .local-summary div { display: grid; gap: 2px; padding: var(--space-3) 0; }
+  .local-summary div + div { border-left: 1px solid var(--line); padding-left: var(--space-3); }
+  .local-summary b { color: var(--text); font-size: 18px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .local-summary span { color: var(--faint); font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 
   .sample-input {
     width: 100%;
@@ -380,20 +548,44 @@
   }
   .count-hint { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
 
-  .scene-table { display: grid; border-top: 1px solid var(--line); font-size: 12.5px; }
+  .scene-table { display: grid; border-top: 1px solid var(--line); font-size: 12px; min-width: 0; width: 100%; }
   .scene-row {
     display: grid;
-    grid-template-columns: minmax(140px, 1.4fr) 50px 70px 50px 76px 70px minmax(90px, 1fr);
-    gap: 8px;
+    grid-template-columns: minmax(180px, 1.25fr) minmax(124px, .8fr) minmax(178px, 1fr) minmax(220px, 1.15fr);
+    gap: 12px;
     align-items: center;
-    padding: 8px 0;
+    padding: 9px 0;
     border-bottom: 1px solid var(--line);
     color: var(--text);
+    min-width: 0;
   }
   .scene-row.head { color: var(--faint); font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
-  .scene-row span { font-variant-numeric: tabular-nums; }
-  .sc-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .sc-endings { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .scene-row span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .sc-title { color: var(--text); font-weight: 650; }
+  .sc-type,
+  .sc-metrics,
+  .sc-surface { color: var(--muted); }
+
+  .evidence-list { display: grid; gap: 0; border-top: 1px solid var(--line); }
+  .evidence-row {
+    display: grid;
+    grid-template-columns: 86px 72px 110px minmax(0, 1fr);
+    align-items: baseline;
+    gap: var(--space-2);
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 12px;
+  }
+  .evidence-id { color: var(--accent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+  .evidence-row b { color: var(--text); font-size: 11.5px; }
+  .evidence-row span { color: var(--muted); }
+  .evidence-row p { margin: 0; color: var(--muted); line-height: 1.45; min-width: 0; }
 
   .md-output {
     border: 1px solid var(--line);
@@ -418,12 +610,32 @@
     .rail-stages { grid-template-columns: repeat(2, 1fr); }
     .rail-stage.on::before { display: none; }
     .rail-stage.on { background: var(--accent-soft); }
-    .scene-row { grid-template-columns: minmax(110px, 1.2fr) 44px 60px 44px 60px 60px minmax(70px, 1fr); }
+  }
+  @media (max-width: 900px) {
+    .scene-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .scene-row.head { display: none; }
+    .scene-row span::before {
+      display: block;
+      margin-bottom: 2px;
+      color: var(--faint);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    .scene-row span:nth-child(1)::before { content: '장면'; }
+    .scene-row span:nth-child(2)::before { content: '기능'; }
+    .scene-row span:nth-child(3)::before { content: '수치'; }
+    .scene-row span:nth-child(4)::before { content: '표층'; }
   }
   @media (max-width: 700px) {
     .st-stage { padding: 16px; }
     .rail-stages { grid-template-columns: 1fr; }
-    .scene-row { grid-template-columns: 1fr 1fr 1fr 1fr; }
-    .scene-row.head { display: none; }
+    .procedure-head { display: grid; }
+    .procedure-grid,
+    .local-summary { grid-template-columns: 1fr; }
+    .local-summary div + div { border-left: 0; border-top: 1px solid var(--line); padding-left: 0; }
+    .scene-row { grid-template-columns: 1fr; gap: 7px; }
+    .evidence-row { grid-template-columns: 1fr; gap: 3px; }
   }
 </style>

@@ -1,10 +1,25 @@
 # Project Status
 
-Updated: 2026-07-03 (A-to-Z 갭 해소)
+Updated: 2026-07-03 (UI 정리와 접히는 사이드바)
 
 ## Current State
 
-Bindery is a writing-first macOS/Svelte/Tauri app covering the full local novel workflow: episode management (create/switch/status), writing with scene jump and daily stats, materials (editable plot board, codex item creation), style replication with adjustable enforcement strength, an AI harness whose every step leaves file-synced artifacts that feed drafting (with author-tunable length/creativity/instructions), agent-based QA with style-compliance and continuity gates, snapshot compare/restore, project-wide search, and real TXT/HTML export. Storage is local-only by design.
+Bindery is a writing-first macOS/Svelte/Tauri app covering the full local novel workflow: episode management (create/switch/status), writing with scene jump and daily stats, materials (editable plot board, codex item creation), style replication with adjustable enforcement strength, an AI harness whose every step leaves file-synced artifacts that feed drafting (with author-tunable length/creativity/instructions), agent-based QA with style-compliance and continuity gates, snapshot compare/restore, project-wide search, and real TXT/HTML export. The shell now has a collapsible left navigator rail, tighter top navigation, and wider resilient analysis rows so dense Korean labels truncate or scroll instead of stacking into vertical text. The style analyzer follows the v3 MVP procedure locally first: normalize input, segment scene candidates, code local features, generate evidence, apply globality decisions, build a surface profile, then hand semantic interpretation to the configured AI runner only where local regex analysis is insufficient. Storage is local-only by design.
+
+## Completed (2026-07-03, UI 정리와 접히는 사이드바)
+
+- Added a topbar sidebar toggle and a 54px collapsed binder rail for `회차`, `파일`, and `설정집`.
+- Tightened the studio shell so top tabs, project chips, episode rows, and file nodes keep stable horizontal labels with ellipsis or horizontal scrolling.
+- Reworked the `문체` analysis table from nine narrow columns into four durable reading columns (`장면`, `기능`, `수치`, `표층`) with responsive two-column/one-column stacking.
+- Verified Chrome visual QA at 1280/768/390: body/app/style-stage overflow 0px, collapsed rail width 54/52px, and no detected narrow multi-line text offenders.
+
+## Completed (2026-07-03, 문체 분석 MVP 절차 흡수)
+
+- Added a local style analyzer domain modeled after `bindery_v3_analyzer_logic_mvp`: input profile, scene records, evidence records, language surface profile, and prompt capsule.
+- Reworked the `문체` tab analysis flow so local analysis completes first and AI extraction explicitly receives the local bundle for emotional rhythm, narrative distance, and description texture interpretation.
+- Added UI evidence/procedure visibility: MVP step grid, local summary metrics, scene feature table, and evidence candidate list.
+- Updated style prompts and offline fallbacks so `F_RULE_###`, globality decisions, and do-not-transfer constraints are included before final guideline generation.
+- Verified: `npm --workspace apps/desktop run check`, `npm run build`, `python3 scripts/verify_static.py`, Chrome headless visual QA at 1280/768/390.
 
 ## Completed (2026-07-03, A-to-Z pass)
 

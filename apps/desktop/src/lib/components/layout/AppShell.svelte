@@ -10,6 +10,7 @@
   import MainSurface from './MainSurface.svelte';
   import MyBooks from './MyBooks.svelte';
   import { writingModeStore } from '$lib/stores/writingModeStore';
+  import { uiStore } from '$lib/stores/uiStore';
   import { projectStore } from '$lib/stores/projectStore';
   import { fileTreeStore } from '$lib/stores/fileTreeStore';
   import { openProjectIntoWorkspace } from '$lib/actions/project';
@@ -34,8 +35,8 @@
 {:else}
   <div class="app" class:zen={$writingModeStore.zen}>
     <TopBar />
-    <main class="studio-grid" class:zen={$writingModeStore.zen}>
-      {#if !$writingModeStore.zen}<BinderPanel />{/if}
+    <main class="studio-grid" class:zen={$writingModeStore.zen} class:sidebar-collapsed={$uiStore.sidebarCollapsed}>
+      {#if !$writingModeStore.zen}<BinderPanel collapsed={$uiStore.sidebarCollapsed} />{/if}
       <MainSurface />
     </main>
     <ToastHost />

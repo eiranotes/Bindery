@@ -1,6 +1,30 @@
 # Decisions
 
-Updated: 2026-07-03 (산출물 + 문체)
+Updated: 2026-07-03 (UI 정리와 접히는 사이드바)
+
+## Studio Navigator Collapses To A Rail
+
+Decision: The binder remains the left-side project navigator on desktop, but it can collapse into a 54px rail with three icon-like Korean controls for `회차`, `파일`, and `설정집`. The topbar owns the collapse/expand toggle, while clicking a rail item reveals that tab again.
+
+Reason: Authors need the manuscript or analysis surface to reclaim horizontal space without losing orientation. A rail preserves the workspace map without forcing long labels into narrow columns.
+
+## Dense Analyzer Rows Use Reading Groups
+
+Decision: The `문체` analyzer scene output groups related metrics into four reading columns (`장면`, `기능`, `수치`, `표층`) instead of many tiny numeric columns.
+
+Reason: The analyzer must remain scan-friendly at desktop width and degrade cleanly on tablet/mobile. Grouping prevents Korean labels and values from wrapping one character per line while still keeping the local-first procedure visible.
+
+## Style Analyzer Is Local First
+
+Decision: The `문체` analyzer follows the v3 MVP pipeline as a local procedure before any AI interpretation: normalize input, segment paragraph-based scene candidates, code scene features, generate `F_RULE_###` evidence, apply globality decisions, build a language surface profile, and create a prompt capsule. AI is used only after that for semantic/emotional interpretation and prose guidance generation.
+
+Reason: Local regex analysis can reliably produce repeatable structural evidence, while AI is better used for rhythm, temperature, narrative distance, and description texture. Separating these roles keeps the analyzer reviewable and prevents AI prose from replacing measurable evidence.
+
+## Analyzer Evidence Is Shown In The UI
+
+Decision: The `문체` tab exposes the analyzer procedure, local summary counts, scene feature table, and evidence candidate list before the user asks AI to extract style.
+
+Reason: The style analyzer is only useful if authors can see which rules came from repeated local features and which parts still need AI interpretation or manual judgment.
 
 ## Every Pipeline Step Leaves An Artifact
 

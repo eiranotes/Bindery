@@ -1,9 +1,16 @@
 # Tasks
 
-Updated: 2026-07-03 (산출물 + 문체)
+Updated: 2026-07-03 (UI 정리와 접히는 사이드바)
 
 ## Done
 
+- [x] Add a collapsible left binder sidebar with a compact rail for episode/file/bible navigation.
+- [x] Clean up the studio topbar and navigation widths so Korean tab labels do not collapse into vertical text.
+- [x] Rework the `문체` analyzer scene table into resilient four-column rows with responsive stacking.
+- [x] Verify the polished shell and style analyzer at 1280/768/390 with Chrome visual QA.
+- [x] Absorb the `bindery_v3_analyzer_logic_mvp` concept into the active `문체` analyzer: local normalize, segment, feature coding, evidence, globality, surface profile, and prompt capsule before AI interpretation.
+- [x] Update style AI prompts so the AI handles semantic/emotional interpretation on top of the local bundle instead of replacing local analysis.
+- [x] Show analyzer procedure, local summary, scene feature coding, and evidence records in the `문체` tab.
 - [x] Record an artifact for every pipeline step and show a per-episode artifact shelf in the run stage.
 - [x] Feed latest artifacts + style guideline into draft/revise candidate prompts (with real prompt preview).
 - [x] Add `run_agent_text` Tauri command and unify agent CLI execution paths.
@@ -25,6 +32,8 @@ Updated: 2026-07-03 (산출물 + 문체)
 
 ## Next
 
+- [ ] Add a user preference to remember the sidebar collapsed state across app launches.
+- [ ] Add manual scene split/merge and evidence confirmation editing for the analyzer.
 - [ ] Drag-and-drop scene reordering on the plot board.
 - [ ] Automated click-through inside the packaged app; Windows runner validation.
 

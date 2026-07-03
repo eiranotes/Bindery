@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-07-03 (UI 정리와 접히는 사이드바)
+
+- Added a topbar sidebar toggle and compact binder rail so the left project navigator can collapse while keeping `회차`, `파일`, and `설정집` reachable.
+- Cleaned up the studio shell widths: top tabs, project chips, file nodes, and episode rows now use stable no-wrap labels, ellipsis, or horizontal scrolling instead of cramped vertical text.
+- Reworked the `문체` scene analysis table into four readable columns (`장면`, `기능`, `수치`, `표층`) with responsive tablet/mobile stacking.
+- Added Chrome visual QA evidence for 1280/768/390 widths covering collapsed sidebar behavior, style analyzer overflow, and narrow text wrapping checks.
+
+## 2026-07-03 (문체 분석 MVP 절차 흡수)
+
+- Reworked the `문체` analyzer around a local-first MVP procedure: input normalization, paragraph scene segmentation, scene feature coding, evidence generation, globality decisions, language surface profile, and prompt capsule generation now happen locally before AI analysis.
+- Added structured local analyzer records for scene types, pacing, paragraph closing devices, dialogue stats, emotion handling, surface features, `F_RULE_###` evidence, and prompt capsule rules.
+- Updated the `문체` tab to show the procedure status, local summary metrics, scene feature table, and evidence candidates before the AI extraction step.
+- Updated style extraction, guide, proof, and final guideline prompts so AI uses the local analyzer bundle as evidence and only fills semantic/emotional interpretation gaps.
+- Offline fallback outputs now include local evidence and prompt capsule information instead of only simple averages.
+
 ## 2026-07-03 (A-to-Z 갭 해소)
 
 - Episode management: binder gains a `회차` tab with per-episode status (초고/퇴고/발행), one-click episode switching, and `+ 새 회차` scaffolding (`story/chapters/epNNN/`).

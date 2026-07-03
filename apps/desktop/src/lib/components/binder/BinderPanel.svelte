@@ -21,6 +21,12 @@
     event: '사건'
   };
   const statusOptions: EpisodeStatus[] = ['draft', 'revise', 'published'];
+  const railTabs: Array<{ id: 'episodes' | 'files' | 'bible'; icon: string; label: string }> = [
+    { id: 'episodes', icon: '회', label: '회차' },
+    { id: 'files', icon: '파', label: '파일' },
+    { id: 'bible', icon: '설', label: '설정집' }
+  ];
+  export let collapsed = false;
 
   $: root = $projectStore.current?.rootPath || 'sample-project';
   $: episodes = listEpisodes($fileTreeStore.nodes);
@@ -35,72 +41,136 @@
     }
   }
   function openMaterials() { uiStore.update((s) => ({ ...s, centerView: 'materials' })); }
+  function revealTab(tab: 'episodes' | 'files' | 'bible') {
+    uiStore.update((s) => ({ ...s, binderTab: tab, sidebarCollapsed: false }));
+  }
 </script>
 
-<section class="panel binder book-navigator">
-  <div class="binder-head">
-    <div>
-      <span class="eyebrow">탐색</span>
-      <h2>작품</h2>
+<section class="panel binder book-navigator" class:collapsed={collapsed}>
+  {#if collapsed}
+    <nav class="binder-rail" aria-label="접힌 작품 탐색">
+      <span class="rail-brand" title="작품 탐색">B</span>
+      {#each railTabs as item}
+        <button
+          class:on={$uiStore.binderTab === item.id}
+          on:click={() => revealTab(item.id)}
+          title={`${item.label} 펼치기`}
+          aria-label={`${item.label} 펼치기`}
+        >
+          {item.icon}
+        </button>
+      {/each}
+    </nav>
+  {:else}
+    <div class="binder-head">
+      <div>
+        <span class="eyebrow">탐색</span>
+        <h2>작품</h2>
+      </div>
+      <div class="binder-seg">
+        <button class:on={$uiStore.binderTab === 'episodes'} on:click={() => uiStore.update((s) => ({ ...s, binderTab: 'episodes' }))}>회차</button>
+        <button class:on={$uiStore.binderTab === 'files'} on:click={() => uiStore.update((s) => ({ ...s, binderTab: 'files' }))}>파일</button>
+        <button class:on={$uiStore.binderTab === 'bible'} on:click={() => uiStore.update((s) => ({ ...s, binderTab: 'bible' }))}>설정집</button>
+      </div>
     </div>
-    <div class="binder-seg">
-      <button class:on={$uiStore.binderTab === 'episodes'} on:click={() => uiStore.update((s) => ({ ...s, binderTab: 'episodes' }))}>회차</button>
-      <button class:on={$uiStore.binderTab === 'files'} on:click={() => uiStore.update((s) => ({ ...s, binderTab: 'files' }))}>파일</button>
-      <button class:on={$uiStore.binderTab === 'bible'} on:click={() => uiStore.update((s) => ({ ...s, binderTab: 'bible' }))}>설정집</button>
-    </div>
-  </div>
 
-  <div class="panel-body binder-list">
-    {#if $uiStore.binderTab === 'episodes'}
-      {#if episodes.length === 0}
-        <div class="hint">회차가 없습니다. 아래에서 첫 회차를 만드세요.</div>
+    <div class="panel-body binder-list">
+      {#if $uiStore.binderTab === 'episodes'}
+        {#if episodes.length === 0}
+          <div class="hint">회차가 없습니다. 아래에서 첫 회차를 만드세요.</div>
+        {:else}
+          {#each episodes as ep}
+            {@const status = $episodeStatusStore[statusKey(root, ep.id)] ?? 'draft'}
+            <div class="ep-row" class:active={$editorStore.path === ep.manuscriptPath}>
+              <button class="ep-open" on:click={() => openEpisode(ep)} title={ep.manuscriptPath}>
+                <b>{ep.id}</b>
+                <span>파일 {ep.files}</span>
+              </button>
+              <select
+                class="ep-status {status}"
+                value={status}
+                title="회차 상태"
+                on:change={(e) => setEpisodeStatus(root, ep.id, e.currentTarget.value as EpisodeStatus)}
+              >
+                {#each statusOptions as st}
+                  <option value={st}>{EPISODE_STATUS_LABEL[st]}</option>
+                {/each}
+              </select>
+            </div>
+          {/each}
+        {/if}
+        <button class="ghost ep-add" on:click={addEpisode} disabled={creating}>{creating ? '생성 중…' : '+ 새 회차'}</button>
+      {:else if $uiStore.binderTab === 'files'}
+        {#if $fileTreeStore.nodes.length === 0}
+          <div class="hint">프로젝트를 열면 파일이 표시됩니다.</div>
+        {:else}
+          {#each $fileTreeStore.nodes as node}
+            <FileTreeNode {node} depth={0} />
+          {/each}
+        {/if}
       {:else}
-        {#each episodes as ep}
-          {@const status = $episodeStatusStore[statusKey(root, ep.id)] ?? 'draft'}
-          <div class="ep-row" class:active={$editorStore.path === ep.manuscriptPath}>
-            <button class="ep-open" on:click={() => openEpisode(ep)} title={ep.manuscriptPath}>
-              <b>{ep.id}</b>
-              <span>파일 {ep.files}</span>
+        {#if $codexStore.items.length === 0}
+          <div class="hint">설정집이 비어 있습니다. 자료 화면에서 항목을 추가하세요.</div>
+        {:else}
+          {#each $codexStore.items as item}
+            <button class="codex-node" on:click={openMaterials} title={item.summary}>
+              <span class="ci" data-type={item.type}>{ICON[item.type]}</span>
+              <span class="cn">{item.name}</span>
+              <span class="ct">{TYPE_LABEL[item.type]}</span>
             </button>
-            <select
-              class="ep-status {status}"
-              value={status}
-              title="회차 상태"
-              on:change={(e) => setEpisodeStatus(root, ep.id, e.currentTarget.value as EpisodeStatus)}
-            >
-              {#each statusOptions as st}
-                <option value={st}>{EPISODE_STATUS_LABEL[st]}</option>
-              {/each}
-            </select>
-          </div>
-        {/each}
+          {/each}
+        {/if}
       {/if}
-      <button class="ghost ep-add" on:click={addEpisode} disabled={creating}>{creating ? '생성 중…' : '+ 새 회차'}</button>
-    {:else if $uiStore.binderTab === 'files'}
-      {#if $fileTreeStore.nodes.length === 0}
-        <div class="hint">프로젝트를 열면 파일이 표시됩니다.</div>
-      {:else}
-        {#each $fileTreeStore.nodes as node}
-          <FileTreeNode {node} depth={0} />
-        {/each}
-      {/if}
-    {:else}
-      {#if $codexStore.items.length === 0}
-        <div class="hint">설정집이 비어 있습니다. 자료 화면에서 항목을 추가하세요.</div>
-      {:else}
-        {#each $codexStore.items as item}
-          <button class="codex-node" on:click={openMaterials} title={item.summary}>
-            <span class="ci" data-type={item.type}>{ICON[item.type]}</span>
-            <span class="cn">{item.name}</span>
-            <span class="ct">{TYPE_LABEL[item.type]}</span>
-          </button>
-        {/each}
-      {/if}
-    {/if}
-  </div>
+    </div>
+  {/if}
 </section>
 
 <style>
+  .book-navigator.collapsed {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .binder-rail {
+    min-height: 0;
+    height: 100%;
+    display: grid;
+    grid-auto-rows: 38px;
+    align-content: start;
+    justify-items: center;
+    gap: 8px;
+    padding: 10px 6px;
+    background: var(--bg-1);
+  }
+  .rail-brand {
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    color: var(--accent);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px;
+    font-weight: 800;
+    background: var(--bg-2);
+  }
+  .binder-rail button {
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-sm);
+    color: var(--muted);
+    font-weight: 800;
+    white-space: nowrap;
+  }
+  .binder-rail button.on {
+    color: var(--text);
+    background: var(--accent-soft);
+  }
   .ep-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -119,6 +189,13 @@
     min-width: 0;
   }
   .ep-open b { color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+  .ep-open b,
+  .ep-open span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .ep-open span { color: var(--faint); font-size: 10.5px; }
   .ep-status { font-size: 11px; padding: 3px 5px; border-radius: var(--r-sm); }
   .ep-status.published { color: var(--ok); }
