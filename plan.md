@@ -10,10 +10,12 @@ Completed:
 - [x] Fixed scene candidate grouping so short sentence/paragraph blocks merge unless an explicit separator marks a boundary.
 - [x] Added a Node smoke test for sentence-separated style samples.
 - [x] Reflected `phase2_backlog.md` in `docs/TASKS.md`.
+- [x] Phase 2 start: added native Tauri style commands backed by Python `novelctl`.
+- [x] Phase 2 start: moved the SQLite style schema into a migration file.
 
 Next:
 
-- [ ] Implement the larger Phase 2 items from `phase2_backlog.md`: SQLite repository/migrations, native Tauri style commands, preset/stack/router editor UI, Korean NLP expansion, structured LLM correction, scoring hardening, and SkillPack validation/zip export.
+- [ ] Implement the remaining Phase 2 items from `phase2_backlog.md`: repository sync between `styles/` JSON and SQLite, preset/stack/router editor UI, Korean NLP expansion, structured LLM correction, scoring hardening, and SkillPack validation/zip export.
 
 ## 현재 단계
 

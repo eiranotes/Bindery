@@ -1,13 +1,13 @@
 # phase2_backlog.md
 
 ## 1. Storage / SQLite
-- `SQLITE_SCHEMA`를 실제 migration 파일로 분리.
+- [x] `SQLITE_SCHEMA`를 실제 migration 파일로 분리.
 - style profile/preset/stack/router/classification/report repository 추가.
 - project workspace의 `styles/` JSON 저장과 SQLite 저장 간 동기화 규칙 정의.
 
 ## 2. Tauri backend
-- `classify_style_scene`, `resolve_style_route`, `build_prompt_capsule`, `score_style_match`, `export_style_skill_pack` Tauri commands 추가.
-- Rust command가 Python CLI 또는 native TS/Rust port를 호출할지 결정.
+- [x] `classify_style_scene`, `resolve_style_route`, `build_prompt_capsule`, `score_style_match`, `export_style_skill_pack` Tauri commands 추가.
+- [x] Rust command가 Python CLI 또는 native TS/Rust port를 호출할지 결정. MVP는 Python `novelctl` style subcommand adapter로 연결한다.
 
 ## 3. UI
 - Preset Manager: 프리셋 생성/수정/clone/archive.

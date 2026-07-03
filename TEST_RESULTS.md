@@ -10,6 +10,8 @@ python3 -m compileall -q packages/novelctl-core/novelctl
 npm --workspace apps/desktop run check
 npm run build
 python3 scripts/verify_static.py
+cargo fmt --check
+cargo check
 ```
 
 ## Result
@@ -21,6 +23,8 @@ python3 scripts/verify_static.py
 - Svelte check: 0 errors, 0 warnings.
 - Vite/SvelteKit production build: OK, with the existing large chunk warning.
 - Static project verification: OK.
+- Rust format check: OK.
+- Rust cargo check: OK.
 
 ## Notes
 

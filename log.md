@@ -10,6 +10,15 @@
 - Updated `docs/PROJECT_STATUS.md`, `docs/TASKS.md`, `docs/DECISIONS.md`, `docs/CHANGELOG.md`, and `docs/STYLE_ANALYSIS_METHOD.md`.
 - Verification passed: Python unittest, TypeScript style smoke, scene grouping smoke, Python compileall, Svelte check, production build, and static project verification.
 
+## 2026-07-03 Style System Phase 2 Start
+
+- Added Tauri native commands: `classify_style_scene`, `resolve_style_route`, `build_prompt_capsule`, `score_style_match`, and `export_style_skill_pack`.
+- Native commands call the Python `novelctl` style runtime and return the CLI JSON `data` payload; development fallback locates the repo-local CLI when `novelctl` is not installed.
+- Frontend style API wrappers now try native Tauri commands when a `projectPath` is supplied and fall back to the TypeScript runtime in browser/mock mode.
+- Moved the SQLite style schema from an inline Python constant into `packages/novelctl-core/novelctl/migrations/001_style_system.sql`.
+- Added tests confirming `SQLITE_SCHEMA` and `novelctl style-sql` read the migration-backed schema.
+- Verification passed: cargo fmt/check, Python unittest, TypeScript style smoke, scene grouping smoke, Python compileall, and Svelte check.
+
 ## 2026-07-01
 
 - Unpacked `bindery design v0.2`.

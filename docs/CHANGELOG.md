@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-03 (문체 시스템 Phase 2 시작)
+
+- Added native Tauri style commands for `classify_style_scene`, `resolve_style_route`, `build_prompt_capsule`, `score_style_match`, and `export_style_skill_pack`.
+- Frontend style API wrappers now try native Tauri commands first and fall back to the local TypeScript runtime in browser/mock mode.
+- Moved the SQLite style schema into `packages/novelctl-core/novelctl/migrations/001_style_system.sql`; `novelctl style-sql` continues to emit the migration-backed schema.
+
 ## 2026-07-03 (문체 시스템 패치 적용)
 
 - Applied the structured style system patch: deterministic scene classification, style routing, stack merge, prompt capsule, scoring, SkillPack export, Python CLI subcommands, frontend local API entrypoints, docs, and tests.

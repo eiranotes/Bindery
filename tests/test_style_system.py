@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "packages" / "novelctl-core"))
 
 from novelctl.style_system import (  # noqa: E402
     ActiveStyleStack,
+    SQLITE_SCHEMA,
     SceneClassification,
     StylePreset,
     StyleRouteContext,
@@ -163,6 +164,10 @@ class PromptCapsuleTests(unittest.TestCase):
 
 
 class SkillPackExportTests(unittest.TestCase):
+    def test_sqlite_schema_loaded_from_migration_file(self):
+        migration = ROOT / "packages" / "novelctl-core" / "novelctl" / "migrations" / "001_style_system.sql"
+        self.assertEqual(SQLITE_SCHEMA, migration.read_text(encoding="utf-8").strip())
+
     def test_skillpack_files_created(self):
         tmp = Path(tempfile.mkdtemp())
         try:
@@ -192,6 +197,13 @@ class SkillPackExportTests(unittest.TestCase):
         data = json.loads(result.stdout)
         self.assertTrue(data["ok"])
         self.assertEqual(data["data"]["primary_type"], "DIA")
+
+    def test_cli_style_sql_reads_migration(self):
+        cmd = [sys.executable, str(ROOT / "packages" / "novelctl-core" / "novelctl" / "cli.py"), "style-sql", str(ROOT), "--json"]
+        result = subprocess.run(cmd, text=True, capture_output=True, check=True)
+        data = json.loads(result.stdout)
+        self.assertTrue(data["ok"])
+        self.assertIn("CREATE TABLE IF NOT EXISTS style_profiles", data["data"]["schema"])
 
 
 if __name__ == "__main__":

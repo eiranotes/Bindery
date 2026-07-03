@@ -29,7 +29,12 @@ pub fn run() {
             generate_candidate,
             list_codex,
             scan_codex_links,
-            get_plot_grid
+            get_plot_grid,
+            classify_style_scene,
+            resolve_style_route,
+            build_prompt_capsule,
+            score_style_match,
+            export_style_skill_pack
         ])
         .run(tauri::generate_context!())
         .expect("error while running Bindery");

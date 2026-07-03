@@ -1,6 +1,18 @@
 # Decisions
 
-Updated: 2026-07-03 (문체 시스템 패치 적용)
+Updated: 2026-07-03 (문체 시스템 Phase 2 시작)
+
+## Native Style Commands Use The Python Runtime First
+
+Decision: Phase 2 native Tauri style commands call the Python `novelctl` style subcommands instead of reimplementing the style runtime in Rust immediately.
+
+Reason: The deterministic style logic already exists and is tested in TypeScript/Python. A Rust port would duplicate a large ruleset before the API settles. The native command layer gives the app a stable backend contract now, while keeping a future Rust implementation optional.
+
+## Style Schema Is A Migration File
+
+Decision: The MVP SQLite schema lives in `packages/novelctl-core/novelctl/migrations/001_style_system.sql`; `SQLITE_SCHEMA` is loaded from that file for CLI compatibility.
+
+Reason: Phase 2 needs real migrations and repository sync. Keeping schema as a file makes review, migration ordering, and future database setup clearer than a large inline Python constant.
 
 ## Structured Style Runtime Lives Beside The Existing Analyzer
 

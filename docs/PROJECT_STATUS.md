@@ -1,6 +1,6 @@
 # Project Status
 
-Updated: 2026-07-03 (문체 시스템 패치 적용)
+Updated: 2026-07-03 (문체 시스템 Phase 2 시작)
 
 ## Current State
 
@@ -13,6 +13,14 @@ Bindery is a writing-first macOS/Svelte/Tauri app covering the full local novel 
 - Added a regression smoke test for the sentence-separated sample case so future changes do not return to one sentence per scene.
 - Captured remaining Phase 2 items from `phase2_backlog.md`: SQLite repository/migrations, native Tauri style commands, preset/stack/router manager UI, Korean NLP expansion, LLM structured correction, scoring hardening, and SkillPack validation/zip export.
 - Verified: `python3 -m unittest discover -s tests -v`, `node --experimental-strip-types tests/styleSystem.node.test.mjs`, `node --experimental-strip-types tests/styleAnalyzer.node.test.mjs`, `python3 -m compileall -q packages/novelctl-core/novelctl`, `npm --workspace apps/desktop run check`, `npm run build`, `python3 scripts/verify_static.py`.
+
+## Completed (2026-07-03, 문체 시스템 Phase 2 시작)
+
+- Added native Tauri style commands for scene classification, route resolution, PromptCapsule building, style match scoring, and SkillPack export.
+- Chose the Phase 2 backend strategy: Rust commands call the Python `novelctl` style runtime first, preserving the deterministic implementation while leaving a future native Rust port optional.
+- Updated frontend style API wrappers so Tauri runtime uses native commands when available and falls back to the TypeScript local runtime in browser/mock mode.
+- Moved the SQLite schema into `packages/novelctl-core/novelctl/migrations/001_style_system.sql`; `style-sql` now reads the migration-backed schema.
+- Verified: `cargo fmt --check`, `cargo check`, `python3 -m unittest discover -s tests -v`, `node --experimental-strip-types tests/styleSystem.node.test.mjs`, `node --experimental-strip-types tests/styleAnalyzer.node.test.mjs`, `python3 -m compileall -q packages/novelctl-core/novelctl`, `npm --workspace apps/desktop run check`.
 
 ## Completed (2026-07-03, 패키지 앱 샘플 열기 수정)
 

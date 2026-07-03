@@ -4,8 +4,10 @@
 
 - TypeScript: `apps/desktop/src/lib/domain/styleSystem.ts`
 - Python: `packages/novelctl-core/novelctl/style_system.py`
+- SQLite migration: `packages/novelctl-core/novelctl/migrations/001_style_system.sql`
 - Frontend export: `apps/desktop/src/lib/domain/style.ts`
 - API entrypoint: `apps/desktop/src/lib/api/commands.ts`
+- Tauri native commands: `apps/desktop/src-tauri/src/commands/style.rs`
 - CLI entrypoint: `packages/novelctl-core/novelctl/cli.py`
 
 ## 핵심 흐름
@@ -58,17 +60,34 @@ novelctl style-sql <project> --json
 ## Frontend API
 
 ```ts
-classifyStyleSceneText(sceneText, metadata)
-resolveStyleRouteLocal(context, router)
-buildPromptCapsuleLocal(context, activeStack, maxRules, tokenBudget)
-scoreStyleMatchLocal(text, styleProfile, sceneClassification)
+classifyStyleSceneText(sceneText, metadata, projectPath?)
+resolveStyleRouteLocal(context, router, projectPath?)
+buildPromptCapsuleLocal(context, activeStack, maxRules, tokenBudget, projectPath?)
+scoreStyleMatchLocal(text, styleProfile, sceneClassification, projectPath?)
 buildStyleSkillPackLocal(projectId, presets, stacks, router)
+exportStyleSkillPack(projectPath, projectId, presets, stacks, router, outputDir)
 ```
+
+In a Tauri runtime, wrappers with `projectPath` call native commands first. Browser/mock mode falls back to the deterministic TypeScript runtime.
+
+## Tauri Commands
+
+```text
+classify_style_scene
+resolve_style_route
+build_prompt_capsule
+score_style_match
+export_style_skill_pack
+```
+
+The native commands are Python `novelctl` adapters for Phase 2. They use the configured `novelctlPath`, fall back to the repo-local CLI in development, and return the JSON `data` payload from the CLI envelope.
 
 ## 테스트
 
 ```bash
 python3 -m unittest discover -s tests -v
 node --experimental-strip-types tests/styleSystem.node.test.mjs
+node --experimental-strip-types tests/styleAnalyzer.node.test.mjs
 python3 -m compileall -q packages/novelctl-core/novelctl
+cargo check
 ```

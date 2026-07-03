@@ -1,12 +1,14 @@
 # Tasks
 
-Updated: 2026-07-03 (문체 시스템 패치 적용)
+Updated: 2026-07-03 (문체 시스템 Phase 2 시작)
 
 ## Done
 
 - [x] Apply `bindery_style_system_patched_20260703.zip` structured style system patch.
 - [x] Add deterministic SceneClassification, StyleRouter, StyleStack merge, PromptCapsule, StyleMatchScore, and SkillPack export runtime paths in TypeScript/Python.
 - [x] Add `novelctl` style subcommands and local frontend style API entrypoints.
+- [x] Add native Tauri style commands backed by the Python `novelctl` style runtime.
+- [x] Move the MVP SQLite schema into a real migration file while keeping `style-sql` output compatible.
 - [x] Show SceneClassification/register rows in the `문체` analyzer UI.
 - [x] Fix scene candidate segmentation so sentence-separated text is grouped instead of treating every sentence-like paragraph as a separate scene.
 - [x] Add regression coverage for sentence-separated style samples.
@@ -39,8 +41,7 @@ Updated: 2026-07-03 (문체 시스템 패치 적용)
 
 ## Next
 
-- [ ] Move `SQLITE_SCHEMA` from MVP constants into real migration files and repository sync between project `styles/` JSON and SQLite.
-- [ ] Add native Tauri style commands or explicitly route native style actions through the Python CLI.
+- [ ] Add repository sync between project `styles/` JSON and SQLite.
 - [ ] Build Preset Manager, Stack Mixer, Router Editor, scene classification override editor, Score Lab, and Suggestion Lab.
 - [ ] Add Korean NLP expansion for morphology, action verbs, judgment markers, relationship markers, emotion dictionaries, and manual speaker correction.
 - [ ] Add structured LLM correction schemas for SceneClassification, paragraph function tagging, scoring explanation, and suggestions while keeping local scoring authoritative.

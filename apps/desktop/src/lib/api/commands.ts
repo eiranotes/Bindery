@@ -310,15 +310,43 @@ function delay(ms: number): Promise<void> {
 
 export async function classifyStyleSceneText(
   sceneText: string,
-  metadata: Record<string, unknown> | null = null
+  metadata: Record<string, unknown> | null = null,
+  projectPath?: string
 ): Promise<SceneClassification> {
+  const invoke = await getInvoke();
+  if (invoke && projectPath) {
+    try {
+      return await invoke<SceneClassification>('classify_style_scene', {
+        projectPath,
+        sceneText,
+        metadata,
+        novelctlPath: get(settingsStore).novelctlPath || 'novelctl'
+      });
+    } catch (error) {
+      console.warn('[style native fallback] classify_style_scene', error);
+    }
+  }
   return classifyScene(sceneText, metadata);
 }
 
 export async function resolveStyleRouteLocal(
   context: StyleRouteContext,
-  router: StyleRouter
+  router: StyleRouter,
+  projectPath?: string
 ): Promise<ActiveStyleStack> {
+  const invoke = await getInvoke();
+  if (invoke && projectPath) {
+    try {
+      return await invoke<ActiveStyleStack>('resolve_style_route', {
+        projectPath,
+        context,
+        router,
+        novelctlPath: get(settingsStore).novelctlPath || 'novelctl'
+      });
+    } catch (error) {
+      console.warn('[style native fallback] resolve_style_route', error);
+    }
+  }
   return resolveActiveStyleStack(context, router);
 }
 
@@ -326,16 +354,47 @@ export async function buildPromptCapsuleLocal(
   context: StyleGenerationContext,
   activeStack: ActiveStyleStack,
   maxRules = 18,
-  tokenBudget = 1200
+  tokenBudget = 1200,
+  projectPath?: string
 ): Promise<PromptCapsule> {
+  const invoke = await getInvoke();
+  if (invoke && projectPath) {
+    try {
+      return await invoke<PromptCapsule>('build_prompt_capsule', {
+        projectPath,
+        context,
+        activeStack,
+        maxRules,
+        tokenBudget,
+        novelctlPath: get(settingsStore).novelctlPath || 'novelctl'
+      });
+    } catch (error) {
+      console.warn('[style native fallback] build_prompt_capsule', error);
+    }
+  }
   return buildPromptCapsule(context, activeStack, maxRules, tokenBudget);
 }
 
 export async function scoreStyleMatchLocal(
   text: string,
   styleProfile: StyleProfile | StylePreset | StyleStack,
-  sceneClassification: SceneClassification | null = null
+  sceneClassification: SceneClassification | null = null,
+  projectPath?: string
 ): Promise<StyleMatchReport> {
+  const invoke = await getInvoke();
+  if (invoke && projectPath) {
+    try {
+      return await invoke<StyleMatchReport>('score_style_match', {
+        projectPath,
+        text,
+        styleProfile,
+        sceneClassification,
+        novelctlPath: get(settingsStore).novelctlPath || 'novelctl'
+      });
+    } catch (error) {
+      console.warn('[style native fallback] score_style_match', error);
+    }
+  }
   return scoreStyleMatch(text, styleProfile, sceneClassification);
 }
 
@@ -346,4 +405,36 @@ export async function buildStyleSkillPackLocal(
   router: StyleRouter
 ): Promise<StyleSkillPackFile[]> {
   return buildStyleSkillPackFiles(projectId, presets, stacks, router);
+}
+
+export type StyleSkillPackExportResult = { path: string; files: string[] };
+
+export async function exportStyleSkillPack(
+  projectPath: string,
+  projectId: string,
+  presets: StylePreset[],
+  stacks: StyleStack[],
+  router: StyleRouter,
+  outputDir = 'exports/bindery-style-runtime'
+): Promise<StyleSkillPackExportResult> {
+  const invoke = await getInvoke();
+  if (invoke) {
+    try {
+      return await invoke<StyleSkillPackExportResult>('export_style_skill_pack', {
+        projectPath,
+        projectId,
+        presets,
+        stacks,
+        router,
+        outputDir,
+        novelctlPath: get(settingsStore).novelctlPath || 'novelctl'
+      });
+    } catch (error) {
+      console.warn('[style native fallback] export_style_skill_pack', error);
+    }
+  }
+  return {
+    path: outputDir,
+    files: buildStyleSkillPackFiles(projectId, presets, stacks, router).map((file) => file.path)
+  };
 }

@@ -125,13 +125,17 @@ python3 -m compileall -q packages/novelctl-core/novelctl
 
 ## 5. 남은 작업
 
-- SQLite repository/migration 연결.
-- Tauri style commands.
+- SQLite repository sync between project `styles/` JSON and SQLite.
 - Preset Manager/Stack Mixer/Router Editor UI.
 - 한국어 형태소 분석기.
 - LLM structured correction.
 - 고급 scoring.
 - SkillPack validator/zip exporter.
+
+## 7. Phase 2 시작 반영
+
+- Tauri style commands were added as Python `novelctl` runtime adapters: `classify_style_scene`, `resolve_style_route`, `build_prompt_capsule`, `score_style_match`, `export_style_skill_pack`.
+- The MVP SQLite schema now lives in `packages/novelctl-core/novelctl/migrations/001_style_system.sql`; `SQLITE_SCHEMA` and `novelctl style-sql` read that migration-backed content.
 
 ## 6. 사용법
 
