@@ -27,7 +27,7 @@ export const qaDiagnosticsExtension = linter((view: EditorView): Diagnostic[] =>
       to,
       severity: SEVERITY_MAP[issue.severity] ?? 'info',
       source: issue.source ? `QA · ${issue.source}` : 'QA',
-      message: (issue.title ? issue.title + ' — ' : '') + issue.message,
+      message: (issue.title ? issue.title + ': ' : '') + issue.message,
       actions: issue.suggestedAction
         ? [{ name: 'note', apply: () => { /* suggestion is advisory; applying is done via revision plan */ } }]
         : undefined

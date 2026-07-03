@@ -26,6 +26,56 @@ const TEMPLATES: Record<PipelineStep, string> = {
   commit: '변경 사항을 스냅샷하고 회차 메타데이터를 갱신하라.'
 };
 
+export type PromptContextOptions = {
+  maxChars?: number;
+  frontChars?: number;
+  middleChars?: number;
+  tailChars?: number;
+  label?: string;
+};
+
+function stripFrontmatter(content: string): string {
+  const fm = parseFrontmatter(content);
+  return fm.present ? content.slice(fm.end).trim() : content.trim();
+}
+
+function clampBoundary(text: string, pos: number, direction: -1 | 1): number {
+  const step = direction < 0 ? -1 : 1;
+  let i = Math.max(0, Math.min(text.length, pos));
+  for (let tries = 0; tries < 300 && i > 0 && i < text.length; tries++, i += step) {
+    if (/\n\s*\n/.test(text.slice(Math.max(0, i - 2), Math.min(text.length, i + 2)))) return i;
+  }
+  return Math.max(0, Math.min(text.length, pos));
+}
+
+function sliceAtParagraph(text: string, start: number, end: number): string {
+  const safeStart = start <= 0 ? 0 : clampBoundary(text, start, 1);
+  const safeEnd = end >= text.length ? text.length : clampBoundary(text, end, -1);
+  return text.slice(safeStart, Math.max(safeStart, safeEnd)).trim();
+}
+
+export function manuscriptContextWindow(content: string, options: PromptContextOptions = {}): string {
+  const body = stripFrontmatter(content);
+  if (!body) return '(빈 원고)';
+  const maxChars = options.maxChars ?? 16000;
+  if (body.length <= maxChars) return body;
+
+  const frontChars = Math.min(options.frontChars ?? 5200, Math.floor(maxChars * 0.42));
+  const tailChars = Math.min(options.tailChars ?? 6200, Math.floor(maxChars * 0.46));
+  const middleChars = Math.max(0, options.middleChars ?? maxChars - frontChars - tailChars - 400);
+  const middleStart = Math.max(frontChars, Math.floor((body.length - middleChars) / 2));
+  const label = options.label ?? 'manuscript';
+
+  const parts = [
+    `<!-- ${label}: 원고 ${body.length.toLocaleString()}자 중 앞/중간/끝 발췌. 발췌 밖 내용은 단정하지 말 것. -->`,
+    '### 앞부분',
+    sliceAtParagraph(body, 0, frontChars)
+  ];
+  if (middleChars > 0) parts.push('### 중간', sliceAtParagraph(body, middleStart, middleStart + middleChars));
+  parts.push('### 끝부분', sliceAtParagraph(body, body.length - tailChars, body.length));
+  return parts.join('\n\n---\n\n');
+}
+
 export function assemblePrompt(step: PipelineStep, content: string, codex: CodexItem[], guidance?: string): string {
   const fm = parseFrontmatter(content);
   const meta = Object.entries(fm.data)
@@ -38,7 +88,11 @@ export function assemblePrompt(step: PipelineStep, content: string, codex: Codex
   const codexBlock = relevant
     .map((c) => `- ${c.name} (${c.type}): ${c.summary ?? ''}`)
     .join('\n');
-  const body = content.replace(/^---[\s\S]*?\n---\n?/, '').slice(0, 600);
+  const body = manuscriptContextWindow(content, {
+    maxChars: step === 'draft' || step === 'revise' ? 18000 : 12000,
+    middleChars: step === 'qa' || step === 'summarize' ? 2800 : 2000,
+    label: STEP_META[step].label
+  });
 
   const parts = [
     `# ${STEP_META[step].label} system`,
@@ -55,8 +109,8 @@ export function assemblePrompt(step: PipelineStep, content: string, codex: Codex
   }
   parts.push(
     '',
-    '## Manuscript (앞부분)',
-    body.trim() ? body.trim() + (content.length > 600 ? '\n…(생략)' : '') : '(빈 원고)'
+    '## Manuscript context',
+    body
   );
   return parts.join('\n');
 }

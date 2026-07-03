@@ -1,6 +1,30 @@
 # Decisions
 
-Updated: 2026-07-03 (GitHub 게시 준비)
+Updated: 2026-07-03 (리뷰 패치 반영 + 후속 계획 구현)
+
+## Long Manuscripts Use Front Middle Tail Context Windows
+
+Decision: AI prompt preview, QA, and summary prompts include a bounded manuscript window made from the opening, middle, and ending instead of the first-only excerpt.
+
+Reason: Long serial episodes often place reversals, endings, and hooks outside the opening. A bounded three-part window keeps prompts affordable while avoiding a systematic blind spot.
+
+## Pipeline Failures Stop The Run Before Record Steps
+
+Decision: Full pipeline execution stops when an action fails or QA returns a `fail` verdict. The failed output remains an artifact, but later summarize/commit steps do not run as if the episode passed.
+
+Reason: Summary and commit artifacts imply a reviewed state. Continuing after a failed QA gate made the status rail look cleaner than the underlying manuscript quality.
+
+## Artifacts Are File-Backed With Preview-Only Browser State
+
+Decision: Full artifacts live under `.bindery/artifacts/` with an `index.json` manifest. Browser localStorage stores only metadata and a preview.
+
+Reason: QA reports and draft candidates can be large. Keeping full content in localStorage risks quota and serialization stalls, while local files preserve the local-first evidence trail.
+
+## Korean Writing Stats Use Character-First Counts
+
+Decision: Daily writing progress and editor headline stats use 공백 제외 글자 as the primary unit, with sentence count and manuscript-page estimates as supporting metrics.
+
+Reason: Whitespace-delimited word counts are weak for Korean fiction. Character-first counts match manuscript and platform expectations better.
 
 ## Local Evidence And Source Text Stay Out Of Git
 

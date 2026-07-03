@@ -16,6 +16,8 @@ import {
 } from '$lib/api/commands';
 import { parseQAReport, parseRevisionPlan } from '$lib/domain/reports';
 import type { QAIssue } from '$lib/domain/reports';
+import { validateCandidateMarkdown, validateQAContract } from '$lib/domain/agentContracts';
+import { manuscriptContextWindow } from '$lib/domain/prompt';
 import { checkStyleCompliance } from '$lib/domain/style';
 import { styleStore } from '$lib/stores/styleStore';
 import { latestArtifact } from '$lib/stores/artifactStore';
@@ -36,6 +38,13 @@ import { buildGuidanceText } from '$lib/domain/guidance';
 import { toasts } from '$lib/stores/toastStore';
 
 const verdictLabel = { pass: '통과', warn: '주의', fail: '실패' } as const;
+
+export type DraftSourceContext = {
+  command?: string;
+  selectedText?: string;
+  cursorContext?: string;
+  cursorOffset?: number;
+};
 
 function projectRoot(): string {
   return get(projectStore).current?.rootPath || 'sample-project';
@@ -61,16 +70,23 @@ function buildQAPrompt(ep: string, manuscript: string): string {
     `게이트: 플롯, 연속성, 문체, 목소리, 어휘, 장면 패턴${style.guideline ? ', 문체 준수' : ''}`,
     `보고서는 마크다운으로 쓰되, 마지막에 반드시 아래 형식의 JSON 블록을 포함하라:`,
     `<!-- bindery:qa-json`,
+    `발췌 입력인 경우 앞/중간/끝을 모두 근거로 보되, 발췌 밖 사건은 추정이라고 표시하라.`,
     `{ "episode": "${ep}", "score": <종합점수>, "verdict": "pass|warn|fail", "issues": [ { "severity": "fail|warn|info", "source": "<게이트>", "title": "<제목>", "message": "<설명>", "lineStart": <줄번호|생략> } ] }`,
     `-->`
   ];
   if (prevSummary) {
-    parts.push('', `## 이전 회차(${prev}) 요약 — 연속성 게이트는 이 요약과의 모순을 검사하라`, prevSummary.content.slice(0, 1200));
+    parts.push('', `## 이전 회차(${prev}) 요약: 연속성 게이트는 이 요약과의 모순을 검사하라`, prevSummary.content.slice(0, 1200));
   }
   if (style.guideline) {
-    parts.push('', '## 문체 지침서 — 문체 준수 게이트의 기준', style.guideline.slice(0, 2000));
+    parts.push('', '## 문체 지침서: 문체 준수 게이트의 기준', style.guideline.slice(0, 2000));
   }
-  parts.push('', `## 원고 (${ep})`, manuscript.slice(0, 8000));
+  parts.push('', `## 원고 (${ep})`, manuscriptContextWindow(manuscript, {
+    maxChars: 14000,
+    frontChars: 5200,
+    middleChars: 3000,
+    tailChars: 5600,
+    label: `${ep} QA`
+  }));
   return parts.join('\n');
 }
 
@@ -88,7 +104,7 @@ function styleComplianceIssues(content: string): QAIssue[] {
   }));
 }
 
-export async function runQAAction() {
+export async function runQAAction(): Promise<boolean> {
   qaStore.update((s) => ({ ...s, running: true }));
   try {
     const ep = episode();
@@ -96,9 +112,11 @@ export async function runQAAction() {
     // 1순위: 에이전트 실검사. 실패 시 novelctl 보고서/기본 보고서로 폴백.
     let report = '';
     const agent = await runAgentText(projectRoot(), buildQAPrompt(ep, manuscript), `qa-${ep}`);
-    if (agent.ok && agent.text.includes('bindery:qa-json')) {
+    const qaContract = agent.ok ? validateQAContract(agent.text) : { ok: false, reason: 'agent unavailable' };
+    if (agent.ok && qaContract.ok) {
       report = agent.text;
     } else {
+      if (agent.ok) toasts.push(`QA 산출물 계약 불일치: ${qaContract.reason ?? 'unknown'} · novelctl 보고서로 대체`, 'warn');
       report = (await runQA(projectRoot(), ep)).report;
     }
     const parsed = parseQAReport(report);
@@ -111,9 +129,11 @@ export async function runQAAction() {
     qaStore.update((s) => ({ ...s, report: parsed, raw: report, running: false }));
     recordArtifact('qa', ep, `QA 보고서 · ${verdictLabel[parsed.verdict]} ${parsed.score ?? ''}`.trim(), report);
     toasts.push(`QA 완료 ${verdictLabel[parsed.verdict]} (${parsed.score ?? '-'})${compliance.length ? ` · 금지 표현 ${compliance.length}건` : ''}`, parsed.verdict === 'fail' ? 'bad' : parsed.verdict === 'warn' ? 'warn' : 'ok');
+    return parsed.verdict !== 'fail';
   } catch (e) {
     qaStore.update((s) => ({ ...s, running: false }));
     toasts.push('QA 실행 실패', 'bad');
+    return false;
   }
 }
 
@@ -128,14 +148,14 @@ function buildRevisionPrompt(ep: string): string {
     `수정 지시는 실행 가능한 동사형으로 쓰고, 원문 위치(L줄번호)가 있으면 유지하라.`,
     '',
     `## QA 이슈 (${ep})`,
-    issueLines || '(이슈 없음 — 리듬과 반복 관점의 개선 항목을 스스로 제안하라)',
+    issueLines || '(이슈 없음: 리듬과 반복 관점의 개선 항목을 스스로 제안하라)',
     '',
     '## QA 보고서 원문',
     (qa.raw ?? '').slice(0, 3000)
   ].join('\n');
 }
 
-export async function runRevisionAction() {
+export async function runRevisionAction(): Promise<boolean> {
   revisionStore.update((s) => ({ ...s, generating: true }));
   try {
     const ep = episode();
@@ -150,9 +170,11 @@ export async function runRevisionAction() {
     revisionStore.update((s) => ({ ...s, items: parseRevisionPlan(plan), raw: plan, generating: false }));
     recordArtifact('revise', ep, '수정 계획', plan);
     toasts.push('수정 계획 생성됨', 'ok');
+    return true;
   } catch {
     revisionStore.update((s) => ({ ...s, generating: false }));
     toasts.push('수정 계획 생성 실패', 'bad');
+    return false;
   }
 }
 
@@ -171,10 +193,10 @@ export async function runContextAction() {
   const manuscript = get(editorStore).content;
   const relevant = get(codexStore).items.filter((c) => manuscript.includes(c.name));
   const content = [
-    `# 컨텍스트 팩 — ${ep}`,
+    `# 컨텍스트 팩: ${ep}`,
     '',
     '## 이전 회차 요약',
-    prevSummary ? prevSummary.content.slice(0, 1200) : prev ? `(${prev} 요약 없음 — 요약 단계를 먼저 실행하면 연속성이 강해집니다)` : '(첫 회차입니다)',
+    prevSummary ? prevSummary.content.slice(0, 1200) : prev ? `(${prev} 요약 없음, 요약 단계를 먼저 실행하면 연속성이 강해집니다)` : '(첫 회차입니다)',
     '',
     '## 관련 설정 항목 (원고에 등장)',
     relevant.length ? relevant.map((c) => `- ${c.name} (${c.type}): ${c.summary ?? ''}`).join('\n') : '(원고에서 감지된 설정 항목이 없습니다)',
@@ -204,7 +226,13 @@ export async function runSummarizeAction() {
     '- (다음 회차로 넘어가는 미해결 요소)',
     '',
     `## 원고 (${ep})`,
-    manuscript.slice(0, 8000)
+    manuscriptContextWindow(manuscript, {
+      maxChars: 15000,
+      frontChars: 5200,
+      middleChars: 3200,
+      tailChars: 6200,
+      label: `${ep} summary`
+    })
   ].join('\n');
   const agent = await runAgentText(projectRoot(), prompt, `summarize-${ep}`);
   const summary = agent.ok && agent.text.trim() ? agent.text.trim() : localSummary(manuscript);
@@ -239,7 +267,7 @@ export async function runCommitAction() {
   const target = ed.path || 'manuscript.md';
   const snap = await createSnapshot(projectRoot(), target, `${ep} 파이프라인 기록`, ed.content);
   const journal = [
-    `# 기록 — ${ep}`,
+    `# 기록: ${ep}`,
     '',
     `- 시각: ${new Date().toLocaleString()}`,
     `- 대상: ${target}`,
@@ -251,26 +279,44 @@ export async function runCommitAction() {
   toasts.push(`스냅샷 기록됨: ${snap.id}`, 'ok');
 }
 
-export async function runDraftAction(kind: 'draft' | 'revise' | 'continue' | 'rewrite' = 'draft') {
+function draftSourceGuidance(ctx?: DraftSourceContext): string {
+  if (!ctx) return '';
+  const parts: string[] = [];
+  if (ctx.command) parts.push(`- 슬래시 명령: /${ctx.command}`);
+  if (typeof ctx.cursorOffset === 'number') parts.push(`- 커서 위치: ${ctx.cursorOffset.toLocaleString()}번째 문자 근처`);
+  if (ctx.selectedText?.trim()) {
+    parts.push('', '### 선택 영역', ctx.selectedText.trim().slice(0, 4000));
+  } else if (ctx.cursorContext?.trim()) {
+    parts.push('', '### 커서 주변 문맥', ctx.cursorContext.trim().slice(0, 3000));
+  }
+  return parts.length ? `### 에디터 실행 단위\n${parts.join('\n')}` : '';
+}
+
+export async function runDraftAction(kind: 'draft' | 'revise' | 'continue' | 'rewrite' = 'draft', ctx?: DraftSourceContext): Promise<boolean> {
   candidateStore.update((s) => ({ ...s, generating: true }));
   try {
     const base = get(editorStore).content;
     const ep = episode();
     // 산출물(컨텍스트/요약/QA/수정계획/표현분석)과 문체 지침서를 참고 블록으로 전달
-    const guidance = buildGuidanceText(ep);
-    const candidates = await generateCandidate(projectRoot(), ep, kind, base, guidance);
+    const sourceGuidance = draftSourceGuidance(ctx);
+    const guidance = [buildGuidanceText(ep), sourceGuidance].filter((s) => s.trim()).join('\n\n');
+    const candidates = (await generateCandidate(projectRoot(), ep, kind, base, guidance))
+      .filter((c) => validateCandidateMarkdown(c.content, base).ok);
+    if (!candidates.length) throw new Error('agent returned no usable candidate markdown');
     candidateStore.set({ candidates, activeId: candidates[0]?.id ?? null, generating: false, appliedHunks: new Set(), sessionSnapshotId: null });
     for (const c of candidates) recordArtifact('draft', ep, `${c.label} (${kind})`, c.content);
     gotoStage('review');
     uiStore.update((s) => ({ ...s, centerView: 'ai' }));
     toasts.push(`후보 ${candidates.length}개 생성됨: 검토 단계에서 비교하세요`, 'ok');
+    return true;
   } catch {
     candidateStore.update((s) => ({ ...s, generating: false }));
     toasts.push('후보 생성 실패', 'bad');
+    return false;
   }
 }
 
-export async function runAnalyzeAction(mode?: AnalysisMode) {
+export async function runAnalyzeAction(mode?: AnalysisMode): Promise<boolean> {
   const ed = get(editorStore);
   const useMode = mode ?? get(analysisStore).mode;
   analysisStore.update((s) => ({ ...s, running: true, mode: useMode }));
@@ -289,9 +335,11 @@ export async function runAnalyzeAction(mode?: AnalysisMode) {
     ].join('\n');
     recordArtifact('analyze', episode(), `표현 분석 · 플래그 ${flagged.length}`, md);
     toasts.push(`반복 분석 완료: ${flagged.length}개 표현 플래그`, flagged.length ? 'warn' : 'ok');
+    return true;
   } catch {
     analysisStore.update((s) => ({ ...s, running: false }));
     toasts.push('반복 분석 실패', 'bad');
+    return false;
   }
 }
 

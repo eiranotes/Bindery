@@ -9,6 +9,8 @@
   $: filtered = grid ? (plotFilter ? grid.plotlines.filter((p) => p.id === plotFilter) : grid.plotlines) : [];
   let plotFilter = '';
   let editing = false;
+  let draggingIndex: number | null = null;
+  let dragOverIndex: number | null = null;
 
   const tensionColor: Record<Tension, string> = { low: 'var(--muted)', mid: 'var(--warn)', high: 'var(--bad)' };
   const tensions: Tension[] = ['low', 'mid', 'high'];
@@ -21,6 +23,29 @@
   function setTension(i: number, t: Tension) { mutate((rows) => { rows[i].tension = t; return rows; }); }
   function setBeat(i: number, plotline: string, value: string) { mutate((rows) => { rows[i].beats[plotline] = value; return rows; }); }
   function removeRow(i: number) { mutate((rows) => rows.filter((_, idx) => idx !== i)); }
+  function moveRow(from: number, to: number) {
+    if (from === to || from < 0 || to < 0) return;
+    mutate((rows) => {
+      const next = [...rows];
+      const [row] = next.splice(from, 1);
+      next.splice(to, 0, row);
+      return next;
+    });
+  }
+  function onDragStart(e: DragEvent, i: number) {
+    if (!editing) return;
+    draggingIndex = i;
+    e.dataTransfer?.setData('text/plain', String(i));
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+  }
+  function onDrop(e: DragEvent, i: number) {
+    e.preventDefault();
+    const raw = e.dataTransfer?.getData('text/plain');
+    const from = raw ? parseInt(raw, 10) : draggingIndex;
+    if (typeof from === 'number' && Number.isFinite(from)) moveRow(from, i);
+    draggingIndex = null;
+    dragOverIndex = null;
+  }
   function addRow() {
     if (!grid) return;
     const n = grid.rows.length + 1;
@@ -69,10 +94,21 @@
         </thead>
         <tbody>
           {#each grid.rows as row, i}
-            <tr>
+            <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+            <tr
+              draggable={editing}
+              class:dragging={draggingIndex === i}
+              class:drag-over={dragOverIndex === i}
+              on:dragstart={(e) => onDragStart(e, i)}
+              on:dragover={(e) => { if (editing) { e.preventDefault(); dragOverIndex = i; } }}
+              on:dragleave={() => { if (dragOverIndex === i) dragOverIndex = null; }}
+              on:drop={(e) => onDrop(e, i)}
+              on:dragend={() => { draggingIndex = null; dragOverIndex = null; }}
+            >
               <td class="scene">
                 {#if editing}
                   <div class="scene-edit">
+                    <button class="drag-handle" title="장면 순서 이동" aria-label="장면 순서 이동">↕</button>
                     <input class="cell-input" value={row.title} on:change={(e) => setTitle(i, e.currentTarget.value)} />
                     <button class="row-del" title="장면 삭제" on:click={() => removeRow(i)}>×</button>
                   </div>
@@ -98,7 +134,7 @@
               {#each filtered as p}
                 <td class="beat" class:empty-beat={!row.beats[p.id]}>
                   {#if editing}
-                    <input class="cell-input beat-input" placeholder="—" value={row.beats[p.id] ?? ''} on:change={(e) => setBeat(i, p.id, e.currentTarget.value)} />
+                    <input class="cell-input beat-input" placeholder="비움" value={row.beats[p.id] ?? ''} on:change={(e) => setBeat(i, p.id, e.currentTarget.value)} />
                   {:else if row.beats[p.id]}
                     <span class="beat-label" style={`border-color:${p.color}44`}>{row.beats[p.id]}</span>
                   {/if}
@@ -132,6 +168,8 @@
   table { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; font-size: 11.5px; }
   th, td { border-bottom: 1px solid var(--line); border-right: 1px solid var(--chip); padding: 7px 8px; text-align: left; vertical-align: middle; white-space: nowrap; }
   th { position: sticky; top: 0; background: var(--pop); font-size: 10.5px; font-weight: 750; z-index: 2; }
+  tr.dragging { opacity: .45; }
+  tr.drag-over td { border-top: 2px solid var(--accent); }
   .corner, .scene { position: sticky; left: 0; z-index: 3; background: var(--pop); box-shadow: 1px 0 0 var(--line); }
   .scene { z-index: 1; background: var(--bg-2); }
   .corner { min-width: 148px; }
@@ -154,5 +192,7 @@
   .beat-input { min-width: 104px; }
   .cell-select { font-size: 11px; padding: 3px 4px; }
   .scene-edit { display: flex; gap: 4px; align-items: center; }
+  .drag-handle { border: 0; padding: 2px 4px; color: var(--faint); cursor: grab; }
+  tr.dragging .drag-handle { cursor: grabbing; }
   .row-del { border: 0; padding: 2px 6px; color: var(--bad); font-size: 13px; }
 </style>

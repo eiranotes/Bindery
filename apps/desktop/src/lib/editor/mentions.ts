@@ -122,7 +122,10 @@ export const repetitionDecoration = ViewPlugin.fromClass(
     constructor(view: EditorView) { this.decorations = repetitionDecorations(view); }
     update(u: ViewUpdate) {
       const changed = u.startState.field(repetitionField, false) !== u.state.field(repetitionField, false);
-      if ((u.docChanged || changed) && !u.view.composing) this.decorations = repetitionDecorations(u.view);
+      // Repetition analysis is an explicit report, not a live spell-checker.
+      // Re-scan only when the report changes; the next analysis run refreshes
+      // positions for the current draft.
+      if (changed && !u.view.composing) this.decorations = repetitionDecorations(u.view);
     }
   },
   { decorations: (v) => v.decorations }

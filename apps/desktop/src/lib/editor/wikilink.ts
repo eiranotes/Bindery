@@ -1,6 +1,7 @@
 // wikiLinkCompletion + aiCommandMenu
 import { autocompletion } from '@codemirror/autocomplete';
 import type { CompletionContext, CompletionResult, Completion } from '@codemirror/autocomplete';
+import type { EditorState } from '@codemirror/state';
 import { StateEffect, StateField } from '@codemirror/state';
 import { codexField } from './state';
 
@@ -23,6 +24,14 @@ function wikiLinkSource(context: CompletionContext): CompletionResult | null {
 
 // --- AI command menu: `/context`, `/draft`, `/qa` … ------------------------
 export type AICommand = { name: string; label: string; hint: string };
+export type AICommandRequest = {
+  name: string;
+  from: number;
+  to: number;
+  selectedText?: string;
+  cursorContext?: string;
+  cursorOffset: number;
+};
 
 const AI_COMMANDS: AICommand[] = [
   { name: 'context', label: '/context', hint: '이번 회차의 컨텍스트 묶음 생성' },
@@ -35,16 +44,22 @@ const AI_COMMANDS: AICommand[] = [
 ];
 
 /** Effect fired when the user picks an AI command from the menu. */
-export const aiCommandEffect = StateEffect.define<{ name: string; from: number; to: number }>();
+export const aiCommandEffect = StateEffect.define<AICommandRequest>();
 
 /** A tiny field so a host can subscribe to the last AI command request. */
-export const aiCommandField = StateField.define<{ name: string } | null>({
+export const aiCommandField = StateField.define<AICommandRequest | null>({
   create: () => null,
   update(v, tr) {
-    for (const e of tr.effects) if (e.is(aiCommandEffect)) return { name: e.value.name };
+    for (const e of tr.effects) if (e.is(aiCommandEffect)) return e.value;
     return v;
   }
 });
+
+function contextAround(state: EditorState, pos: number): string {
+  const from = Math.max(0, pos - 1200);
+  const to = Math.min(state.doc.length, pos + 1200);
+  return state.doc.sliceString(from, to);
+}
 
 function aiCommandSource(context: CompletionContext): CompletionResult | null {
   const before = context.matchBefore(/(^|\s)\/[a-z]*/);
@@ -57,10 +72,20 @@ function aiCommandSource(context: CompletionContext): CompletionResult | null {
     detail: 'AI',
     info: c.hint,
     apply: (view, _c, fromPos, toPos) => {
+      const selection = view.state.selection.main;
+      const selectedText = selection.empty ? undefined : view.state.doc.sliceString(selection.from, selection.to);
+      const cursorOffset = selection.head;
       // remove the typed slash-command, then signal the host to run it
       view.dispatch({
         changes: { from: fromPos, to: toPos, insert: '' },
-        effects: aiCommandEffect.of({ name: c.name, from: fromPos, to: toPos })
+        effects: aiCommandEffect.of({
+          name: c.name,
+          from: fromPos,
+          to: toPos,
+          selectedText,
+          cursorContext: selectedText ? undefined : contextAround(view.state, cursorOffset),
+          cursorOffset
+        })
       });
     }
   }));

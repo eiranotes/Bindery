@@ -13,19 +13,19 @@
 
   $: root = $projectStore.current?.rootPath || 'sample-project';
   $: episodeCount = listEpisodes($fileTreeStore.nodes).length;
-  function daysFrom(proj: Record<string, number>): Array<{ date: string; words: number }> {
-    const out: Array<{ date: string; words: number }> = [];
+  function daysFrom(proj: Record<string, number>): Array<{ date: string; chars: number }> {
+    const out: Array<{ date: string; chars: number }> = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
       const key = d.toISOString().slice(0, 10);
-      out.push({ date: key, words: proj[key] ?? 0 });
+      out.push({ date: key, chars: proj[key] ?? 0 });
     }
     return out;
   }
   $: days = daysFrom($statsStore[root] ?? {});
-  $: weekTotal = days.reduce((a, d) => a + d.words, 0);
-  $: maxDay = Math.max(1, ...days.map((d) => d.words));
+  $: weekTotal = days.reduce((a, d) => a + d.chars, 0);
+  $: maxDay = Math.max(1, ...days.map((d) => d.chars));
 
   async function run() {
     running = true;
@@ -64,17 +64,17 @@
 </div>
 
 <div class="card">
-  <div class="kpi"><strong>집필 통계</strong><span class="badge">최근 7일 {weekTotal.toLocaleString()} 단어</span></div>
+  <div class="kpi"><strong>집필 통계</strong><span class="badge">최근 7일 {weekTotal.toLocaleString()}자</span></div>
   <div class="stat-bars" role="img" aria-label="최근 7일 집필량">
     {#each days as d}
-      <div class="stat-col" title={`${d.date} · ${d.words.toLocaleString()} 단어`}>
-        <div class="stat-bar-track"><i style={`height:${Math.round((d.words / maxDay) * 100)}%`}></i></div>
+      <div class="stat-col" title={`${d.date} · ${d.chars.toLocaleString()}자`}>
+        <div class="stat-bar-track"><i style={`height:${Math.round((d.chars / maxDay) * 100)}%`}></i></div>
         <span class="stat-day">{d.date.slice(5).replace('-', '/')}</span>
-        <span class="stat-num">{d.words > 0 ? d.words.toLocaleString() : '·'}</span>
+        <span class="stat-num">{d.chars > 0 ? d.chars.toLocaleString() : '·'}</span>
       </div>
     {/each}
   </div>
-  <p class="stat-note">저장할 때마다 늘어난 단어 수가 그 날짜에 누적됩니다.</p>
+  <p class="stat-note">저장할 때마다 늘어난 공백 제외 글자 수가 그 날짜에 누적됩니다.</p>
 </div>
 
 <style>

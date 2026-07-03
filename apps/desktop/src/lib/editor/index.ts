@@ -17,13 +17,14 @@ import { smartQuotes, autoReplace, writerComments } from './inputRules';
 import { dynamicMentionDecoration, mentionHover, repetitionDecoration } from './mentions';
 import { qaDiagnosticsExtension } from './qaDiagnostics';
 import { wikiLinkCompletion, aiCommandField, aiCommandEffect } from './wikilink';
+import type { AICommandRequest } from './wikilink';
 import { editorTheme } from './theme';
 export { editorTheme } from './theme';
 
 export { wordCountField, computeStats } from './frontmatter';
 export type { WordStats } from './frontmatter';
 export { AI_COMMANDS, aiCommandEffect, aiCommandField } from './wikilink';
-export type { AICommand } from './wikilink';
+export type { AICommand, AICommandRequest } from './wikilink';
 export { focusModeExtension, typewriterExtension } from './focus';
 export { smartQuotes, autoReplace } from './inputRules';
 
@@ -57,7 +58,7 @@ export function pushRepetition(view: EditorView, terms: RepetitionTerm[]) {
 }
 
 /** Read AI command effects from a transaction (used by the host updateListener). */
-export function readAICommand(effects: readonly import('@codemirror/state').StateEffect<unknown>[]): string | null {
-  for (const e of effects) if (e.is(aiCommandEffect)) return (e.value as { name: string }).name;
+export function readAICommand(effects: readonly import('@codemirror/state').StateEffect<unknown>[]): AICommandRequest | null {
+  for (const e of effects) if (e.is(aiCommandEffect)) return e.value;
   return null;
 }

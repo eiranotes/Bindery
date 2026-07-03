@@ -60,7 +60,7 @@
   </div>
 
   <div class="topbar-right">
-    <button class="agent-state" class:ready={agentReady} title="AI 연결 상태 — 누르면 연결 설정으로 이동" on:click={openAIConnect}>
+    <button class="agent-state" class:ready={agentReady} title="AI 연결 상태, 누르면 연결 설정으로 이동" on:click={openAIConnect}>
       <span class="dot" class:ok={agentReady}></span>{agentName} {agentReady ? '연결됨' : '미설정'}
     </button>
     {#if $settingsStore.mockMode}<span class="mock-pill">데모</span>{/if}

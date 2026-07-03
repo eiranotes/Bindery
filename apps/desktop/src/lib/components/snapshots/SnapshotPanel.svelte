@@ -108,7 +108,7 @@
     <button class="cmp-close-area" aria-label="닫기" on:click={() => { compareTarget = null; compareDiff = null; }}></button>
     <div class="cmp" role="dialog" aria-modal="true">
       <div class="cmp-head">
-        <span class="eyebrow">스냅샷 비교 — {compareTarget.label || compareTarget.id} · {compareTarget.targetPath}</span>
+        <span class="eyebrow">스냅샷 비교 · {compareTarget.label || compareTarget.id} · {compareTarget.targetPath}</span>
         <div class="cmp-head-actions">
           <button class="primary tiny" on:click={() => compareTarget && restore(compareTarget, compareContent)}>이 스냅샷으로 복원</button>
           <button class="ghost tiny" on:click={() => { compareTarget = null; compareDiff = null; }}>닫기</button>

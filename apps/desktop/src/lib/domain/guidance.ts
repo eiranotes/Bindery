@@ -12,6 +12,12 @@ function clip(text: string, max: number): string {
   return t.length > max ? `${t.slice(0, max)}\n…(생략)` : t;
 }
 
+function previousEpisode(episode: string): string | null {
+  const n = parseInt(episode.replace(/\D/g, ''), 10);
+  if (!Number.isFinite(n) || n <= 1) return null;
+  return `ep${String(n - 1).padStart(3, '0')}`;
+}
+
 /** 문체 시스템에서 라우팅된 PromptCapsule을 집필 프롬프트용 규칙 블록으로 렌더한다. */
 function renderCapsule(capsule: PromptCapsule): string {
   const lines: string[] = [`장면 유형: ${capsule.scene_type} · register: ${capsule.style_register}`];
@@ -71,11 +77,15 @@ export function collectGuidance(episode: string): GuidanceSection[] {
     });
   }
 
+  const prev = previousEpisode(episode);
+  const prevSummary = prev ? latestArtifact('summarize', prev) : null;
+  if (prevSummary) sections.push({ label: `이전 회차 요약 (${prev})`, source: `${prev} 산출물`, content: clip(prevSummary.content, 1100) });
+
   const context = latestArtifact('context', episode);
   if (context) sections.push({ label: '컨텍스트 팩', source: `${episode} 산출물`, content: clip(context.content, 1600) });
 
   const summary = latestArtifact('summarize', episode);
-  if (summary) sections.push({ label: '이전 요약', source: `${episode} 산출물`, content: clip(summary.content, 900) });
+  if (summary) sections.push({ label: '현재 회차 요약', source: `${episode} 산출물`, content: clip(summary.content, 900) });
 
   const qa = latestArtifact('qa', episode);
   if (qa) sections.push({ label: '최근 QA 이슈', source: `${episode} 산출물`, content: clip(qa.content, 1200) });

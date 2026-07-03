@@ -6,7 +6,7 @@ use std::fs;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::thread::sleep;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -57,6 +57,34 @@ fn output_with_timeout(
             ));
         }
         sleep(Duration::from_millis(100));
+    }
+}
+
+fn cleanup_tmp_dir(tmp_dir: &Path) {
+    let Ok(entries) = fs::read_dir(tmp_dir) else {
+        return;
+    };
+    let cutoff = SystemTime::now()
+        .checked_sub(Duration::from_secs(60 * 60 * 24 * 3))
+        .unwrap_or(UNIX_EPOCH);
+    let mut files: Vec<_> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let meta = entry.metadata().ok()?;
+            if !meta.is_file() {
+                return None;
+            }
+            Some((entry.path(), meta.modified().unwrap_or(UNIX_EPOCH)))
+        })
+        .collect();
+    for (path, modified) in &files {
+        if *modified < cutoff {
+            let _ = fs::remove_file(path);
+        }
+    }
+    files.sort_by(|a, b| b.1.cmp(&a.1));
+    for (path, _) in files.into_iter().skip(80) {
+        let _ = fs::remove_file(path);
     }
 }
 
@@ -344,13 +372,7 @@ pub fn generate_candidate(
         &mode,
         &format!("candidate-{}", episode),
     ) {
-        return Ok(vec![Candidate {
-            id: format!("agent-{}", Utc::now().timestamp_millis()),
-            label: format!("{} Candidate", provider),
-            content: generated,
-            source: format!("{} · {} · {}", kind, provider, mode),
-            created_at: now,
-        }]);
+        return Ok(agent_candidates(&generated, &kind, &provider, &mode, &now));
     }
     let content_a = if base.trim().is_empty() {
         default_manuscript(&episode)
@@ -380,6 +402,70 @@ pub fn generate_candidate(
     ])
 }
 
+fn heading_label(line: &str) -> Option<String> {
+    let trimmed = line.trim().trim_start_matches('#').trim();
+    if trimmed.starts_with("후보 A") || trimmed.starts_with("Candidate A") {
+        return Some("후보 A".into());
+    }
+    if trimmed.starts_with("후보 B") || trimmed.starts_with("Candidate B") {
+        return Some("후보 B".into());
+    }
+    None
+}
+
+fn agent_candidates(
+    text: &str,
+    kind: &str,
+    provider: &str,
+    mode: &str,
+    created_at: &str,
+) -> Vec<Candidate> {
+    let mut markers: Vec<(usize, usize, String)> = Vec::new();
+    let mut offset = 0;
+    for line in text.lines() {
+        let line_start = offset;
+        let line_end = line_start + line.len();
+        if let Some(label) = heading_label(line) {
+            markers.push((line_start, line_end, label));
+        }
+        offset = line_end + 1;
+    }
+    if markers.len() >= 2 {
+        return markers
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, (_start, line_end, label))| {
+                let end = markers
+                    .get(idx + 1)
+                    .map(|(next, _, _)| *next)
+                    .unwrap_or(text.len());
+                let content = text[*line_end..end].trim();
+                if content.is_empty() {
+                    return None;
+                }
+                Some(Candidate {
+                    id: format!(
+                        "agent-{}-{}",
+                        label.replace(' ', "-"),
+                        Utc::now().timestamp_millis()
+                    ),
+                    label: label.clone(),
+                    content: content.to_string(),
+                    source: format!("{} · {} · {}", kind, provider, mode),
+                    created_at: created_at.to_string(),
+                })
+            })
+            .collect();
+    }
+    vec![Candidate {
+        id: format!("agent-{}", Utc::now().timestamp_millis()),
+        label: format!("{} Candidate", provider),
+        content: text.trim().to_string(),
+        source: format!("{} · {} · {}", kind, provider, mode),
+        created_at: created_at.to_string(),
+    }]
+}
+
 fn base_manuscript(episode: &str, base: &str) -> String {
     if base.trim().is_empty() {
         default_manuscript(episode)
@@ -398,7 +484,7 @@ fn agent_prompt(episode: &str, kind: &str, base: &str, guidance: &str) -> String
         )
     };
     format!(
-        "You are editing a Korean long-serial fiction manuscript. Return only the revised manuscript markdown, no explanations.\nEpisode: {}\nTask: {}{}\n\nCurrent manuscript:\n{}",
+        "You are editing a Korean long-serial fiction manuscript. Return only candidate manuscript markdown, no explanations. Provide two alternatives with headings exactly `## 후보 A` and `## 후보 B`.\nEpisode: {}\nTask: {}{}\n\nCurrent manuscript:\n{}",
         episode,
         kind,
         guidance_block,
@@ -442,6 +528,7 @@ fn agent_tmp_file(project_path: &str, label: &str) -> Option<(std::path::PathBuf
     let root = project_root(project_path).ok()?;
     let tmp_dir = root.join(".bindery").join("tmp").join("agent");
     fs::create_dir_all(&tmp_dir).ok()?;
+    cleanup_tmp_dir(&tmp_dir);
     let filename = format!("{}-{}.md", label, Utc::now().timestamp_millis());
     let abs = tmp_dir.join(&filename);
     let rel = format!(".bindery/tmp/agent/{}", filename);
@@ -641,12 +728,86 @@ fn collect_codex(base: &Path, root: &Path, typ: &str, out: &mut Vec<CodexItem>) 
     Ok(())
 }
 
+fn push_marker_ranges(
+    text: &str,
+    start_marker: &str,
+    end_marker: &str,
+    ranges: &mut Vec<(usize, usize)>,
+) {
+    let mut cursor = 0;
+    while let Some(start_rel) = text[cursor..].find(start_marker) {
+        let start = cursor + start_rel;
+        let body_start = start + start_marker.len();
+        if let Some(end_rel) = text[body_start..].find(end_marker) {
+            let end = body_start + end_rel + end_marker.len();
+            ranges.push((start, end));
+            cursor = end;
+        } else {
+            break;
+        }
+    }
+}
+
+fn masked_ranges(text: &str) -> Vec<(usize, usize)> {
+    let mut ranges = Vec::new();
+    if text.starts_with("---") {
+        if let Some(close) = text[3..].find("\n---") {
+            let close_at = 3 + close + 4;
+            let after = text[close_at..]
+                .find('\n')
+                .map(|n| close_at + n + 1)
+                .unwrap_or(text.len());
+            ranges.push((0, after));
+        }
+    }
+    push_marker_ranges(text, "```", "```", &mut ranges);
+    push_marker_ranges(text, "`", "`", &mut ranges);
+    push_marker_ranges(text, "[[", "]]", &mut ranges);
+
+    let mut cursor = 0;
+    while let Some(open_rel) = text[cursor..].find('[') {
+        let open = cursor + open_rel;
+        let Some(close_rel) = text[open..].find("](") else {
+            cursor = open + 1;
+            continue;
+        };
+        let close = open + close_rel + 2;
+        if let Some(end_rel) = text[close..].find(')') {
+            let end = close + end_rel + 1;
+            ranges.push((open, end));
+            cursor = end;
+        } else {
+            cursor = close;
+        }
+    }
+
+    ranges.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut merged: Vec<(usize, usize)> = Vec::new();
+    for (start, end) in ranges {
+        if let Some(last) = merged.last_mut() {
+            if start <= last.1 {
+                last.1 = last.1.max(end);
+                continue;
+            }
+        }
+        merged.push((start, end));
+    }
+    merged
+}
+
+fn in_masked(pos: usize, ranges: &[(usize, usize)]) -> bool {
+    ranges
+        .iter()
+        .any(|(start, end)| pos >= *start && pos < *end)
+}
+
 fn scan_text_for_mentions(
     path: String,
     text: &str,
     codex: &[CodexItem],
     min_confidence: f32,
 ) -> MentionReport {
+    let masked = masked_ranges(text);
     let mut mentions = Vec::new();
     let mut hit = std::collections::HashSet::new();
     for item in codex {
@@ -666,7 +827,16 @@ fn scan_text_for_mentions(
                 let from = start + pos;
                 let to = from + alias.value.len();
                 start = to;
+                if in_masked(from, &masked) {
+                    continue;
+                }
                 if from >= 2 && text.get(from.saturating_sub(2)..from) == Some("[[") {
+                    continue;
+                }
+                if mentions
+                    .iter()
+                    .any(|m: &Mention| from < m.to && to > m.from)
+                {
                     continue;
                 }
                 let mut confidence = 0.5_f32;

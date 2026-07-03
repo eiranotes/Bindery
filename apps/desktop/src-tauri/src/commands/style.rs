@@ -4,7 +4,8 @@ use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::thread::sleep;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -20,6 +21,40 @@ fn hide_console_window(cmd: &mut Command) {
     #[cfg(not(target_os = "windows"))]
     {
         let _ = cmd;
+    }
+}
+
+fn output_with_timeout(
+    mut cmd: Command,
+    timeout: Duration,
+) -> std::io::Result<(bool, String, String)> {
+    hide_console_window(&mut cmd);
+    let mut child = cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
+    let started = Instant::now();
+    loop {
+        if child.try_wait()?.is_some() {
+            let output = child.wait_with_output()?;
+            return Ok((
+                output.status.success(),
+                String::from_utf8_lossy(&output.stdout).trim().to_string(),
+                String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            ));
+        }
+        if started.elapsed() >= timeout {
+            let _ = child.kill();
+            let output = child.wait_with_output()?;
+            let stderr = format!(
+                "{}\nstyle command timed out after {}s",
+                String::from_utf8_lossy(&output.stderr).trim(),
+                timeout.as_secs()
+            );
+            return Ok((
+                false,
+                String::from_utf8_lossy(&output.stdout).trim().to_string(),
+                stderr,
+            ));
+        }
+        sleep(Duration::from_millis(100));
     }
 }
 
@@ -55,6 +90,34 @@ fn app_error(message: impl Into<String>) -> AppError {
     }
 }
 
+fn cleanup_tmp_dir(tmp_dir: &Path) {
+    let Ok(entries) = fs::read_dir(tmp_dir) else {
+        return;
+    };
+    let cutoff = SystemTime::now()
+        .checked_sub(Duration::from_secs(60 * 60 * 24 * 3))
+        .unwrap_or(UNIX_EPOCH);
+    let mut files: Vec<_> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let meta = entry.metadata().ok()?;
+            if !meta.is_file() {
+                return None;
+            }
+            Some((entry.path(), meta.modified().unwrap_or(UNIX_EPOCH)))
+        })
+        .collect();
+    for (path, modified) in &files {
+        if *modified < cutoff {
+            let _ = fs::remove_file(path);
+        }
+    }
+    files.sort_by(|a, b| b.1.cmp(&a.1));
+    for (path, _) in files.into_iter().skip(80) {
+        let _ = fs::remove_file(path);
+    }
+}
+
 fn run_style_cli(
     project_path: &str,
     novelctl_path: Option<String>,
@@ -69,13 +132,9 @@ fn run_style_cli(
         .arg("--json")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    hide_console_window(&mut cmd);
-    let output = cmd
-        .output()
+    let (ok, stdout, stderr) = output_with_timeout(cmd, Duration::from_secs(120))
         .map_err(|e| app_error(format!("style command unavailable: {} ({})", bin, e)))?;
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    if !output.status.success() {
+    if !ok {
         return Err(app_error(format!(
             "style command failed: {}\n{}",
             stderr, stdout
@@ -97,12 +156,27 @@ fn temp_json(project_path: &str, label: &str, value: &Value) -> AppResult<PathBu
     let root = project_root(project_path)?;
     let tmp_dir = root.join(".bindery").join("style-runtime").join("tmp");
     fs::create_dir_all(&tmp_dir)?;
+    cleanup_tmp_dir(&tmp_dir);
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|e| app_error(e.to_string()))?
         .as_nanos();
     let path = tmp_dir.join(format!("{}-{}.json", label, nanos));
     fs::write(&path, serde_json::to_vec_pretty(value)?)?;
+    Ok(path)
+}
+
+fn temp_text(project_path: &str, label: &str, text: &str) -> AppResult<PathBuf> {
+    let root = project_root(project_path)?;
+    let tmp_dir = root.join(".bindery").join("style-runtime").join("tmp");
+    fs::create_dir_all(&tmp_dir)?;
+    cleanup_tmp_dir(&tmp_dir);
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| app_error(e.to_string()))?
+        .as_nanos();
+    let path = tmp_dir.join(format!("{}-{}.txt", label, nanos));
+    fs::write(&path, text)?;
     Ok(path)
 }
 
@@ -135,11 +209,12 @@ pub fn classify_style_scene(
         .and_then(Value::as_bool)
         .unwrap_or(false);
 
+    let scene_path = temp_text(&project_path, "style-scene", &scene_text)?;
     let mut args = vec![
         "style-classify".into(),
         project_path.clone(),
-        "--text".into(),
-        scene_text,
+        "--path".into(),
+        path_arg(&scene_path),
         "--scene-id".into(),
         scene_id,
     ];
@@ -215,11 +290,12 @@ pub fn score_style_match(
     novelctl_path: Option<String>,
 ) -> AppResult<Value> {
     let style_path = temp_json(&project_path, "style-score-profile", &style_profile)?;
+    let text_path = temp_text(&project_path, "style-score-text", &text)?;
     let mut args = vec![
         "style-score".into(),
         project_path.clone(),
-        "--text".into(),
-        text,
+        "--path".into(),
+        path_arg(&text_path),
         "--style-json".into(),
         path_arg(&style_path),
     ];

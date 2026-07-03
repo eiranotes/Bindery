@@ -15,6 +15,7 @@
   import { qaStore } from '$lib/stores/qaStore';
   import { artifactStore, artifactsForEpisode } from '$lib/stores/artifactStore';
   import type { Artifact } from '$lib/stores/artifactStore';
+  import { aiCommandContextStore } from '$lib/stores/aiCommandContextStore';
   import { styleStore, STRICTNESS_LABEL } from '$lib/stores/styleStore';
   import type { StyleStrictness } from '$lib/stores/styleStore';
   import { draftParamsStore, CREATIVITY_LABEL } from '$lib/stores/draftParamsStore';
@@ -46,7 +47,12 @@
   const strictnessOptions = Object.keys(STRICTNESS_LABEL) as StyleStrictness[];
 
   // ---- 상태 요약 (레일) -------------------------------------------------
-  $: agentReady = Boolean($settingsStore.agentCliPath);
+  function providerHasDefaultCommand(provider: string): boolean {
+    return ['codex', 'gemini', 'antigravity'].includes(provider);
+  }
+  $: agentReady = !$settingsStore.mockMode && (
+    Boolean($settingsStore.agentCliPath?.trim()) || providerHasDefaultCommand($settingsStore.agentProvider)
+  );
   $: bibleFiles = collectBibleFiles($fileTreeStore.nodes);
   $: hasBible = bibleFiles.length > 0 || $codexStore.items.length > 0;
   $: doneCount = steps.filter((s) => $pipelineStore.stepStatus[s] === 'done').length;
@@ -57,6 +63,8 @@
   // 집필(초안/수정) 프롬프트에 자동 포함되는 산출물 종류
   const guidanceSteps = new Set<PipelineStep>(['context', 'summarize', 'qa', 'revise', 'analyze']);
   let viewArtifact: Artifact | null = null;
+  $: if ($aiCommandContextStore?.command === 'continue') draftKind = 'continue';
+  $: if ($aiCommandContextStore?.command === 'rewrite') draftKind = 'rewrite';
 
   function collectBibleFiles(nodes: FileNode[]): FileNode[] {
     const out: FileNode[] = [];
@@ -150,9 +158,9 @@
     return m?.[1] || $episodeStore.currentEpisode || 'ep001';
   }
 
-  const runners: Record<PipelineStep, () => void | Promise<void>> = {
+  const runners: Record<PipelineStep, () => void | boolean | Promise<void | boolean>> = {
     context: runContextAction,
-    draft: () => runDraftAction(draftKind),
+    draft: () => runDraftAction(draftKind, $aiCommandContextStore ?? undefined),
     analyze: () => runAnalyzeAction(),
     qa: runQAAction,
     revise: runRevisionAction,
@@ -160,21 +168,34 @@
     commit: runCommitAction
   };
 
-  async function run(step: PipelineStep) {
+  async function run(step: PipelineStep): Promise<boolean> {
     running = step;
     setStepStatus(step, 'running');
     try {
-      await runners[step]();
+      const ok = await runners[step]();
+      if (ok === false) {
+        setStepStatus(step, 'failed');
+        return false;
+      }
       setStepStatus(step, 'done');
+      return true;
     } catch {
       setStepStatus(step, 'failed');
+      return false;
     } finally {
       running = null;
     }
   }
   async function runAll() {
     toasts.push(`전체 파이프라인 실행: ${steps.length}단계`, 'info');
-    for (const step of steps) await run(step);
+    for (const step of steps) {
+      const ok = await run(step);
+      if (!ok) {
+        toasts.push(`${STEP_META[step].label} 단계에서 중단됨 · 산출물을 확인하세요`, 'bad');
+        gotoStage('review');
+        return;
+      }
+    }
     gotoStage('review');
   }
   function preview(step: PipelineStep) {
@@ -291,7 +312,7 @@
 
         {#if $codexStore.items.length}
           <div class="line-list">
-            <span class="line-label">설정 항목 {$codexStore.items.length}개 — 원고에 등장하면 프롬프트에 자동 포함</span>
+            <span class="line-label">설정 항목 {$codexStore.items.length}개, 원고에 등장하면 프롬프트에 자동 포함</span>
             {#each $codexStore.items.slice(0, 8) as item}
               <div class="line-item static">
                 <b>{item.name}</b>
@@ -344,7 +365,18 @@
           </ol>
 
           <div class="param-block">
-            <span class="line-label">집필 파라미터 — 초안·수정 후보 프롬프트에 반영</span>
+            <span class="line-label">집필 파라미터, 초안·수정 후보 프롬프트에 반영</span>
+            {#if $aiCommandContextStore}
+              <div class="slash-context">
+                <span>/{ $aiCommandContextStore.command }</span>
+                <small>
+                  {$aiCommandContextStore.selectedText?.trim()
+                    ? `선택 영역 ${$aiCommandContextStore.selectedText.trim().length.toLocaleString()}자`
+                    : `커서 주변 문맥 · ${($aiCommandContextStore.cursorOffset ?? 0).toLocaleString()}번째 문자`}
+                </small>
+                <button class="ghost tiny" on:click={() => aiCommandContextStore.set(null)}>해제</button>
+              </div>
+            {/if}
             <div class="param-row">
               <label>
                 <span>분량</span>
@@ -384,7 +416,7 @@
         </div>
 
         <aside class="artifact-rail" aria-label="산출물 보관함">
-          <span class="line-label">산출물 보관함 — {episode}</span>
+          <span class="line-label">산출물 보관함 · {episode}</span>
           {#if $styleStore.guideline && $styleStore.applyToDraft}
             <div class="artifact-row">
               <div class="artifact-copy">
@@ -436,7 +468,7 @@
     <button class="pv-close-area" aria-label="닫기" on:click={() => (viewArtifact = null)}></button>
     <div class="pv" role="dialog" aria-modal="true">
       <div class="pv-head">
-        <span class="eyebrow">산출물 — {STEP_META[viewArtifact.step].label} · {viewArtifact.episode}</span>
+        <span class="eyebrow">산출물 · {STEP_META[viewArtifact.step].label} · {viewArtifact.episode}</span>
         <button class="ghost" on:click={() => (viewArtifact = null)}>닫기</button>
       </div>
       <pre class="pv-body">{viewArtifact.content}</pre>
@@ -449,7 +481,7 @@
     <button class="pv-close-area" aria-label="닫기" on:click={() => (previewStep = null)}></button>
     <div class="pv" role="dialog" aria-modal="true">
       <div class="pv-head">
-        <span class="eyebrow">프롬프트 미리보기 — {STEP_META[previewStep].label}</span>
+        <span class="eyebrow">프롬프트 미리보기 · {STEP_META[previewStep].label}</span>
         <button class="ghost" on:click={() => (previewStep = null)}>닫기</button>
       </div>
       <pre class="pv-body">{previewText}</pre>
@@ -595,6 +627,18 @@
     align-items: start;
   }
   .param-block { display: grid; gap: 8px; max-width: 760px; border-top: 1px solid var(--line); padding-top: 4px; }
+  .slash-context {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .slash-context span { color: var(--accent); font-weight: 700; font-family: ui-monospace, monospace; }
+  .slash-context small { color: var(--faint); }
   .param-row { display: flex; gap: 14px; flex-wrap: wrap; }
   .param-row label, .param-notes { display: grid; gap: 4px; }
   .param-row label > span, .param-notes > span { color: var(--faint); font-size: 10.5px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }

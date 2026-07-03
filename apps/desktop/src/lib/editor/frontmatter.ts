@@ -46,7 +46,14 @@ export const frontmatterExtension = ViewPlugin.fromClass(
 );
 
 // --- word count ------------------------------------------------------------
-export type WordStats = { words: number; chars: number; charsNoSpace: number; paragraphs: number };
+export type WordStats = {
+  words: number;
+  chars: number;
+  charsNoSpace: number;
+  paragraphs: number;
+  sentences: number;
+  manuscriptPages: number;
+};
 
 export function computeStats(text: string): WordStats {
   const stripped = text.replace(/^---[\s\S]*?\n---\n?/, '');
@@ -54,7 +61,9 @@ export function computeStats(text: string): WordStats {
   const chars = stripped.length;
   const charsNoSpace = stripped.replace(/\s/g, '').length;
   const paragraphs = stripped.split(/\n\s*\n/).filter((p) => p.trim()).length;
-  return { words, chars, charsNoSpace, paragraphs };
+  const sentences = stripped.split(/[.!?。！？…]+|\n{2,}/).filter((s) => /[가-힣A-Za-z0-9]/.test(s)).length;
+  const manuscriptPages = Math.ceil(charsNoSpace / 200);
+  return { words, chars, charsNoSpace, paragraphs, sentences, manuscriptPages };
 }
 
 export const wordCountField = StateField.define<WordStats>({

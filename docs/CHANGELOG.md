@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-07-03 (리뷰 패치 반영 + 후속 계획 구현)
+
+- AI prompt preview, QA, and summary now include front/middle/tail manuscript context windows so long episodes do not lose late-scene turns and hooks.
+- Full pipeline execution now stops on action failure or QA `fail` verdict before summary/record steps.
+- QA, draft candidate, and final style guideline outputs now pass lightweight contract checks before entering the app flow.
+- Style CLI execution now has a 120-second timeout, passes long text through temp files, and cleans old temp files.
+- Style banned-term parsing now handles inline lists, bullets, tables, quotes, backticks, and parenthetical notes more reliably.
+- Repetition highlights refresh only when the analysis report changes, reducing editor keystroke work on long drafts.
+- Artifact storage now writes full files plus `.bindery/artifacts/index.json`; localStorage keeps preview metadata only.
+- Writing stats now prioritize Korean 공백 제외 글자, with sentence count and manuscript-page estimates in the editor.
+- Editor slash commands now carry selected text or cursor-near context into the AI draft prompt, and plot-board scene rows can be reordered by drag.
+
 ## 2026-07-03 (작업실 재편 + 카드 평탄화)
 
 - Reduced the top navigation from five tabs to three (`집필 · 자료 · 작업실`); `문체`/`AI`/`내보내기` now live under one `작업실` surface with a slim sub-nav, keeping the AI and style tools as separate screens without top-tab clutter.

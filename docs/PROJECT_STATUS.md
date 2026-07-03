@@ -1,10 +1,21 @@
 # Project Status
 
-Updated: 2026-07-03 (GitHub 게시 준비)
+Updated: 2026-07-03 (리뷰 패치 반영 + 후속 계획 구현)
 
 ## Current State
 
 Bindery is a writing-first macOS/Svelte/Tauri app covering the full local novel workflow: episode management (create/switch/status), writing with scene jump and daily stats, materials (editable plot board, codex item creation), style replication with adjustable enforcement strength, an AI harness whose every step leaves file-synced artifacts that feed drafting (with author-tunable length/creativity/instructions), agent-based QA with style-compliance and continuity gates, snapshot compare/restore, project-wide search, and real TXT/HTML/EPUB export. The shell now keeps the collapsible binder navigator on the writing screen and gives AI/materials/export surfaces a single focused work area; top navigation and analysis rows remain resilient so dense Korean labels truncate or scroll instead of stacking into vertical text. The style analyzer follows the v3 MVP procedure locally first: normalize input, group scene candidates, code local features, generate evidence, apply globality decisions, build a surface profile, then hand semantic interpretation to the configured AI runner only where local regex analysis is insufficient. The structured style runtime now includes repository sync, deterministic SceneClassification, StyleRouter, StyleStack merge, PromptCapsule, feature-based StyleMatchScore, Korean surface analysis, structured-output guards, and validated SkillPack export paths in TypeScript and Python. Storage is local-only by design; `styles/` JSON is the editable source and SQLite is the query/index cache.
+
+## Completed (2026-07-03, 리뷰 패치 반영 + 후속 계획 구현)
+
+- Applied the external review patch intent against the current codebase: AI prompts, QA, summary, and prompt preview now use a front/middle/tail manuscript context window instead of only the opening excerpt.
+- Made full AI pipeline execution fail fast: action failures and QA `fail` verdicts stop the run before summarize/commit, while preserving the failed report as an artifact.
+- Added agent output contract checks for QA JSON blocks, candidate markdown, and final style guidelines; invalid agent output falls back or fails visibly instead of entering review as valid work.
+- Hardened the style runtime bridge with a 120-second timeout, temp-file text passing for long scene/style-score input, and cleanup retention for style and agent temp files.
+- Reworked artifact storage so localStorage keeps metadata/preview only, while `.bindery/artifacts/` stores full artifact files plus `index.json`.
+- Switched writing stats to Korean-friendly 공백 제외 글자 중심 metrics, with sentence and manuscript-page estimates in the editor toolbar.
+- Added selection-aware slash command context handoff and drag reorder for plot-board scenes.
+- Verified with `npm --workspace apps/desktop run check`, `npm run build`, `cargo fmt --check`, `cargo check`, Python style-system tests, Node style smoke tests, `python3 scripts/verify_static.py`, `bash scripts/verify_ai_pipeline.sh`, and `git diff --check`.
 
 ## Completed (2026-07-03, GitHub 게시 준비)
 
@@ -104,6 +115,7 @@ Bindery is a writing-first macOS/Svelte/Tauri app covering the full local novel 
 
 ## Known Risks
 
+- Superloopy design-system compliance currently reports broad existing token drift (`off-scale-spacing` and undeclared terminal/status colors). This review pass recorded evidence but did not normalize legacy CSS outside the requested patch scope.
 - Windows `.exe`/NSIS output is still unverified on a Windows runner.
 - Browser QA verifies the full UI flow with mock data; native Codex CLI is verified at adapter level.
 - The build still warns that one Vite chunk is larger than 500 kB.

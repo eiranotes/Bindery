@@ -19,10 +19,11 @@
   import { editorTheme } from '$lib/editor';
   import { themeStore } from '$lib/stores/themeStore';
   import { smartQuotes, autoReplace } from '$lib/editor';
-  import { novelExtensions, pushCodex, pushQAIssues, pushRepetition, readAICommand, wordCountField, focusModeExtension, typewriterExtension } from '$lib/editor';
-  import type { WordStats } from '$lib/editor';
+  import { computeStats, novelExtensions, pushCodex, pushQAIssues, pushRepetition, readAICommand, wordCountField, focusModeExtension, typewriterExtension } from '$lib/editor';
+  import type { AICommandRequest, WordStats } from '$lib/editor';
   import { uiStore } from '$lib/stores/uiStore';
   import { gotoStage } from '$lib/stores/pipelineStore';
+  import { aiCommandContextStore } from '$lib/stores/aiCommandContextStore';
   import { recordWriting } from '$lib/stores/statsStore';
   import { writeFile } from '$lib/api/commands';
   import { projectStore } from '$lib/stores/projectStore';
@@ -37,16 +38,16 @@
   const themeComp = new Compartment();
   const smartComp = new Compartment();
   let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
-  export let stats: WordStats = { words: 0, chars: 0, charsNoSpace: 0, paragraphs: 0 };
+  export let stats: WordStats = { words: 0, chars: 0, charsNoSpace: 0, paragraphs: 0, sentences: 0, manuscriptPages: 0 };
 
   async function saveNow() {
     const s = $editorStore;
     if (!s.path || !s.dirty) return;
     const root = $projectStore.current?.rootPath || 'sample-project';
     await writeFile(root, s.path, s.content);
-    // 집필 통계: 저장 시점 단어 증가분을 날짜별로 누적
-    const prevWords = s.savedContent.trim().split(/\s+/).filter(Boolean).length;
-    recordWriting(root, s.wordCount - prevWords);
+    // 집필 통계: 한국어 원고에 맞춰 공백 제외 글자 증가분을 날짜별로 누적
+    const prevChars = computeStats(s.savedContent).charsNoSpace;
+    recordWriting(root, s.wordCount - prevChars);
     editorStore.update((p) => ({ ...p, savedContent: p.content, dirty: false }));
     toasts.push('저장됨', 'ok');
   }
@@ -59,10 +60,18 @@
 
   // 집필 화면에서는 AI를 실행하지 않는다. 슬래시 명령은 AI 작업 화면의
   // 실행 단계로 안내만 하고, 실제 실행은 하네스에서 진행한다.
-  function runAICommand(name: string) {
+  function runAICommand(cmd: AICommandRequest) {
+    aiCommandContextStore.set({
+      command: cmd.name,
+      selectedText: cmd.selectedText,
+      cursorContext: cmd.cursorContext,
+      cursorOffset: cmd.cursorOffset,
+      createdAt: new Date().toISOString()
+    });
     gotoStage('run');
     uiStore.update((s) => ({ ...s, centerView: 'ai' }));
-    toasts.push(`/${name} — AI 작업 화면에서 실행하세요`, 'info');
+    const unit = cmd.selectedText?.trim() ? '선택 영역' : '커서 주변';
+    toasts.push(`/${cmd.name} · ${unit} 문맥을 AI 작업 화면에 넘겼습니다`, 'info');
   }
 
   function buildState(doc: string) {
@@ -94,7 +103,7 @@
             const content = update.state.doc.toString();
             const s = update.state.field(wordCountField);
             stats = s;
-            editorStore.update((prev) => ({ ...prev, content, dirty: content !== prev.savedContent, wordCount: s.words }));
+            editorStore.update((prev) => ({ ...prev, content, dirty: content !== prev.savedContent, wordCount: s.charsNoSpace }));
             scheduleAutosave();
           } else if (update.startState.field(wordCountField, false) !== update.state.field(wordCountField, false)) {
             stats = update.state.field(wordCountField);

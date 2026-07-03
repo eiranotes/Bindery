@@ -335,32 +335,63 @@ ${proof.slice(0, 1500)}
 ${renderSurfaceProfileMarkdown(analysis.bundle)}`;
 }
 
+const BAN_STOPWORDS = new Set(['표현', '구분', '항목', '금지어', '금지 묘사', '이유', '대체', '설명', '---']);
+
+function pushBanCandidate(out: string[], raw: string) {
+  const cleaned = raw
+    .replace(/[`*_]/g, '')
+    .replace(/[“”"'‘’]/g, '')
+    .replace(/\(.*?\)/g, '')
+    .replace(/^금지(?:어|\s*묘사|\s*목록)?\s*[:：\-]?\s*/i, '')
+    .trim();
+  if (cleaned.length < 2 || cleaned.length > 24) return;
+  if (BAN_STOPWORDS.has(cleaned) || /금지|항목|이유/.test(cleaned)) return;
+  out.push(cleaned);
+}
+
+function pushBanText(out: string[], raw: string) {
+  raw
+    .split(/[·,，、;/]/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .forEach((part) => pushBanCandidate(out, part));
+}
+
 export function extractBannedTerms(guideline: string): string[] {
   const terms: string[] = [];
   const lines = guideline.split('\n');
   let inBanned = false;
   for (const line of lines) {
     const t = line.trim();
-    if (/^#{1,3}\s/.test(t)) inBanned = /금지/.test(t);
+    if (!t) continue;
+    if (/^#{1,6}\s/.test(t)) {
+      inBanned = /금지/.test(t);
+      continue;
+    }
+    if (!inBanned && /^[-*]\s*금지/.test(t)) inBanned = true;
     if (!inBanned) continue;
+
+    if (/^\|\s*:?-{2,}:?\s*(\||$)/.test(t)) continue;
     const cell = /^\|\s*([^|]+?)\s*\|/.exec(t);
     if (cell) {
-      const head = cell[1].trim();
-      if (['표현', '구분', '항목', '금지어', '금지 묘사', '---'].includes(head) || head.startsWith('-')) {
-        const second = /^\|[^|]+\|\s*([^|]+?)\s*\|/.exec(t)?.[1] ?? '';
-        for (const part of second.split(/[·,]/)) {
-          const v = part.trim().replace(/\(.*?\)/g, '').trim();
-          if (v.length >= 2 && !/금지|항목/.test(v)) terms.push(v);
-        }
-        continue;
-      }
-      const v = head.replace(/\(.*?\)/g, '').trim();
-      if (v.length >= 2) terms.push(v);
+      const cells = t.split('|').map((c) => c.trim()).filter(Boolean);
+      if (cells.every((c) => /^:?-{2,}:?$/.test(c) || BAN_STOPWORDS.has(c))) continue;
+      for (const c of cells.slice(0, 2)) pushBanText(terms, c);
+      continue;
     }
-    const bullet = /^-\s+\*{0,2}([^:*]+?)\*{0,2}\s*[:\-]/.exec(t);
+
+    const inline = /금지(?:어|\s*묘사|\s*목록)?\s*[:：-]\s*(.+)$/i.exec(t);
+    if (inline) {
+      pushBanText(terms, inline[1]);
+      continue;
+    }
+
+    const bullet = /^[-*]\s+\*{0,2}([^:*]+?)\*{0,2}\s*[:：\-]/.exec(t);
     if (bullet) {
-      const v = bullet[1].trim();
-      if (v.length >= 2 && v.length <= 20) terms.push(v);
+      pushBanText(terms, bullet[1]);
+      const tail = t.slice(bullet[0].length).trim();
+      if (tail) pushBanText(terms, tail);
+      continue;
     }
   }
   return [...new Set(terms)].slice(0, 40);

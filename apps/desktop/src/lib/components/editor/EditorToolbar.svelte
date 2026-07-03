@@ -10,7 +10,7 @@
   import { gotoLine } from '$lib/stores/editorNavStore';
   import type { WordStats } from '$lib/editor';
 
-  export let stats: WordStats = { words: 0, chars: 0, charsNoSpace: 0, paragraphs: 0 };
+  export let stats: WordStats = { words: 0, chars: 0, charsNoSpace: 0, paragraphs: 0, sentences: 0, manuscriptPages: 0 };
   const dispatch = createEventDispatcher();
   let menuOpen = false;
 
@@ -24,11 +24,11 @@
   const views: Array<['source' | 'split' | 'preview', string]> = [['source', '본문'], ['split', '분할'], ['preview', '미리보기']];
 
   function setGoal() {
-    goalStore.set({ target: $goalStore.target, startWords: stats.words, startedAt: new Date().toISOString() });
+    goalStore.set({ target: $goalStore.target, startWords: stats.charsNoSpace, startedAt: new Date().toISOString() });
     toasts.push(`세션 목표 ${$goalStore.target}자 시작`, 'info');
     menuOpen = false;
   }
-  $: written = $goalStore.startedAt ? Math.max(0, stats.words - $goalStore.startWords) : 0;
+  $: written = $goalStore.startedAt ? Math.max(0, stats.charsNoSpace - $goalStore.startWords) : 0;
   $: pct = $goalStore.startedAt ? Math.min(100, Math.round((written / Math.max(1, $goalStore.target)) * 100)) : 0;
 
   // 장면(헤딩·*** 구분자) 목록 — 긴 원고에서 장면 단위 이동용
@@ -67,7 +67,9 @@
     </select>
   {/if}
 
-  <span class="wc">{stats.words.toLocaleString()} 단어 · {stats.charsNoSpace.toLocaleString()} 자</span>
+  <span class="wc" title={`${stats.words.toLocaleString()} 공백 단위 · 문장 ${stats.sentences.toLocaleString()}개 · 원고지 ${stats.manuscriptPages.toLocaleString()}매`}>
+    {stats.charsNoSpace.toLocaleString()}자 · 문장 {stats.sentences.toLocaleString()}개
+  </span>
   {#if $goalStore.startedAt}
     <span class="goal-mini" title={`세션 목표 ${written}/${$goalStore.target}`}>
       <i style={`width:${pct}%`}></i>

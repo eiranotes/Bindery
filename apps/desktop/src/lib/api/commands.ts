@@ -3,6 +3,7 @@ import { settingsStore } from '$lib/stores/settingsStore';
 import type { CreateProjectInput, FileNode, JobResult, ProjectInfo, RepetitionReport, SnapshotInfo } from '$lib/types';
 import type { CodexItem, MentionReport } from '$lib/domain/codex';
 import { scanDynamicLinks } from '$lib/domain/codex';
+import { validateCandidateMarkdown } from '$lib/domain/agentContracts';
 import type { PlotGrid } from '$lib/domain/plot';
 import { MOCK_CODEX, MOCK_QA_REPORT, MOCK_REVISION_PLAN, MOCK_CANDIDATE } from '$lib/mock/data';
 import { MOCK_PLOT_GRID } from '$lib/domain/plot';
@@ -257,12 +258,17 @@ export async function generateCandidate(
   const agentCliPath = settings.agentCliPath || settings.geminiCliPath || 'agy';
   const agentProvider = settings.agentProvider || 'antigravity';
   const agentOutputMode = settings.agentOutputMode || (agentProvider === 'antigravity' ? 'file' : 'stdout');
-  if (invoke) return invoke<Candidate[]>('generate_candidate', { projectPath, episode, kind, base, agentCliPath, agentProvider, agentOutputMode, guidance: guidance || null });
+  if (invoke) {
+    const candidates = await invoke<Candidate[]>('generate_candidate', { projectPath, episode, kind, base, agentCliPath, agentProvider, agentOutputMode, guidance: guidance || null });
+    const usable = candidates.filter((c) => validateCandidateMarkdown(c.content, base).ok);
+    if (!usable.length) throw new Error('agent returned no usable candidate markdown');
+    return usable;
+  }
   await delay(420);
   const now = new Date().toISOString();
   const kindLabel = { draft: '초안', revise: '수정', continue: '이어쓰기', rewrite: '다시쓰기' }[kind];
   // Two variants so the Apply UI can show A/B, per the EP012 example flow.
-  return [
+  const candidates = [
     { id: `cand-a-${Date.now()}`, label: '후보 A', content: MOCK_CANDIDATE, source: `${kindLabel} 후보 A`, createdAt: now },
     {
       id: `cand-b-${Date.now()}`,
@@ -272,6 +278,7 @@ export async function generateCandidate(
       createdAt: now
     }
   ];
+  return candidates.filter((c) => validateCandidateMarkdown(c.content, base).ok);
 }
 
 export async function listCodex(projectPath: string): Promise<CodexItem[]> {

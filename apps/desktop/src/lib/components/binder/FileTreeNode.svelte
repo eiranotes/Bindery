@@ -4,14 +4,16 @@
   import { fileTreeStore } from '$lib/stores/fileTreeStore';
   import { editorStore } from '$lib/stores/editorStore';
   import { projectStore } from '$lib/stores/projectStore';
+  import { computeStats } from '$lib/editor';
   export let node: FileNode;
   export let depth = 0;
   let open = true;
   async function select() {
     if (node.kind === 'directory') { open = !open; return; }
     const content = await readFile($projectStore.current?.rootPath || 'sample-project', node.path);
+    const stats = computeStats(content);
     fileTreeStore.update((s) => ({ ...s, selectedPath: node.path }));
-    editorStore.set({ path: node.path, content, savedContent: content, dirty: false, mode: 'source', wordCount: content.trim().split(/\s+/).filter(Boolean).length });
+    editorStore.set({ path: node.path, content, savedContent: content, dirty: false, mode: 'source', wordCount: stats.charsNoSpace });
   }
 </script>
 

@@ -1,6 +1,19 @@
 # Tasks
 
-Updated: 2026-07-03 (파이프라인 갭 마감 + UI 재편 착수)
+Updated: 2026-07-03 (리뷰 패치 반영 + 후속 계획 구현)
+
+## Done (2026-07-03 리뷰 패치 반영 + 후속 계획 구현)
+
+- [x] Replace short manuscript prompt excerpts with front/middle/tail context windows for preview, QA, and summarize flows.
+- [x] Stop full pipeline execution on action failure or QA `fail` verdict before summarize/commit.
+- [x] Validate agent QA JSON, candidate markdown, and style guideline outputs before treating them as usable artifacts.
+- [x] Add 120-second timeout and temp-file text passing for native style CLI commands.
+- [x] Strengthen style banned-term parsing across inline lists, bullets, markdown tables, quotes, backticks, and parenthetical notes.
+- [x] Remove repetition decoration rescans from the editor typing hot path.
+- [x] Move artifact persistence to `.bindery/artifacts/index.json` plus full artifact files, with localStorage preview-only metadata.
+- [x] Switch writing stats to 공백 제외 글자, sentence count, and manuscript-page estimates.
+- [x] Pass selected text or cursor-near context from editor slash commands into the AI draft prompt.
+- [x] Add drag reorder for plot-board scene rows.
 
 ## Done (2026-07-03 파이프라인 갭 마감 + 작업면 정리)
 
@@ -16,6 +29,7 @@ Updated: 2026-07-03 (파이프라인 갭 마감 + UI 재편 착수)
 
 ## Next (UI 재편 — 후속 폴리시)
 
+- [ ] Normalize existing CSS spacing/color drift against `DESIGN.md` so Superloopy `ds-compliance.mjs` can pass without waivers.
 - [ ] Unify the AI and style studio rails into one calm full-bleed surface language.
 - [ ] Add Muvel-style optional editor widgets (timer, quick memo, dictionary, episode reference).
 

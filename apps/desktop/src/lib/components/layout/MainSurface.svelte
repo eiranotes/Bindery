@@ -27,7 +27,7 @@
       </div>
       <div class="write-status">
         <span>{dirtyLabel}</span>
-        <span>{$editorStore.wordCount.toLocaleString()} 단어</span>
+        <span>{$editorStore.wordCount.toLocaleString()}자</span>
       </div>
     </div>
 

@@ -8,6 +8,7 @@
   import { settingsStore } from '$lib/stores/settingsStore';
   import { toasts } from '$lib/stores/toastStore';
   import { runAgentText, writeFile, listTree } from '$lib/api/commands';
+  import { validateStyleGuideline, type ContractCheck } from '$lib/domain/agentContracts';
   import {
     analyzeStyle,
     STYLE_ANALYSIS_PROCEDURE,
@@ -135,9 +136,15 @@
   }
 
   /** AI 실행: 실패하거나 오프라인이면 정량 분석 기반 기본 문서로 대체하고 표시한다. */
-  async function agentOrMock(prompt: string, label: string, mock: string): Promise<string> {
+  async function agentOrMock(prompt: string, label: string, mock: string, validate?: (text: string) => ContractCheck): Promise<string> {
     const r = await runAgentText(projectRoot(), prompt, label);
     if (r.ok && r.text.trim()) {
+      const check = validate?.(r.text.trim()) ?? { ok: true };
+      if (!check.ok) {
+        offlineNotice = true;
+        toasts.push(`${label} 산출물 계약 불일치: ${check.reason ?? 'unknown'} · 오프라인 기본값 사용`, 'warn');
+        return mock;
+      }
       offlineNotice = false;
       return r.text.trim();
     }
@@ -200,7 +207,8 @@
       const text = await agentOrMock(
         buildGuidelinePrompt(s.extract ?? '', s.guide, s.proof ?? '', s.analysis),
         'style-guideline',
-        mockGuideline(s.analysis)
+        mockGuideline(s.analysis),
+        validateStyleGuideline
       );
       styleStore.update((v) => ({ ...v, guideline: text, savedPath: null }));
       toasts.push(offlineNotice ? '오프라인 기본 지침서를 생성했습니다' : '문체 지침서 생성 완료', offlineNotice ? 'warn' : 'ok');

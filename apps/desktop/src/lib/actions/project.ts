@@ -6,6 +6,7 @@ import { fileTreeStore } from '$lib/stores/fileTreeStore';
 import { projectStore } from '$lib/stores/projectStore';
 import { uiStore } from '$lib/stores/uiStore';
 import { computeStats } from '$lib/editor';
+import { hydrateArtifactsFromProject } from '$lib/stores/artifactStore';
 import { loadCodexAction, loadPlotAction } from '$lib/actions/pipeline';
 import type { CreateProjectInput, FileNode, ProjectInfo } from '$lib/types';
 
@@ -46,7 +47,7 @@ export async function openProjectIntoWorkspace(path: string): Promise<ProjectInf
       savedContent: content,
       dirty: false,
       mode: 'source',
-      wordCount: computeStats(content).words
+      wordCount: computeStats(content).charsNoSpace
     });
   } else {
     editorStore.set({ path: null, content: '', savedContent: '', dirty: false, mode: 'source', wordCount: 0 });
@@ -54,7 +55,7 @@ export async function openProjectIntoWorkspace(path: string): Promise<ProjectInf
 
   candidateStore.set({ candidates: [], activeId: null, generating: false, appliedHunks: new Set(), sessionSnapshotId: null });
   uiStore.update((s) => ({ ...s, centerView: 'write', binderTab: 'episodes' }));
-  await Promise.all([loadCodexAction(), loadPlotAction()]);
+  await Promise.all([loadCodexAction(), loadPlotAction(), hydrateArtifactsFromProject(project.rootPath)]);
   return project;
 }
 
@@ -74,7 +75,7 @@ export async function openFileInEditor(relativePath: string, view: 'write' | 'st
     savedContent: content,
     dirty: false,
     mode: 'source',
-    wordCount: computeStats(content).words
+    wordCount: computeStats(content).charsNoSpace
   });
   if (view === 'write') uiStore.update((s) => ({ ...s, centerView: 'write' }));
 }
