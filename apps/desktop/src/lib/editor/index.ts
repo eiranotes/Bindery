@@ -26,7 +26,7 @@ export type { WordStats } from './frontmatter';
 export { AI_COMMANDS, aiCommandEffect, aiCommandField } from './wikilink';
 export type { AICommand, AICommandRequest } from './wikilink';
 export { focusModeExtension, typewriterExtension } from './focus';
-export { smartQuotes, autoReplace } from './inputRules';
+export { smartQuotes, autoReplace, autoReplaceRules } from './inputRules';
 
 /** All Bindery editor extensions, in order. */
 export function novelExtensions(): Extension[] {

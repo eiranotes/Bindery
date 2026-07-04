@@ -46,27 +46,38 @@ export const smartQuotes = [
   })
 ];
 
-/** Auto replacements while typing: `--`→—, `->`→→, `...`→… */
-export const autoReplace = EditorView.inputHandler.of((view, from, to, text) => {
-  const rules: Array<[string, string, string]> = [
-    // [trigger char, preceding text, replacement]
-    ['-', '-', '—'],
-    ['>', '-', '→'],
-    ['.', '..', '…']
-  ];
-  for (const [trigger, before, repl] of rules) {
-    if (text !== trigger) continue;
-    const start = from - before.length;
-    if (start < 0) continue;
-    if (view.state.doc.sliceString(start, from) !== before) continue;
-    view.dispatch({
-      changes: { from: start, to, insert: repl },
-      selection: { anchor: start + repl.length }
-    });
-    return true;
-  }
-  return false;
-});
+export type AutoReplaceOptions = {
+  dash: boolean;
+  arrow: boolean;
+  ellipsis: boolean;
+};
+
+/** Auto replacements while typing. Each rule is user-configurable in Preferences. */
+export function autoReplaceRules(options: AutoReplaceOptions) {
+  return EditorView.inputHandler.of((view, from, to, text) => {
+    const rules: Array<[boolean, string, string, string]> = [
+      // [enabled, trigger char, preceding text, replacement]
+      [options.dash, '-', '-', '—'],
+      [options.arrow, '>', '-', '→'],
+      [options.ellipsis, '.', '..', '…']
+    ];
+    for (const [enabled, trigger, before, repl] of rules) {
+      if (!enabled) continue;
+      if (text !== trigger) continue;
+      const start = from - before.length;
+      if (start < 0) continue;
+      if (view.state.doc.sliceString(start, from) !== before) continue;
+      view.dispatch({
+        changes: { from: start, to, insert: repl },
+        selection: { anchor: start + repl.length }
+      });
+      return true;
+    }
+    return false;
+  });
+}
+
+export const autoReplace = autoReplaceRules({ dash: true, arrow: true, ellipsis: true });
 
 /** Writer comments: lines starting with `//` are author-only notes — dimmed. */
 function commentDecos(view: EditorView): DecorationSet {

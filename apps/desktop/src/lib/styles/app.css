@@ -43,6 +43,7 @@
   --manuscript-font: 'Noto Serif KR', 'KoPub Batang', 'RIDIBatang', ui-serif, Georgia, serif;
   --manuscript-size: 16px;
   --manuscript-lh: 2.0;
+  --manuscript-measure: 70ch;
   --desk-glow: radial-gradient(720px 240px at 50% -90px, rgba(255, 244, 214, 0.55), transparent 70%);
 }
 [data-theme='dark'] {
@@ -252,12 +253,13 @@ input::placeholder { color: var(--faint); }
 .cm-wrap, .preview { min-height: 0; overflow: auto; }
 .cm-wrap { background: var(--desk-glow), var(--bg-desk); }
 .preview {
-  padding: 26px 32px; line-height: 2.0; color: var(--text);
+  padding: 26px 32px; line-height: var(--manuscript-lh); color: var(--text);
   border-left: 1px solid var(--line);
   font-family: var(--manuscript-font);
   font-size: calc(var(--manuscript-size) - 0.5px);
   background: var(--desk-glow), var(--bg-desk);
 }
+.preview > * { max-width: var(--manuscript-measure); margin-left: auto; margin-right: auto; }
 .preview h1, .preview h2 { letter-spacing: 0; font-weight: 750; }
 .preview blockquote { border-left: 2px solid var(--accent); margin-left: 0; padding-left: 14px; color: var(--muted); }
 .preview code { background: var(--accent-soft); border-radius: 5px; padding: 1px 5px; font-family: ui-monospace, monospace; font-size: .85em; }

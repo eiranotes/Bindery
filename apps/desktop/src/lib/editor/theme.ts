@@ -14,7 +14,7 @@ export const novelThemeDark = EditorView.theme(
       lineHeight: 'var(--manuscript-lh)',
       padding: '22px 18px 28px'
     },
-    '.cm-content': { caretColor: 'var(--accent-2)', maxWidth: '70ch', margin: '0 auto' },
+    '.cm-content': { caretColor: 'var(--accent-2)', maxWidth: 'var(--manuscript-measure)', margin: '0 auto' },
     '&.cm-focused': { outline: 'none' },
     '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--accent-2)', borderLeftWidth: '2px' },
     '.cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection': {
@@ -114,7 +114,7 @@ export const novelThemeLight = EditorView.theme(
       lineHeight: 'var(--manuscript-lh)',
       padding: '26px 20px 32px'
     },
-    '.cm-content': { caretColor: 'var(--accent)', maxWidth: '70ch', margin: '0 auto' },
+    '.cm-content': { caretColor: 'var(--accent)', maxWidth: 'var(--manuscript-measure)', margin: '0 auto' },
     '&.cm-focused': { outline: 'none' },
     '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--accent)', borderLeftWidth: '2px' },
     '.cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection': {

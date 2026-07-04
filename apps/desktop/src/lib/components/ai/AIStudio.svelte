@@ -16,6 +16,7 @@
   import { artifactStore, artifactsForEpisode } from '$lib/stores/artifactStore';
   import type { Artifact } from '$lib/stores/artifactStore';
   import { aiCommandContextStore } from '$lib/stores/aiCommandContextStore';
+  import { uiStore } from '$lib/stores/uiStore';
   import { styleStore, STRICTNESS_LABEL } from '$lib/stores/styleStore';
   import type { StyleStrictness } from '$lib/stores/styleStore';
   import { draftParamsStore, CREATIVITY_LABEL } from '$lib/stores/draftParamsStore';
@@ -45,6 +46,8 @@
   const lengthOptions: Array<[number, string]> = [[0, '자동'], [1500, '약 1,500자'], [3000, '약 3,000자'], [5000, '약 5,000자'], [8000, '약 8,000자']];
   const creativityOptions = Object.keys(CREATIVITY_LABEL) as Creativity[];
   const strictnessOptions = Object.keys(STRICTNESS_LABEL) as StyleStrictness[];
+  const providerLabel: Record<string, string> = { codex: 'Codex CLI', antigravity: 'Antigravity CLI', gemini: 'Gemini CLI', custom: '직접 설정' };
+  const outputLabel: Record<string, string> = { stdout: 'stdout', file: '파일 출력' };
 
   // ---- 상태 요약 (레일) -------------------------------------------------
   function providerHasDefaultCommand(provider: string): boolean {
@@ -109,6 +112,9 @@
     testOk = r.ok;
     testing = false;
     toasts.push(r.ok ? 'AI 실행기 응답 확인' : 'AI 실행기 연결 실패', r.ok ? 'ok' : 'bad');
+  }
+  function openRunnerPreferences() {
+    uiStore.update((s) => ({ ...s, prefsOpen: true, prefsSection: 'aiRunner' }));
   }
 
   // ---- 바이블 ------------------------------------------------------------
@@ -239,47 +245,31 @@
       </header>
 
       <div class="stage-body narrow">
-        <div class="line-form">
-          <label class="line-row">
-            <span>실행기</span>
-            <select bind:value={$settingsStore.agentProvider}>
-              <option value="codex">Codex CLI</option>
-              <option value="antigravity">Antigravity CLI</option>
-              <option value="gemini">Gemini CLI</option>
-              <option value="custom">직접 설정</option>
-            </select>
-          </label>
-          <label class="line-row">
-            <span>명령어</span>
-            <input bind:value={$settingsStore.agentCliPath} placeholder="codex 또는 /opt/homebrew/bin/codex" />
-          </label>
-          <label class="line-row">
-            <span>출력 방식</span>
-            <select bind:value={$settingsStore.agentOutputMode}>
-              <option value="stdout">터미널 출력(stdout)</option>
-              <option value="file">파일로 받기</option>
-            </select>
-          </label>
-          <label class="line-row">
-            <span>novelctl</span>
-            <input bind:value={$settingsStore.novelctlPath} placeholder="novelctl" />
-          </label>
-          <label class="line-row check">
-            <span>데모 모드</span>
-            <span class="check-cell"><input type="checkbox" bind:checked={$settingsStore.mockMode} /> CLI 없이 mock 데이터로 흐름 확인</span>
-          </label>
+        <div class="connection-summary">
+          <div class="runner-card">
+            <span class="line-label">현재 실행기</span>
+            <b>{providerLabel[$settingsStore.agentProvider] ?? $settingsStore.agentProvider}</b>
+            <small>{$settingsStore.mockMode ? '데모 모드로 mock 응답 사용' : agentReady ? '실행 준비됨' : '명령어 확인 필요'}</small>
+          </div>
+          <dl class="runner-details">
+            <div><dt>명령어</dt><dd>{$settingsStore.agentCliPath || '(기본 명령어 사용)'}</dd></div>
+            <div><dt>출력</dt><dd>{outputLabel[$settingsStore.agentOutputMode] ?? $settingsStore.agentOutputMode}</dd></div>
+            <div><dt>novelctl</dt><dd>{$settingsStore.novelctlPath || 'novelctl'}</dd></div>
+            <div><dt>제한 시간</dt><dd>{$settingsStore.agentDefaultTimeoutSec}s</dd></div>
+          </dl>
         </div>
 
         <div class="stage-actions">
-          <button class="primary" on:click={test} disabled={testing}>{testing ? '확인 중…' : '연결 테스트'}</button>
+          <button class="primary" on:click={test} disabled={testing}>{testing ? '확인 중...' : '빠른 연결 테스트'}</button>
           {#if testOk !== null}
             <span class="test-state" class:ok={testOk} class:bad={!testOk}>{testOk ? '응답 확인됨' : '실패'}</span>
           {/if}
+          <button class="ghost" on:click={openRunnerPreferences}>환경설정에서 수정</button>
           <button class="ghost" on:click={() => gotoStage('bible')}>다음: 바이블 →</button>
         </div>
         {#if testResult}<pre class="console">{testResult}</pre>{/if}
 
-        <p class="stage-note">Gemini는 계정 정책에 따라 headless 실행이 막힐 수 있습니다. Antigravity는 명령어를 <code>agy</code>로 바꾸고 파일 출력을 선택하세요.</p>
+        <p class="stage-note">AI 실행기의 canonical 설정은 환경설정의 AI Runner에 저장됩니다. 이 단계는 현재 상태 확인과 빠른 테스트만 담당합니다.</p>
       </div>
     {:else if $pipelineStore.stage === 'bible'}
       <header class="stage-head">
@@ -541,18 +531,27 @@
   .test-state.ok { color: var(--ok); }
   .test-state.bad { color: var(--bad); }
 
-  .line-form { display: grid; border-top: 1px solid var(--line); }
-  .line-row {
+  .connection-summary { display: grid; gap: 12px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 12px 0; }
+  .runner-card {
+    display: grid;
+    gap: 4px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--bg-2);
+  }
+  .runner-card b { font-size: 17px; color: var(--text); line-height: 1.2; }
+  .runner-card small { color: var(--muted); font-size: 12px; }
+  .runner-details { display: grid; margin: 0; border-top: 1px solid var(--line); }
+  .runner-details div {
     display: grid;
     grid-template-columns: 110px minmax(0, 1fr);
     gap: 12px;
-    align-items: center;
-    padding: 10px 0;
+    padding: 9px 0;
     border-bottom: 1px solid var(--line);
   }
-  .line-row > span:first-child { color: var(--faint); font-size: 10.5px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
-  .line-row input, .line-row select { width: 100%; }
-  .line-row.check .check-cell { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12.5px; }
+  .runner-details dt { color: var(--faint); font-size: 10.5px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+  .runner-details dd { min-width: 0; margin: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .line-list { display: grid; border-top: 1px solid var(--line); }
   .line-label { color: var(--faint); font-size: 10.5px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; padding: 10px 0 4px; }

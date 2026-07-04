@@ -25,8 +25,9 @@ export const uiStore = writable<{
   binderTab: 'episodes' | 'files' | 'bible';
   sidebarCollapsed: boolean;
   prefsOpen: boolean;
+  prefsSection: string | null;
   searchOpen: boolean;
-}>({ centerView: 'write', binderTab: 'episodes', sidebarCollapsed: false, prefsOpen: false, searchOpen: false });
+}>({ centerView: 'write', binderTab: 'episodes', sidebarCollapsed: false, prefsOpen: false, prefsSection: null, searchOpen: false });
 
 export function gotoView(view: CenterView) {
   uiStore.update((s) => ({ ...s, centerView: view }));

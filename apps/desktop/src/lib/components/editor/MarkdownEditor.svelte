@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection } from '@codemirror/view';
   import { EditorState, Compartment } from '@codemirror/state';
+  import type { Extension } from '@codemirror/state';
   import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
   import { markdown } from '@codemirror/lang-markdown';
   import { lintKeymap } from '@codemirror/lint';
@@ -18,8 +19,9 @@
   import { editorNavStore } from '$lib/stores/editorNavStore';
   import { editorTheme } from '$lib/editor';
   import { themeStore } from '$lib/stores/themeStore';
-  import { smartQuotes, autoReplace } from '$lib/editor';
+  import { smartQuotes, autoReplaceRules } from '$lib/editor';
   import { computeStats, novelExtensions, pushCodex, pushQAIssues, pushRepetition, readAICommand, wordCountField, focusModeExtension, typewriterExtension } from '$lib/editor';
+  import type { Settings } from '$lib/stores/settingsStore';
   import type { AICommandRequest, WordStats } from '$lib/editor';
   import { uiStore } from '$lib/stores/uiStore';
   import { gotoStage } from '$lib/stores/pipelineStore';
@@ -39,6 +41,20 @@
   const smartComp = new Compartment();
   let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
   export let stats: WordStats = { words: 0, chars: 0, charsNoSpace: 0, paragraphs: 0, sentences: 0, manuscriptPages: 0 };
+
+  function smartInputExtensions(settings: Settings) {
+    if (!settings.smartInput) return [];
+    const extensions: Extension[] = [];
+    if (settings.smartQuotes) extensions.push(...smartQuotes);
+    if (settings.autoReplaceDash || settings.autoReplaceArrow || settings.autoReplaceEllipsis) {
+      extensions.push(autoReplaceRules({
+        dash: settings.autoReplaceDash,
+        arrow: settings.autoReplaceArrow,
+        ellipsis: settings.autoReplaceEllipsis
+      }));
+    }
+    return extensions;
+  }
 
   async function saveNow() {
     const s = $editorStore;
@@ -88,7 +104,7 @@
         focusComp.of($writingModeStore.focus ? focusModeExtension : []),
         typewriterComp.of($writingModeStore.typewriter ? typewriterExtension : []),
         themeComp.of(editorTheme($themeStore)),
-        smartComp.of($settingsStore.smartInput ? [smartQuotes, autoReplace] : []),
+        smartComp.of(smartInputExtensions($settingsStore)),
         ...novelExtensions(),
         keymap.of([
           { key: 'Mod-s', preventDefault: true, run: () => { saveNow(); return true; } },
@@ -141,7 +157,7 @@
     const unsubSettings = settingsStore.subscribe((s) => {
       view?.dispatch({ effects: [
         lineNumbersComp.reconfigure(s.showLineNumbers ? lineNumbers() : []),
-        smartComp.reconfigure(s.smartInput ? [smartQuotes, autoReplace] : [])
+        smartComp.reconfigure(smartInputExtensions(s))
       ] });
       if (view) pushCodex(view, s.showMentions ? $codexStore.items : []);
     });

@@ -65,7 +65,7 @@
     </button>
     {#if $settingsStore.mockMode}<span class="mock-pill">데모</span>{/if}
     <button class="ghost quiet-action" class:on={$uiStore.centerView === 'help'} on:click={() => uiStore.update((s) => ({ ...s, centerView: 'help' }))}>도움말</button>
-    <button class="ghost quiet-action" on:click={() => uiStore.update((s) => ({ ...s, prefsOpen: true }))}>환경설정</button>
+    <button class="ghost quiet-action" on:click={() => uiStore.update((s) => ({ ...s, prefsOpen: true, prefsSection: null }))}>환경설정</button>
     <button class="ghost icon theme-toggle" title={$themeStore === 'light' ? '다크 모드' : '라이트 모드'} on:click={toggleTheme} aria-label={$themeStore === 'light' ? '다크 모드' : '라이트 모드'}>
       <span class:dark-dot={$themeStore === 'light'} class:light-dot={$themeStore !== 'light'}></span>
     </button>
