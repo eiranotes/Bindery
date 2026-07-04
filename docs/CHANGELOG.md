@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-07-04 (AI project pipeline flow documentation)
+
+- Added `docs/AI_PROJECT_PIPELINE_FLOW_20260704.md`, a Korean implementation map from project creation/opening through bible-backed or bible-less starts, source intake, the 9-step episode AI pipeline, candidate review, QA, summary, snapshot, and current "fixed" operation.
+- Clarified current gaps separately from implemented behavior: bible-to-multi-episode outline proposal, candidate-target QA, baseline candidate diff, live CLI telemetry, and explicit fixed episode status are still follow-up work.
+
 ## 2026-07-04 (AI pipeline observability + UX cleanup plan)
 
 - Added `docs/AI_PIPELINE_OBSERVABILITY_UX_PLAN_20260704.md`, covering CLI streaming, run event logs, token/usage reporting, explicit episode targets, candidate diff baselines, bible-to-episode outline generation, and AI workspace anti-slop cleanup.

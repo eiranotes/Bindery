@@ -1,10 +1,16 @@
 # Project Status
 
-Updated: 2026-07-04 (AI pipeline observability + UX cleanup plan)
+Updated: 2026-07-04 (AI project pipeline flow documentation)
 
 ## Current State
 
 Bindery is a writing-first macOS/Svelte/Tauri app covering the full local novel workflow: first-run project creation from a blank template or from a rough integrated idea/bible source (paste, Markdown/TXT, or DOCX), episode management (create/switch/status), writing with scene jump and daily stats, materials (editable plot board, codex item creation), style replication with adjustable enforcement strength, a 9-step AI harness (`회차 브리프 -> 장면 계획 -> 컨텍스트 -> 초안 후보 -> 표현 분석 -> QA -> 수정 계획 -> 요약 -> 기록`) whose every step leaves file-synced artifacts that feed drafting (with author-tunable length/creativity/instructions), schema-validated draft/QA agent outputs with one repair retry before fallback, agent-based QA with style-compliance and continuity gates, snapshot compare/restore, project-wide search, and real TXT/HTML/EPUB export. Rough source intake is local-first but can now ask the configured AI runner to read the preserved `notes/source-raw.md` and return a validated semantic split before harness files are finalized. Standalone/Tauri launches can be pointed at a real project folder with `BINDERY_START_PROJECT` or `--project`, so validation builds can open a seeded author project without relying on browser preview or stale localStorage. The shell keeps the collapsible binder navigator on the writing screen and gives AI/materials/export surfaces a single focused work area; top navigation and analysis rows remain resilient so dense Korean labels truncate or scroll instead of stacking into vertical text. The style analyzer follows the v3 MVP procedure locally first: normalize input, group scene candidates, code local features, generate evidence, apply globality decisions, build a surface profile, then hand semantic interpretation to the configured AI runner only where local regex analysis is insufficient. The structured style runtime now includes repository sync, deterministic SceneClassification, StyleRouter, StyleStack merge, PromptCapsule, feature-based StyleMatchScore, Korean surface analysis, structured-output guards, and validated SkillPack export paths in TypeScript and Python. Storage is local-only by design; `styles/` JSON is the editable source and SQLite is the query/index cache.
+
+## Completed (2026-07-04, AI project pipeline flow documentation)
+
+- Added `docs/AI_PROJECT_PIPELINE_FLOW_20260704.md`, a current-implementation Korean map of the project creation and AI episode pipeline from start-screen creation/opening through source intake, bible/no-bible branches, the 9-step run, review, QA, summary, snapshot, and evidence-based "fixed" operation.
+- Documented the implemented boundary between `통합 문서` local/AI source-intake decomposition and the not-yet-implemented bible-to-multi-episode-outline proposal step.
+- Called out current operational caveats: new blank projects create a placeholder `canon/setting-bible.md`, QA currently targets the live editor rather than a selected candidate, candidate diffs use the live editor as the basis, and there is no explicit fixed/locked episode status yet.
 
 ## Planned (2026-07-04, AI pipeline observability + UX cleanup)
 

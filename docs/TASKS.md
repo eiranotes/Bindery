@@ -1,6 +1,12 @@
 # Tasks
 
-Updated: 2026-07-04 (AI pipeline observability + UX cleanup plan)
+Updated: 2026-07-04 (AI project pipeline flow documentation)
+
+## Done (2026-07-04 AI project pipeline flow documentation)
+
+- [x] Document the current project-start to episode-run AI pipeline with explicit branches for `통합 문서`/bible-backed starts and bible-less starts.
+- [x] Map the 9 implemented episode pipeline steps, their execution mode (Hybrid/Static), inputs, outputs, stop conditions, and artifact/run storage paths.
+- [x] Separate implemented behavior from planned gaps: bible-to-multi-episode outline generation, candidate-target QA, baseline candidate diff, live CLI telemetry, and explicit fixed episode status.
 
 ## Next (AI pipeline observability + UX cleanup)
 
