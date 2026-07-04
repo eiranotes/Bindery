@@ -16,9 +16,16 @@ export type SourceIntakeBeat = {
   tension: Tension;
 };
 
+export type SourceIntakeOrganization = {
+  id: string;
+  name: string;
+  kind: string;
+  notes: string[];
+};
+
 export type SourceIntakeResult = {
   schema_version: 'bindery.source_intake.v1';
-  source: 'local';
+  source: 'local' | 'agent';
   title: string;
   sourceFileName?: string;
   sourceStats: {
@@ -30,6 +37,7 @@ export type SourceIntakeResult = {
   logline: string;
   worldRules: string[];
   characters: SourceIntakeCharacter[];
+  organizations: SourceIntakeOrganization[];
   plotBeats: SourceIntakeBeat[];
   openThreads: string[];
   styleNotes: string[];
@@ -180,6 +188,10 @@ function slugFor(value: string, fallback: string): string {
   return slug || fallback;
 }
 
+function safeId(value: unknown, fallback: string): string {
+  return slugFor(typeof value === 'string' ? value : '', fallback);
+}
+
 function roleFor(line: string): string {
   if (/주인공|protagonist/i.test(line)) return '주인공';
   if (/악역|antagonist|빌런/i.test(line)) return '대립축';
@@ -252,6 +264,109 @@ function extractStyleNotes(buckets: Record<SourceIntakeBucket, string[]>): strin
   return ['문체/시점/톤은 아직 분리되지 않았습니다. 문체 시스템에서 샘플 분석으로 보강하세요.'];
 }
 
+function stringProp(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? cleanItem(value) : fallback;
+}
+
+function stringArray(value: unknown, limit = 12): string[] {
+  if (!Array.isArray(value)) return [];
+  return unique(value.filter((item): item is string => typeof item === 'string'), limit);
+}
+
+function objectArray(value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item));
+}
+
+function normalizeTension(value: unknown, line = '', index = 0): Tension {
+  if (value === 'low' || value === 'mid' || value === 'high') return value;
+  return tensionFor(line, index);
+}
+
+function extractJsonObject(text: string): unknown | null {
+  const trimmed = text.trim().replace(/^codex\s*/i, '').trim();
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim();
+  const candidates = [fenced, trimmed, trimmed.slice(trimmed.indexOf('{'), trimmed.lastIndexOf('}') + 1)].filter(Boolean) as string[];
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      /* try next candidate */
+    }
+  }
+  return null;
+}
+
+function normalizeCharacters(value: unknown, fallback: SourceIntakeCharacter[]): SourceIntakeCharacter[] {
+  const out: SourceIntakeCharacter[] = [];
+  const seen = new Set<string>();
+  objectArray(value).forEach((item, index) => {
+    const name = stringProp(item.name);
+    if (!name || /^\d+$/.test(name) || /^(이름|나이|성격|말투|특징|외양)$/.test(name)) return;
+    const id = safeId(item.id || name, `character-${String(index + 1).padStart(2, '0')}`);
+    if (seen.has(id)) return;
+    seen.add(id);
+    out.push({
+      id,
+      name,
+      role: stringProp(item.role, '미정'),
+      notes: stringArray(item.notes, 10)
+    });
+  });
+  return out.length ? out.slice(0, 24) : fallback;
+}
+
+function normalizeOrganizations(value: unknown): SourceIntakeOrganization[] {
+  const out: SourceIntakeOrganization[] = [];
+  const seen = new Set<string>();
+  objectArray(value).forEach((item, index) => {
+    const name = stringProp(item.name);
+    if (!name || /^\d+$/.test(name)) return;
+    const id = safeId(item.id || name, `organization-${String(index + 1).padStart(2, '0')}`);
+    if (seen.has(id)) return;
+    seen.add(id);
+    out.push({
+      id,
+      name,
+      kind: stringProp(item.kind, '조직/세력'),
+      notes: stringArray(item.notes, 8)
+    });
+  });
+  return out.slice(0, 20);
+}
+
+function normalizePlotBeats(value: unknown, fallback: SourceIntakeBeat[]): SourceIntakeBeat[] {
+  const out: SourceIntakeBeat[] = [];
+  const seen = new Set<string>();
+  objectArray(value).forEach((item, index) => {
+    const summary = stringProp(item.summary);
+    const title = stringProp(item.title, titleFromBeat(summary, index));
+    if (!summary || !title || /^(MEDALLION|세계관 통합 설정 바이블|ver\s)/i.test(title)) return;
+    const id = safeId(item.id || title, `beat-${String(index + 1).padStart(2, '0')}`);
+    if (seen.has(id)) return;
+    seen.add(id);
+    out.push({
+      id,
+      title,
+      summary,
+      tension: normalizeTension(item.tension, `${title} ${summary}`, index)
+    });
+  });
+  return out.length ? out.slice(0, 24) : fallback;
+}
+
+function makeSourceDigest(result: SourceIntakeResult): string[] {
+  return unique(
+    [
+      result.premise,
+      ...result.worldRules.slice(0, 4),
+      ...result.characters.slice(0, 4).map((character) => `${character.name}: ${character.role}`),
+      ...result.plotBeats.slice(0, 4).map((beat) => `${beat.title}: ${beat.summary}`)
+    ],
+    12
+  );
+}
+
 function buildPlotGrid(beats: SourceIntakeBeat[]): PlotGrid {
   return {
     plotlines: [{ id: 'main', label: '주 플롯', color: '#315e63' }],
@@ -291,12 +406,84 @@ export function buildSourceIntake(input: SourceIntakeInput): SourceIntakeResult 
     logline: premise.length > 120 ? `${premise.slice(0, 117).trim()}...` : premise,
     worldRules,
     characters,
+    organizations: [],
     plotBeats,
     openThreads,
     styleNotes,
     sourceDigest,
     plotGrid: buildPlotGrid(plotBeats)
   };
+}
+
+export function sourceIntakeAgentPrompt(sourceRelativePath: string, local: SourceIntakeResult): string {
+  const localHints = {
+    title: local.title,
+    sourceFileName: local.sourceFileName,
+    sourceStats: local.sourceStats,
+    localPremise: local.premise,
+    localCharacters: local.characters.map((item) => item.name),
+    localPlotBeats: local.plotBeats.map((item) => item.title)
+  };
+  return [
+    '너는 장기 연재소설 바이블을 Bindery 하네스 파일로 분해하는 편집자다.',
+    `프로젝트 안의 원천 문서 \`${sourceRelativePath}\`를 직접 읽고, 문맥에 따라 설정/인물/조직/플롯/복선/문체를 재구성하라.`,
+    '섹션 번호, 필드명(나이/이름/성격/말투), 버전 문자열, 표제어를 인물이나 플롯으로 승격하지 않는다.',
+    '문서에 근거한 사실만 사용하고 새 설정이나 산문을 창작하지 않는다.',
+    '최종 답변은 JSON object 하나만 출력한다. markdown fence, 설명, 사과 문구를 붙이지 않는다.',
+    '',
+    'Required shape:',
+    JSON.stringify(
+      {
+        schema_version: 'bindery.source_intake.ai.v1',
+        source: 'agent',
+        title: '작품 제목',
+        premise: '핵심 세계/이야기 전제',
+        logline: '한 문단 로그라인',
+        worldRules: ['세계 규칙/배경 사실'],
+        characters: [{ id: 'slug', name: '인물명', role: '서사 역할', notes: ['근거 메모'] }],
+        organizations: [{ id: 'slug', name: '조직/세력명', kind: '유형', notes: ['근거 메모'] }],
+        plotBeats: [{ id: 'slug', title: '비트 제목', summary: '비트 요약', tension: 'low' }],
+        openThreads: ['미해결 복선/질문'],
+        styleNotes: ['시점/말투/장면 구조/집필 가이드'],
+        sourceDigest: ['원천 문서 핵심 줄'],
+        uncertainties: ['문서가 미확정이라고 밝힌 항목']
+      },
+      null,
+      2
+    ),
+    '',
+    'Local deterministic split is only a weak hint. Correct it when it mistook labels for entities:',
+    JSON.stringify(localHints, null, 2)
+  ].join('\n');
+}
+
+export function parseAgentSourceIntake(text: string, fallback: SourceIntakeResult): SourceIntakeResult | null {
+  const parsed = extractJsonObject(text);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  const data = parsed as Record<string, unknown>;
+  const premise = stringProp(data.premise, fallback.premise);
+  const logline = stringProp(data.logline, premise.length > 160 ? `${premise.slice(0, 157).trim()}...` : premise);
+  const characters = normalizeCharacters(data.characters, []);
+  const plotBeats = normalizePlotBeats(data.plotBeats, []);
+  if (premise.length < 18 || characters.length === 0 || plotBeats.length === 0) return null;
+
+  const result: SourceIntakeResult = {
+    ...fallback,
+    source: 'agent',
+    title: stringProp(data.title, fallback.title) || fallback.title,
+    premise,
+    logline,
+    worldRules: stringArray(data.worldRules, 40).length ? stringArray(data.worldRules, 40) : fallback.worldRules,
+    characters,
+    organizations: normalizeOrganizations(data.organizations),
+    plotBeats,
+    openThreads: stringArray(data.openThreads, 24).length ? stringArray(data.openThreads, 24) : fallback.openThreads,
+    styleNotes: stringArray(data.styleNotes, 24).length ? stringArray(data.styleNotes, 24) : fallback.styleNotes,
+    sourceDigest: stringArray(data.sourceDigest, 16),
+    plotGrid: buildPlotGrid(plotBeats)
+  };
+  if (!result.sourceDigest.length) result.sourceDigest = makeSourceDigest(result);
+  return result;
 }
 
 function markdownList(items: string[], fallback = '미정'): string {
@@ -325,6 +512,10 @@ ${markdownList(result.worldRules)}
 ## 주요 인물
 
 ${result.characters.map((character) => `- ${character.name} (${character.role})`).join('\n')}
+
+## 조직과 세력
+
+${result.organizations.length ? result.organizations.map((organization) => `- ${organization.name} (${organization.kind})`).join('\n') : '- 원천 문서에서 별도 조직/세력 항목을 확정하지 않았습니다.'}
 
 ## 첫 회차 플롯 씨앗
 
@@ -374,6 +565,13 @@ ${markdownList(character.notes)}
 `;
 }
 
+function renderOrganizations(result: SourceIntakeResult): string {
+  return `# 조직과 세력
+
+${result.organizations.length ? result.organizations.map((organization) => `## ${organization.name}\n\n- 유형: ${organization.kind}\n${markdownList(organization.notes)}`).join('\n\n') : '- 원천 문서에서 별도 조직/세력 항목을 확정하지 않았습니다.'}
+`;
+}
+
 function renderSourceIntake(result: SourceIntakeResult): string {
   const json = JSON.stringify(
     {
@@ -382,10 +580,15 @@ function renderSourceIntake(result: SourceIntakeResult): string {
       title: result.title,
       sourceFileName: result.sourceFileName,
       sourceStats: result.sourceStats,
+      premise: result.premise,
+      logline: result.logline,
+      worldRules: result.worldRules,
       characters: result.characters,
+      organizations: result.organizations,
       plotBeats: result.plotBeats,
       openThreads: result.openThreads,
-      styleNotes: result.styleNotes
+      styleNotes: result.styleNotes,
+      sourceDigest: result.sourceDigest
     },
     null,
     2
@@ -396,6 +599,7 @@ function renderSourceIntake(result: SourceIntakeResult): string {
 
 - 작품: ${result.title}
 - 파일: ${result.sourceFileName || '붙여넣기 입력'}
+- 분해: ${result.source === 'agent' ? 'AI 문맥 분해' : '로컬 규칙 분해'}
 - 글자: ${result.sourceStats.chars}
 - 문단: ${result.sourceStats.paragraphs}
 
@@ -405,6 +609,7 @@ function renderSourceIntake(result: SourceIntakeResult): string {
 - plot/open-threads.md
 - plot/plot-board.json
 - characters/cast-inbox.md
+- world/organizations.md
 - story/chapters/ep001/index.md
 - story/chapters/ep001/manuscript.md
 
@@ -468,6 +673,7 @@ export function buildSourceIntakeFiles(result: SourceIntakeResult, rawSource: st
     { path: 'plot/open-threads.md', content: renderOpenThreads(result) },
     { path: 'plot/plot-board.json', content: `${JSON.stringify(result.plotGrid, null, 2)}\n` },
     { path: 'characters/cast-inbox.md', content: renderCastInbox(result) },
+    { path: 'world/organizations.md', content: renderOrganizations(result) },
     { path: 'notes/source-intake.md', content: renderSourceIntake(result) },
     { path: 'notes/source-raw.md', content: `# 원천 통합 문서\n\n${rawSource.trim()}\n` },
     { path: 'story/chapters/ep001/index.md', content: renderEpisodeIndex(result) },

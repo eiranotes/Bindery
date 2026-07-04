@@ -308,3 +308,12 @@ Base: ChatGPT Stage 3.6 archive (native stubs, relative-path API, session-snapsh
 - Wired project creation through `createProjectFromSourceIntake`, preserving local-first Tauri file writes and browser mock preview behavior.
 - Updated project docs and progress trackers for the new bootstrap path and its follow-ups.
 - Verified: `npm --workspace apps/desktop run check`; bundled source-intake/planning/envelopes smokes; Python unit tests; style node smokes; `npm run build`; static verify; AI pipeline smoke; `git diff --check`; Playwright Chromium visual QA at 390/768/1280 plus submit handoff.
+
+## 2026-07-04 15:20 KST — AI Source Intake Refinement + DOCX Import
+
+- Pushed `2b535e6` to `origin/feat/ai-mission-control`, then continued the source-intake follow-up.
+- Extracted `/Users/tofu/Downloads/medallion bible.docx` to `/tmp/medallion-bible.txt` and ran the current deterministic source-intake path. The local split confirmed the user's concern: section labels and field names were misclassified as characters/plot beats.
+- Ran Codex CLI against the extracted source and saved the semantic JSON to `/tmp/medallion-source-intake/ai/source-intake.json`; the new parser generated refined harness files under `/tmp/medallion-source-intake/refined`.
+- Implemented optional `AI 문맥 분해`: source intake writes `notes/source-raw.md` first, asks the configured agent to read it, validates semantic `SourceIntake` JSON, and falls back to the local split if needed.
+- Added DOCX source import without a new production dependency and added organization/faction output via `world/organizations.md`.
+- Verification passed: `node --experimental-strip-types tests/sourceIntake.node.test.mjs`, `node --experimental-strip-types tests/documentText.node.test.mjs`, actual DOCX extraction against `medallion bible.docx`, `npm --workspace apps/desktop run check`, bundled planning/envelope smokes, Python unit tests, style node smokes, `npm run build`, static verify, AI pipeline smoke, `git diff --check`, and Playwright visual QA at 390/768/1280.

@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { createProject, listTree, openProject, readFile, writeFile } from '$lib/api/commands';
+import { createProject, listTree, openProject, readFile, runAgentText, writeFile } from '$lib/api/commands';
 import { candidateStore } from '$lib/stores/candidateStore';
 import { editorStore } from '$lib/stores/editorStore';
 import { fileTreeStore } from '$lib/stores/fileTreeStore';
@@ -9,12 +9,13 @@ import { computeStats } from '$lib/editor';
 import { hydrateArtifactsFromProject } from '$lib/stores/artifactStore';
 import { hydrateRunsFromProject } from '$lib/stores/runStore';
 import { loadCodexAction, loadPlotAction } from '$lib/actions/pipeline';
-import { buildSourceIntake, buildSourceIntakeFiles } from '$lib/domain/sourceIntake';
+import { buildSourceIntake, buildSourceIntakeFiles, parseAgentSourceIntake, sourceIntakeAgentPrompt } from '$lib/domain/sourceIntake';
 import type { CreateProjectInput, FileNode, ProjectInfo } from '$lib/types';
 
 export type CreateSourceIntakeProjectInput = CreateProjectInput & {
   sourceText: string;
   sourceFileName?: string;
+  useAgentRefinement?: boolean;
 };
 
 function firstWritable(nodes: FileNode[]): string | null {
@@ -77,11 +78,21 @@ export async function createProjectFromSourceIntake(input: CreateSourceIntakePro
     author: input.author,
     template: input.template ?? 'serial'
   });
-  const refined = buildSourceIntake({
+  const local = buildSourceIntake({
     title: input.title,
     sourceText: input.sourceText,
     sourceFileName: input.sourceFileName
   });
+  let refined = local;
+  const sourceRaw = buildSourceIntakeFiles(local, input.sourceText).find((file) => file.path === 'notes/source-raw.md');
+  if (sourceRaw) await writeFile(project.rootPath, sourceRaw.path, sourceRaw.content);
+
+  if (input.useAgentRefinement) {
+    const agent = await runAgentText(project.rootPath, sourceIntakeAgentPrompt('notes/source-raw.md', local), `source-intake-${Date.now()}`);
+    if (agent.ok && agent.text.trim()) {
+      refined = parseAgentSourceIntake(agent.text, local) ?? local;
+    }
+  }
   const files = buildSourceIntakeFiles(refined, input.sourceText);
   await Promise.all(files.map((file) => writeFile(project.rootPath, file.path, file.content)));
   return openProjectIntoWorkspace(project.rootPath);

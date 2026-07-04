@@ -1,10 +1,28 @@
 # Decisions
 
-Updated: 2026-07-04 (통합 문서 시작 + 하네스 분해)
+Updated: 2026-07-04 (AI 문맥 분해 + DOCX 통합 문서)
+
+## Source Intake Agent Reads The Raw File Before Finalizing Harness Files
+
+Decision: `통합 문서` project creation still starts with a deterministic local split, but when `AI 문맥 분해` is enabled the app first writes `notes/source-raw.md`, asks the configured agent to read that project file, validates the returned semantic `SourceIntake` JSON, and only then writes the final harness files. If the agent is unavailable or invalid, the local split remains the fallback.
+
+Reason: Rough bible documents are contextual, not just heading buckets. Passing the raw text as a command argument is fragile for larger documents and encourages shallow splitting. A file-backed agent pass lets the model inspect the complete source while keeping local-first creation, validation, and fallback behavior intact.
+
+## DOCX Source Import Uses A Minimal Local Extractor
+
+Decision: The start screen accepts DOCX for source intake by reading the package's `word/document.xml`, extracting paragraph text, and preserving Word heading styles as Markdown heading markers before running the same source-intake flow as Markdown/TXT.
+
+Reason: Many authors bring a rough bible as a Word document. Adding a focused extractor avoids a new production dependency and keeps DOCX import limited to text intake; deeper PDF or layout-aware document processing remains a separate follow-up.
+
+## Organizations Are First-Class Source Intake Output
+
+Decision: Semantic source intake can now produce organizations/factions/institutions as `SourceIntakeOrganization` records and writes them to `world/organizations.md`, in addition to character files and the setting bible.
+
+Reason: Large bible documents often describe teams, leagues, corporations, guilds, or institutions. Treating those as characters or plot beats collapses the project map and weakens later brief/scene planning.
 
 ## Rough Source Intake Creates Harness Files Deterministically First
 
-Decision: The start screen now includes a `통합 문서` path that accepts pasted text or Markdown/TXT source files, creates a project, and deterministically separates the rough integrated idea/bible into local harness files before any agent refinement: `canon/setting-bible.md`, `plot/open-threads.md`, `plot/plot-board.json`, `characters/`, `notes/source-intake.md`, `notes/source-raw.md`, and EP001 seed files.
+Decision: The start screen includes a `통합 문서` path that accepts pasted text, Markdown/TXT, or DOCX source files, creates a project, and deterministically separates the rough integrated idea/bible into local harness files before optional agent refinement: `canon/setting-bible.md`, `plot/open-threads.md`, `plot/plot-board.json`, `characters/`, `world/organizations.md`, `notes/source-intake.md`, `notes/source-raw.md`, and EP001 seed files.
 
 Reason: First-run authors often have one messy document rather than clean Bindery folders. A local deterministic split gives them immediate, reviewable project structure and keeps AI optional. Agent-assisted refinement can later sit on top of the same `SourceIntake` contract instead of replacing the local-first bootstrap.
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-07-04 (AI 문맥 분해 + DOCX 통합 문서)
+
+- Added optional `AI 문맥 분해` to the `통합 문서` start path. Bindery preserves the raw source, asks the configured agent to read it, validates semantic `SourceIntake` JSON, and falls back to the local split if needed.
+- Added DOCX import for rough bible/source intake without adding a new production dependency.
+- Added organization/faction output through `world/organizations.md`, plus richer source-intake metadata.
+- Verified the flow against `/Users/tofu/Downloads/medallion bible.docx`: the static split exposed label misclassification, while AI refinement produced grounded characters, organizations, plot beats, open threads, and style notes.
+
 ## 2026-07-04 (통합 문서 시작 + 하네스 분해)
 
 - Added a `통합 문서` first-run option on the start screen for pasting a rough idea/synopsis/bible bundle or loading a Markdown/TXT source file.

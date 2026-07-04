@@ -85,6 +85,7 @@ sample-project/
   story/chapters/ep001/manuscript.md
   canon/setting-bible.md
   characters/
+  world/organizations.md
   plot/open-threads.md
   plot/plot-board.json
   notes/source-intake.md
@@ -106,13 +107,14 @@ sample-project/
 
 ### 2.1 통합 문서로 시작
 
-시작 화면의 `통합 문서`는 아직 정제되지 않은 아이디어 묶음, 시놉시스, 세계관 바이블, 인물 메모를 첫 프로젝트 구조로 나누는 경로다.
+시작 화면의 `통합 문서`는 아직 정제되지 않은 아이디어 묶음, 시놉시스, 세계관 바이블, 인물 메모를 첫 프로젝트 구조로 나누는 경로다. 붙여넣기, Markdown/TXT, DOCX를 받을 수 있다.
 
 생성되는 주요 파일:
 
 ```text
 canon/setting-bible.md
 characters/cast-inbox.md
+world/organizations.md
 plot/open-threads.md
 plot/plot-board.json
 notes/source-intake.md
@@ -121,7 +123,7 @@ story/chapters/ep001/index.md
 story/chapters/ep001/manuscript.md
 ```
 
-`notes/source-intake.md`에는 `bindery.source_intake.v1` 메타 블록이 남고, `notes/source-raw.md`에는 원천 텍스트가 보존된다. 현재 파일 입력은 Markdown/TXT 텍스트 계열을 대상으로 하며, DOCX/PDF 분해는 후속 작업이다.
+`notes/source-intake.md`에는 `bindery.source_intake.v1` 메타 블록이 남고, `notes/source-raw.md`에는 원천 텍스트가 보존된다. `AI 문맥 분해`가 켜져 있고 AI 실행기가 연결되어 있으면, Bindery는 먼저 원천 파일을 저장한 뒤 에이전트가 `notes/source-raw.md`를 읽어 의미 단위로 다시 정리하게 한다. 에이전트 출력이 없거나 검증에 실패하면 로컬 규칙 분해 결과로 프로젝트를 만든다. PDF import와 생성 전 승인/편집 화면은 후속 작업이다.
 
 ## 3. 상단 바
 

@@ -1,6 +1,15 @@
 # Tasks
 
-Updated: 2026-07-04 (통합 문서 시작 + 하네스 분해)
+Updated: 2026-07-04 (AI 문맥 분해 + DOCX 통합 문서)
+
+## Done (2026-07-04 AI 문맥 분해 + DOCX 통합 문서 — feat/ai-mission-control)
+
+- [x] Add optional agent-assisted refinement on top of the deterministic source-intake split.
+- [x] Make the agent read the preserved `notes/source-raw.md` instead of passing large bible text directly as a command argument.
+- [x] Validate agent `SourceIntake` JSON and fall back to the local split when output is unavailable or invalid.
+- [x] Add DOCX import for the `통합 문서` start path without adding a new production dependency.
+- [x] Generate `world/organizations.md` from semantic source-intake results.
+- [x] Run `/Users/tofu/Downloads/medallion bible.docx` through the current local split and AI refinement path, and record the observed quality gap.
 
 ## Done (2026-07-04 통합 문서 시작 + 하네스 분해 — feat/ai-mission-control)
 
@@ -11,9 +20,9 @@ Updated: 2026-07-04 (통합 문서 시작 + 하네스 분해)
 
 ## Next (통합 문서 시작 — 후속)
 
-- [ ] Add optional agent-assisted refinement on top of the deterministic source-intake split.
-- [ ] Add DOCX/PDF import through the document/PDF runtime path instead of text-only browser file reading.
+- [ ] Add PDF import through the document/PDF runtime path.
 - [ ] Add an approval/edit surface before source-intake output overwrites generated template files.
+- [ ] Show a source-intake comparison preview so authors can accept local vs AI split before project files are finalized.
 
 ## Done (2026-07-04 AI envelope 스키마 + repair loop — feat/ai-mission-control)
 

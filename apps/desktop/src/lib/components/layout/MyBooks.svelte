@@ -4,6 +4,7 @@
   import { themeStore, toggleTheme } from '$lib/stores/themeStore';
   import { settingsStore } from '$lib/stores/settingsStore';
   import { toasts } from '$lib/stores/toastStore';
+  import { extractSourceDocumentText } from '$lib/domain/documentText';
 
   type StartMode = 'create' | 'intake' | 'open' | 'sample';
 
@@ -15,6 +16,7 @@
   let openPath = 'sample-project';
   let sourceText = '';
   let sourceFileName = '';
+  let useAgentRefinement = true;
 
   const providerLabel: Record<string, string> = {
     codex: 'Codex',
@@ -23,9 +25,11 @@
     custom: '직접 설정'
   };
   const outputLabel: Record<string, string> = { stdout: '터미널 출력', file: '파일 출력' };
+  const defaultCommandProviders = new Set(['codex', 'antigravity', 'gemini']);
 
   $: agentName = providerLabel[$settingsStore.agentProvider] ?? $settingsStore.agentProvider;
-  $: agentReady = Boolean($settingsStore.agentCliPath || $settingsStore.geminiCliPath);
+  $: agentReady =
+    !$settingsStore.mockMode && (Boolean($settingsStore.agentCliPath?.trim() || $settingsStore.geminiCliPath?.trim()) || defaultCommandProviders.has($settingsStore.agentProvider));
   $: sourceChars = sourceText.trim().length;
   $: sourceLines = sourceText.trim() ? sourceText.trim().split(/\r?\n/).length : 0;
 
@@ -71,10 +75,16 @@
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
-    sourceFileName = file.name;
-    sourceText = await file.text();
-    if (title.trim() === '새 작품') {
-      title = file.name.replace(/\.[^.]+$/, '').trim() || title;
+    try {
+      const extracted = await extractSourceDocumentText(file);
+      sourceFileName = extracted.fileName;
+      sourceText = extracted.text;
+      if (title.trim() === '새 작품') {
+        title = file.name.replace(/\.[^.]+$/, '').trim() || title;
+      }
+    } catch (e) {
+      toasts.push(`문서 불러오기 실패: ${e instanceof Error ? e.message : String(e)}`, 'bad');
+      input.value = '';
     }
   }
 
@@ -95,9 +105,10 @@
         author,
         template: 'serial',
         sourceText,
-        sourceFileName: sourceFileName || undefined
+        sourceFileName: sourceFileName || undefined,
+        useAgentRefinement: useAgentRefinement && agentReady
       });
-      toasts.push(`통합 문서 분해 완료: ${project.title}`, 'ok');
+      toasts.push(`${useAgentRefinement && agentReady ? 'AI 문맥 분해' : '로컬 분해'} 완료: ${project.title}`, 'ok');
     } catch (e) {
       toasts.push(`통합 문서 시작 실패: ${e instanceof Error ? e.message : String(e)}`, 'bad');
     } finally {
@@ -169,14 +180,19 @@
           </label>
           <div class="intake-toolbar">
             <label class="file-pick">
-              <input type="file" accept=".md,.markdown,.txt,.text" on:change={importSourceFile} />
-              <span>{sourceFileName || 'Markdown/TXT 불러오기'}</span>
+              <input type="file" accept=".md,.markdown,.txt,.text,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" on:change={importSourceFile} />
+              <span>{sourceFileName || 'Markdown/TXT/DOCX 불러오기'}</span>
             </label>
             <span class="source-stats">{sourceChars.toLocaleString()}자 · {sourceLines.toLocaleString()}줄</span>
           </div>
+          <label class="intake-option">
+            <input type="checkbox" bind:checked={useAgentRefinement} disabled={!agentReady} />
+            <span>AI 문맥 분해</span>
+            <small>{agentReady ? '원천 문서를 읽고 의미 단위로 다시 정리합니다. 실패하면 로컬 분해를 유지합니다.' : 'AI 실행기를 연결하면 사용할 수 있습니다.'}</small>
+          </label>
           <div class="start-command">
             <button class="primary" type="submit" disabled={loading !== null}>{loading === 'intake' ? '분해 중...' : '분해해서 시작'}</button>
-            <span>설정집, 인물 인박스, 플롯 보드, 열린 떡밥, 원천 보관 파일을 생성합니다.</span>
+            <span>설정집, 인물 인박스, 조직, 플롯 보드, 열린 떡밥, 원천 보관 파일을 생성합니다.</span>
           </div>
         </form>
       {:else if mode === 'open'}

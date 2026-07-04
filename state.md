@@ -1,5 +1,20 @@
 # state.md — Current Handoff State
 
+## 2026-07-04 AI Source Intake Refinement + DOCX Import (branch: feat/ai-mission-control)
+
+- Pushed the prior source-intake bootstrap commit `2b535e6` to `origin/feat/ai-mission-control` before continuing.
+- Ran `/Users/tofu/Downloads/medallion bible.docx` through the current source-intake flow.
+  - Extracted DOCX text to `/tmp/medallion-bible.txt` (16,342 chars, 560 paragraphs, Heading1/Heading2 preserved).
+  - Local deterministic split result under `/tmp/medallion-source-intake/current` showed the expected quality gap: labels such as `나이`, `이름`, `7`, and `10` were promoted to characters, and title/version/heading lines became plot beats.
+  - Codex CLI semantic split result under `/tmp/medallion-source-intake/ai/source-intake.json` validated through the new parser and generated `/tmp/medallion-source-intake/refined`.
+  - Refined result: `source: agent`, 7 characters (`매니저`, `렌 / 레나타`, `메리아`, `테네브라`, `데스티아`, `에를린`, `카렌 살로`), 9 organizations, 10 plot beats, 10 open threads, and 15 style notes.
+- Implemented optional `AI 문맥 분해` in source-intake project creation.
+  - `createProjectFromSourceIntake()` now writes `notes/source-raw.md` first, asks the configured agent to read that file, validates the returned semantic `SourceIntake` JSON, and falls back to the local split on failure.
+  - `sourceIntake.ts` now supports `source: agent`, organization records, `world/organizations.md`, agent prompt construction, JSON extraction, and semantic validation against field-label/section-title misclassification.
+  - `documentText.ts` adds DOCX text extraction without a new production dependency.
+  - `MyBooks.svelte` accepts Markdown/TXT/DOCX and shows the `AI 문맥 분해` toggle in the `통합 문서` form.
+- Verification passed: `node --experimental-strip-types tests/sourceIntake.node.test.mjs`, `node --experimental-strip-types tests/documentText.node.test.mjs`, actual DOCX extraction against `medallion bible.docx`, `npm --workspace apps/desktop run check`, bundled planning/envelope smokes, Python unit tests, style node smokes, `npm run build`, static verify, AI pipeline smoke, `git diff --check`, and Playwright visual QA at 390/768/1280.
+
 ## 2026-07-04 Source Intake First-Run Bootstrap (branch: feat/ai-mission-control)
 
 - Added a `통합 문서` first-run path to `MyBooks.svelte`.

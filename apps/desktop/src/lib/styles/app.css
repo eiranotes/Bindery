@@ -408,6 +408,33 @@ textarea { resize: vertical; line-height: 1.6; }
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 11px;
 }
+.start-form .intake-option {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-1) var(--space-2);
+  align-items: start;
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg-desk);
+}
+.intake-option input {
+  width: auto;
+  margin: var(--space-1) 0 0;
+}
+.start-form .intake-option span {
+  color: var(--text);
+  font-size: inherit;
+  font-weight: 760;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.intake-option small {
+  grid-column: 2;
+  color: var(--muted);
+  line-height: 1.45;
+}
 .start-command {
   grid-column: 1 / -1;
   display: flex;
