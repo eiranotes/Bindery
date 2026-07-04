@@ -1,6 +1,18 @@
 # Decisions
 
-Updated: 2026-07-04 (Plan-And-Write 회차/장면 계획 단계)
+Updated: 2026-07-04 (AI envelope 스키마 + repair loop)
+
+## Agent Draft And QA Outputs Use Repairable Envelopes
+
+Decision: Draft generation first asks agents for `DraftCandidateEnvelope` JSON, and QA asks for `QAReportEnvelope` data embedded in the existing `bindery:qa-json` block. If validation fails, the app sends one repair prompt that converts the invalid output into the required JSON object before falling back to the previous native/mock path.
+
+Reason: The architecture review called out that free-form agent output was too fragile for long-running pipeline state. A single repair retry catches common format drift without making the run loop unbounded or hiding failures.
+
+## Legacy QA Blocks Stay Compatible
+
+Decision: `QAReportEnvelope` validation accepts the existing `bindery:qa-json` block shape when the required score/verdict/issues fields are present, then normalizes it into the v1 envelope markdown used by the UI parser.
+
+Reason: Existing artifacts and fallback reports should remain readable. The schema layer is a hardening layer, not a forced artifact migration.
 
 ## Drafting Requires Episode Brief And Scene Plan
 

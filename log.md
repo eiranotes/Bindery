@@ -1,5 +1,14 @@
 # log.md — Stage 3 Work Log
 
+## 2026-07-04 AI Envelope Schemas + Repair Loop
+
+- Pushed the previous Plan-And-Write commit (`4d50bc9`) to `origin/feat/ai-mission-control`, then implemented the next roadmap item.
+- Added `agentEnvelopes.ts` with `DraftCandidateEnvelope`, `QAReportEnvelope`, `MemoryWriteProposal`, JSON extraction helpers, validators, QA markdown normalization, and schema examples for prompts.
+- Updated `runDraftAction`: each candidate attempt first asks the agent for a `DraftCandidateEnvelope`; invalid output gets one repair prompt; unrecoverable output falls back to the existing `generateCandidate` path.
+- Updated `runQAAction`: agent QA output is normalized through `QAReportEnvelope`; invalid output gets one repair prompt; unrecoverable output falls back to `run_qa`.
+- Kept existing `bindery:qa-json` artifacts compatible by validating and normalizing the legacy block shape when score/verdict/issues are present.
+- Added `tests/envelopes.node.test.mjs`; verified Svelte check, esbuild-bundled envelope/planning smokes, styleSystem/styleAnalyzer node smokes, Python 18 tests, production build (known chunk warning only), static verify, AI adapter smoke, and diff check.
+
 ## 2026-07-04 Plan-And-Write Episode Brief + Scene Plan
 
 - Picked up after the pushed `feat(ai): add mission control workspace with persisted pipeline runs` commit; current branch remains `feat/ai-mission-control`.

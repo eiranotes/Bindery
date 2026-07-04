@@ -1,3 +1,5 @@
+import { validateQAReportEnvelope } from './agentEnvelopes';
+
 const QA_JSON_RE = /<!--\s*bindery:qa-json\s*([\s\S]*?)-->/i;
 const BAD_AGENT_TEXT = /(cannot comply|can't comply|as an ai|i cannot|죄송하지만|수행할 수 없습니다)/i;
 
@@ -11,6 +13,8 @@ function textBody(text: string): string {
 }
 
 export function validateQAContract(markdown: string): ContractCheck {
+  const envelope = validateQAReportEnvelope(markdown);
+  if (envelope.ok) return { ok: true };
   const match = QA_JSON_RE.exec(markdown);
   if (!match) return { ok: false, reason: 'bindery:qa-json block missing' };
   try {

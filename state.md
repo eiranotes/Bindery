@@ -1,5 +1,15 @@
 # state.md — Current Handoff State
 
+## 2026-07-04 AI Envelope Schemas + Repair Loop (branch: feat/ai-mission-control)
+
+- After pushing `4d50bc9` to `origin/feat/ai-mission-control`, continued the next architecture-review roadmap item.
+- Implemented `DraftCandidateEnvelope` and `QAReportEnvelope` in `apps/desktop/src/lib/domain/agentEnvelopes.ts`.
+  - Draft candidates are accepted only if validated JSON includes usable Korean `manuscript_md`, memory/canon delta metadata, plot compliance, continuity risks, style self-check, and change summary.
+  - QA output is validated as `bindery.qa_report.v1`, while legacy `bindery:qa-json` blocks remain compatible when score/verdict/issues are present.
+  - Invalid draft/QA agent output gets one repair prompt before the pipeline falls back to the existing native/mock candidate or QA report paths.
+- `pipeline.ts` now tries the structured draft envelope path before `generateCandidate`, and normalizes repaired QA envelopes into Markdown with an embedded `bindery:qa-json` block.
+- Added `tests/envelopes.node.test.mjs`; verified with Svelte check, esbuild-bundled envelope/planning smokes, styleSystem/styleAnalyzer node smokes, Python 18 tests, production build (known chunk warning only), static verify, AI adapter smoke, and diff check.
+
 ## 2026-07-04 Plan-And-Write Episode Brief + Scene Plan (branch: feat/ai-mission-control)
 
 - Continued the architecture review follow-up after the AI Mission Control/run persistence commit on `feat/ai-mission-control`.

@@ -22,6 +22,13 @@ import { validateCandidateMarkdown, validateQAContract } from '$lib/domain/agent
 import { manuscriptContextWindow } from '$lib/domain/prompt';
 import type { PlotGrid } from '$lib/domain/plot';
 import {
+  draftCandidateEnvelopeSchemaText,
+  qaReportEnvelopeSchemaText,
+  renderQAReportEnvelopeMarkdown,
+  validateDraftCandidateEnvelope,
+  validateQAReportEnvelope
+} from '$lib/domain/agentEnvelopes';
+import {
   buildLocalEpisodeBrief,
   buildLocalScenePlan,
   episodeBriefPrompt,
@@ -165,6 +172,99 @@ export async function runScenePlanAction(): Promise<boolean> {
   }
 }
 
+function repairJsonPrompt(kind: string, schema: string, invalidOutput: string, reason: string): string {
+  return [
+    `아래 ${kind} 출력이 Bindery 스키마 검증에 실패했다.`,
+    `실패 이유: ${reason}`,
+    '새 내용을 창작하지 말고, 원래 출력에서 복구 가능한 정보만 사용해 JSON object 하나만 다시 출력하라.',
+    '설명, 마크다운 fence, 사과 문구를 붙이지 않는다.',
+    '',
+    '## Required schema example',
+    schema,
+    '',
+    '## Invalid output',
+    invalidOutput.slice(0, 12000)
+  ].join('\n');
+}
+
+function normalizeQAAgentOutput(text: string, episodeId: string): { ok: boolean; markdown?: string; reason?: string } {
+  const check = validateQAReportEnvelope(text);
+  if (!check.ok || !check.envelope) return { ok: false, reason: check.reason ?? 'invalid QA envelope' };
+  const prose = text.replace(/<!--\s*bindery:qa-json\s*[\s\S]*?-->/i, '').trim();
+  return { ok: true, markdown: renderQAReportEnvelopeMarkdown({ ...check.envelope, episode: check.envelope.episode || episodeId }, prose) };
+}
+
+async function runQATextWithRepair(ep: string, prompt: string): Promise<string | null> {
+  const agent = await runAgentText(projectRoot(), prompt, `qa-${ep}`);
+  if (!agent.ok) return null;
+  const normalized = normalizeQAAgentOutput(agent.text, ep);
+  if (normalized.ok && normalized.markdown) return normalized.markdown;
+
+  const repair = await runAgentText(
+    projectRoot(),
+    repairJsonPrompt('QAReportEnvelope', qaReportEnvelopeSchemaText(ep), agent.text, normalized.reason ?? 'invalid QA output'),
+    `qa-repair-${ep}`
+  );
+  if (repair.ok) {
+    const repaired = normalizeQAAgentOutput(repair.text, ep);
+    if (repaired.ok && repaired.markdown) return repaired.markdown;
+  }
+  toasts.push(`QA 산출물 스키마 복구 실패: ${normalized.reason ?? 'invalid output'} · novelctl 보고서로 대체`, 'warn');
+  return null;
+}
+
+function buildDraftEnvelopePrompt(ep: string, kind: string, base: string, guidance: string): string {
+  return [
+    '너는 한국어 장기 연재소설 집필 에이전트다.',
+    '초안 후보를 freeform markdown으로 출력하지 말고 DraftCandidateEnvelope JSON object 하나만 출력하라.',
+    'manuscript_md에는 사용자가 검토할 완성 후보 원고 markdown만 넣는다.',
+    '회차 브리프와 장면 계획을 hard constraint로 따른다. 계획에 없는 설정 변경은 canon_delta_candidates에 제안으로만 분리한다.',
+    '',
+    '## Required schema example',
+    draftCandidateEnvelopeSchemaText(),
+    '',
+    `## Episode`,
+    ep,
+    '',
+    `## Task`,
+    kind,
+    '',
+    '## Guidance',
+    guidance.trim() || '(없음)',
+    '',
+    '## Current manuscript',
+    base || '(빈 원고)'
+  ].join('\n');
+}
+
+function candidateFromEnvelope(envelope: NonNullable<ReturnType<typeof validateDraftCandidateEnvelope>['envelope']>, kind: string): Candidate {
+  return {
+    id: `env-${envelope.candidate_id}-${Date.now()}`,
+    label: '후보',
+    content: envelope.manuscript_md,
+    source: `${kind} · DraftCandidateEnvelope · score ${envelope.style_self_check.score}`,
+    createdAt: new Date().toISOString()
+  };
+}
+
+async function runDraftEnvelopeCandidate(ep: string, kind: string, base: string, guidance: string): Promise<Candidate[] | null> {
+  const prompt = buildDraftEnvelopePrompt(ep, kind, base, guidance);
+  const agent = await runAgentText(projectRoot(), prompt, `draft-envelope-${ep}`);
+  if (!agent.ok) return null;
+  let check = validateDraftCandidateEnvelope(agent.text, base);
+  if (!check.ok) {
+    const repair = await runAgentText(
+      projectRoot(),
+      repairJsonPrompt('DraftCandidateEnvelope', draftCandidateEnvelopeSchemaText(), agent.text, check.reason ?? 'invalid draft candidate output'),
+      `draft-envelope-repair-${ep}`
+    );
+    if (repair.ok) check = validateDraftCandidateEnvelope(repair.text, base);
+  }
+  if (check.ok && check.envelope) return [candidateFromEnvelope(check.envelope, kind)];
+  toasts.push(`초안 후보 스키마 복구 실패: ${check.reason ?? 'invalid output'} · 기존 후보 생성기로 대체`, 'warn');
+  return null;
+}
+
 /** 실제 QA 프롬프트 — 문체 지침·이전 회차 요약을 포함해 게이트 검사를 요청한다. */
 function buildQAPrompt(ep: string, manuscript: string): string {
   const style = get(styleStore);
@@ -178,7 +278,7 @@ function buildQAPrompt(ep: string, manuscript: string): string {
     `보고서는 마크다운으로 쓰되, 마지막에 반드시 아래 형식의 JSON 블록을 포함하라:`,
     `<!-- bindery:qa-json`,
     `발췌 입력인 경우 앞/중간/끝을 모두 근거로 보되, 발췌 밖 사건은 추정이라고 표시하라.`,
-    `{ "episode": "${ep}", "score": <종합점수>, "verdict": "pass|warn|fail", "issues": [ { "severity": "fail|warn|info", "source": "<게이트>", "title": "<제목>", "message": "<설명>", "lineStart": <줄번호|생략> } ] }`,
+    qaReportEnvelopeSchemaText(ep),
     `-->`
   ];
   if (prevSummary) {
@@ -224,12 +324,11 @@ export async function runQAAction(): Promise<boolean> {
     const manuscript = get(editorStore).content;
     // 1순위: 에이전트 실검사. 실패 시 novelctl 보고서/기본 보고서로 폴백.
     let report = '';
-    const agent = await runAgentText(projectRoot(), buildQAPrompt(ep, manuscript), `qa-${ep}`);
-    const qaContract = agent.ok ? validateQAContract(agent.text) : { ok: false, reason: 'agent unavailable' };
-    if (agent.ok && qaContract.ok) {
-      report = agent.text;
+    const agentReport = await runQATextWithRepair(ep, buildQAPrompt(ep, manuscript));
+    const qaContract = agentReport ? validateQAContract(agentReport) : { ok: false, reason: 'agent unavailable' };
+    if (agentReport && qaContract.ok) {
+      report = agentReport;
     } else {
-      if (agent.ok) toasts.push(`QA 산출물 계약 불일치: ${qaContract.reason ?? 'unknown'} · novelctl 보고서로 대체`, 'warn');
       report = (await runQA(projectRoot(), ep)).report;
     }
     const parsed = parseQAReport(report);
@@ -429,9 +528,10 @@ export async function runDraftAction(kind: 'draft' | 'revise' | 'continue' | 're
     const collected: Candidate[] = [];
     for (let attempt = 0; collected.length < targetCount && attempt <= targetCount; attempt++) {
       const variation = attempt > 0 ? `\n\n### 후보 변주 지시\n이전 후보와 다른 접근(장면 진입, 리듬, 묘사 초점)을 시도하라. 사건과 확정 설정은 동일하게 유지한다.` : '';
-      const batch = (await generateCandidate(projectRoot(), ep, kind, base, guidance + variation)).filter(
-        (c) => validateCandidateMarkdown(c.content, base).ok
-      );
+      const batch = (
+        (await runDraftEnvelopeCandidate(ep, kind, base, guidance + variation)) ??
+        (await generateCandidate(projectRoot(), ep, kind, base, guidance + variation))
+      ).filter((c) => validateCandidateMarkdown(c.content, base).ok);
       if (!batch.length) break;
       collected.push(...batch);
     }

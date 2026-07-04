@@ -12,6 +12,7 @@ Updated: 2026-07-04
 - `03 실행`에는 9단계 파이프라인이 있다: `회차 브리프 -> 장면 계획 -> 컨텍스트 -> 초안 후보 -> 표현 분석 -> QA -> 수정 계획 -> 요약 -> 기록`.
 - 각 단계는 완료되면 회차별 산출물을 만들고, 산출물은 화면의 `산출물 보관함`과 프로젝트 파일 `.bindery/artifacts/{episode}/{step}.md`에 남는다.
 - 초안 후보는 `회차 브리프`와 `장면 계획` 산출물이 있어야 실행된다. 이 두 계획 산출물은 초안/수정 프롬프트에 hard guidance로 들어간다.
+- 초안 후보와 QA의 agent 출력은 JSON envelope로 검증되며, 형식이 깨지면 한 번 repair prompt를 실행한 뒤에도 실패할 때만 기존 폴백으로 내려간다.
 - 초안/수정 후보는 원고를 직접 덮어쓰지 않는다. 반드시 `04 검토`에서 diff를 보고 적용한다.
 - 후보 적용 전에는 현재 에디터 버퍼 기준 스냅샷이 먼저 생성된다.
 - 로컬 Codex CLI 어댑터 스모크는 통과했다: `bash scripts/verify_ai_pipeline.sh` -> `AI pipeline adapter smoke: PASS (codex)`.
@@ -242,7 +243,10 @@ Updated: 2026-07-04
 - `회차 브리프`와 `장면 계획` 산출물이 없으면 실행하지 않고 먼저 계획 단계를 실행하라고 안내한다.
 - 현재 원고 전체가 base로 전달된다.
 - `buildGuidanceText`가 문체 지침서와 기존 산출물을 모아 guidance를 만든다.
-- `generateCandidate`가 Tauri 명령 `generate_candidate`를 호출한다.
+- 먼저 agent에게 `DraftCandidateEnvelope` JSON을 요청한다.
+- `manuscript_md`가 너무 짧거나, 원본과 동일하거나, 한국어 후보 원고가 아니면 invalid로 본다.
+- invalid 출력은 한 번 repair prompt로 복구를 시도한다.
+- 구조화 경로가 실패하면 기존 `generateCandidate`/Tauri 명령 `generate_candidate` 경로로 폴백한다.
 - 네이티브 명령은 `agent_prompt`를 만든 뒤 설정된 CLI를 실행한다.
 - Codex CLI는 `codex exec --skip-git-repo-check --ephemeral -s read-only -o <tempfile>` 방식으로 실행하고, 결과 파일을 읽는다.
 - 다른 CLI는 `file` 모드 또는 `stdout` 모드로 실행한다.
@@ -293,9 +297,10 @@ Updated: 2026-07-04
 1. `buildQAPrompt`가 QA 프롬프트를 만든다.
 2. 프롬프트에는 현재 원고, 이전 회차 요약, 문체 지침서가 들어갈 수 있다.
 3. `runAgentText`로 실제 CLI QA를 먼저 시도한다.
-4. 에이전트 결과에 `bindery:qa-json` 블록이 있으면 그것을 우선 사용한다.
-5. JSON 블록이 없거나 실행 실패 시 `run_qa` 폴백을 사용한다.
-6. 문체 지침서의 금지어 검사는 클라이언트에서 항상 추가로 수행된다.
+4. 에이전트 결과의 `bindery:qa-json` 블록을 `QAReportEnvelope`로 검증한다.
+5. JSON 블록이 없거나 invalid이면 한 번 repair prompt를 실행한다.
+6. repair도 실패하거나 실행 실패 시 `run_qa` 폴백을 사용한다.
+7. 문체 지침서의 금지어 검사는 클라이언트에서 항상 추가로 수행된다.
 
 결과:
 
@@ -432,7 +437,7 @@ Updated: 2026-07-04
 ## 현재 한계와 확인 포인트
 
 1. `회차 브리프`와 `장면 계획`은 생성/파싱/로컬 폴백까지 지원하지만, 아직 별도 승인 버튼이나 장면 카드 편집 UI는 없다. 현재는 미션 컨트롤에서 큰 산출물로 검토한다.
-2. QA는 `bindery:qa-json` 블록이 있어야 구조화가 가장 잘 된다. 에이전트가 이 형식을 어기면 폴백 보고서가 사용된다.
+2. QA는 `bindery:qa-json` 블록이 있어야 구조화가 가장 잘 된다. 에이전트가 이 형식을 어기면 한 번 repair를 시도하고, 그래도 실패하면 폴백 보고서가 사용된다.
 3. `run_qa`와 `generate_revision_plan` 네이티브 폴백은 안전망이지 고품질 생성기가 아니다.
 4. 요약은 실패해도 로컬 요약이 생기지만, 장면 흐름/인물 상태/떡밥 품질은 실제 AI 요약보다 낮다.
 5. 산출물 파일 쓰기는 실패해도 UI 흐름을 막지 않는다. 배포 전에는 `.bindery/artifacts/` 파일이 실제로 남는지 확인해야 한다.

@@ -1,6 +1,14 @@
 # Tasks
 
-Updated: 2026-07-04 (Plan-And-Write 회차/장면 계획 단계)
+Updated: 2026-07-04 (AI envelope 스키마 + repair loop)
+
+## Done (2026-07-04 AI envelope 스키마 + repair loop — feat/ai-mission-control)
+
+- [x] Introduce `DraftCandidateEnvelope` and `QAReportEnvelope` schemas in the frontend domain layer.
+- [x] Validate draft candidate JSON before accepting agent prose as a candidate, including manuscript length/refusal/Korean prose/source-identical guards.
+- [x] Validate QA reports through `QAReportEnvelope`, while keeping legacy `bindery:qa-json` block compatibility.
+- [x] Add one repair-on-invalid retry for draft candidate and QA agent outputs before falling back to existing native/mock paths.
+- [x] Render normalized QA envelope markdown with an embedded `bindery:qa-json` block for the existing parser/UI.
 
 ## Done (2026-07-04 Plan-And-Write 회차/장면 계획 단계 — feat/ai-mission-control)
 
@@ -20,7 +28,6 @@ Updated: 2026-07-04 (Plan-And-Write 회차/장면 계획 단계)
 
 ## Next (아키텍처 리뷰 후속 — 장기 기억/스키마)
 
-- [ ] Introduce `DraftCandidateEnvelope`/`QAReportEnvelope` JSON schemas with repair-on-invalid loops.
 - [ ] Add `MemoryWriteProposal` approval UI so AI-proposed canon changes require human confirmation.
 - [ ] Split project memory into semantic/episodic/procedural indexes (`.bindery/memory`) with retrieval-based context packs.
 - [ ] Add explicit approval/edit UI for EpisodeBrief and ScenePlan artifacts before draft generation.

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-04 (AI envelope 스키마 + repair loop)
+
+- Added schema validation for agent-generated draft candidates and QA reports: `DraftCandidateEnvelope` protects candidate manuscript output, while `QAReportEnvelope` normalizes QA scores, gates, verdicts, and issues.
+- Draft and QA agent calls now get one repair-on-invalid retry. If repair still fails, Bindery falls back to the existing native/mock candidate or QA report path instead of accepting malformed output.
+- QA remains compatible with existing `bindery:qa-json` artifacts while normalizing valid output into the new envelope shape.
+
 ## 2026-07-04 (Plan-And-Write 회차/장면 계획 단계)
 
 - Added two planning steps before drafting: `회차 브리프` creates an EpisodeBrief from plot board/open threads/previous summary/manuscript context, and `장면 계획` turns that brief into scene cards with purpose, conflict, turn, POV, memory requirements, target length, tension, and exit hook.
