@@ -84,7 +84,11 @@ sample-project/
   story/chapters/ep001/index.md
   story/chapters/ep001/manuscript.md
   canon/setting-bible.md
+  characters/
   plot/open-threads.md
+  plot/plot-board.json
+  notes/source-intake.md
+  notes/source-raw.md
   notes/inbox.md
 ```
 
@@ -99,6 +103,25 @@ sample-project/
 | `plot/` | 플롯, 열린 떡밥, 장면/플롯라인 자료 |
 | `notes/` | 아이디어, 메모, 후보 장면 |
 | `.snapshots/` | 스냅샷 백업과 metadata |
+
+### 2.1 통합 문서로 시작
+
+시작 화면의 `통합 문서`는 아직 정제되지 않은 아이디어 묶음, 시놉시스, 세계관 바이블, 인물 메모를 첫 프로젝트 구조로 나누는 경로다.
+
+생성되는 주요 파일:
+
+```text
+canon/setting-bible.md
+characters/cast-inbox.md
+plot/open-threads.md
+plot/plot-board.json
+notes/source-intake.md
+notes/source-raw.md
+story/chapters/ep001/index.md
+story/chapters/ep001/manuscript.md
+```
+
+`notes/source-intake.md`에는 `bindery.source_intake.v1` 메타 블록이 남고, `notes/source-raw.md`에는 원천 텍스트가 보존된다. 현재 파일 입력은 Markdown/TXT 텍스트 계열을 대상으로 하며, DOCX/PDF 분해는 후속 작업이다.
 
 ## 3. 상단 바
 

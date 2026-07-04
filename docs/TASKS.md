@@ -1,6 +1,19 @@
 # Tasks
 
-Updated: 2026-07-04 (AI envelope 스키마 + repair loop)
+Updated: 2026-07-04 (통합 문서 시작 + 하네스 분해)
+
+## Done (2026-07-04 통합 문서 시작 + 하네스 분해 — feat/ai-mission-control)
+
+- [x] Add a start-screen `통합 문서` entry for rough integrated idea/bible input.
+- [x] Parse pasted or Markdown/TXT source material into a deterministic `SourceIntake` contract.
+- [x] Generate harness-ready project files: setting bible, open threads, plot board JSON, character inbox/files, source intake report, raw source archive, and EP001 seed files.
+- [x] Add smoke coverage for source-intake parsing and file generation.
+
+## Next (통합 문서 시작 — 후속)
+
+- [ ] Add optional agent-assisted refinement on top of the deterministic source-intake split.
+- [ ] Add DOCX/PDF import through the document/PDF runtime path instead of text-only browser file reading.
+- [ ] Add an approval/edit surface before source-intake output overwrites generated template files.
 
 ## Done (2026-07-04 AI envelope 스키마 + repair loop — feat/ai-mission-control)
 

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-07-04 (통합 문서 시작 + 하네스 분해)
+
+- Added a `통합 문서` first-run option on the start screen for pasting a rough idea/synopsis/bible bundle or loading a Markdown/TXT source file.
+- Added deterministic source-intake parsing that separates the rough document into setting bible, character inbox/files, open threads, plot board rows, source-intake report, raw source archive, and EP001 seed files.
+- Added source-intake smoke coverage so the generated harness file contract stays stable.
+
 ## 2026-07-04 (AI envelope 스키마 + repair loop)
 
 - Added schema validation for agent-generated draft candidates and QA reports: `DraftCandidateEnvelope` protects candidate manuscript output, while `QAReportEnvelope` normalizes QA scores, gates, verdicts, and issues.

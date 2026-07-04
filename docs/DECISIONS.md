@@ -1,6 +1,12 @@
 # Decisions
 
-Updated: 2026-07-04 (AI envelope 스키마 + repair loop)
+Updated: 2026-07-04 (통합 문서 시작 + 하네스 분해)
+
+## Rough Source Intake Creates Harness Files Deterministically First
+
+Decision: The start screen now includes a `통합 문서` path that accepts pasted text or Markdown/TXT source files, creates a project, and deterministically separates the rough integrated idea/bible into local harness files before any agent refinement: `canon/setting-bible.md`, `plot/open-threads.md`, `plot/plot-board.json`, `characters/`, `notes/source-intake.md`, `notes/source-raw.md`, and EP001 seed files.
+
+Reason: First-run authors often have one messy document rather than clean Bindery folders. A local deterministic split gives them immediate, reviewable project structure and keeps AI optional. Agent-assisted refinement can later sit on top of the same `SourceIntake` contract instead of replacing the local-first bootstrap.
 
 ## Agent Draft And QA Outputs Use Repairable Envelopes
 

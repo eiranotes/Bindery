@@ -100,7 +100,7 @@ html, body {
 }
 
 /* ---- controls: quiet by default, ONE primary per screen ------- */
-button, input, select { font: inherit; }
+button, input, select, textarea { font: inherit; }
 button {
   background: transparent;
   border: 1px solid transparent;
@@ -121,15 +121,17 @@ button.primary {
   font-weight: 600;
 }
 button.primary:hover { background: color-mix(in srgb, var(--accent) 88%, #000 12%); color: #fff; }
-:is(button, input, select, [tabindex]):focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
-input, select {
+:is(button, input, select, textarea, [tabindex]):focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+input, select, textarea {
   background: var(--bg-2);
   color: var(--text);
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
   padding: 6px 10px;
 }
-input::placeholder { color: var(--faint); }
+input::placeholder,
+textarea::placeholder { color: var(--faint); }
+textarea { resize: vertical; line-height: 1.6; }
 
 /* ---- frame ----------------------------------------------------- */
 .app { width: 100vw; max-width: 100vw; height: 100vh; display: grid; grid-template-rows: 56px 1fr; overflow: hidden; background: var(--bg); }
@@ -280,7 +282,7 @@ input::placeholder { color: var(--faint); }
 }
 
 /* ---- Stage 3.15: Pensive Studio Shell ------------------------- */
-.app-landing { grid-template-rows: 1fr; }
+.app-landing { grid-template-rows: 1fr; overflow: auto; }
 .my-books {
   min-height: 100vh;
   padding: 24px;
@@ -351,7 +353,61 @@ input::placeholder { color: var(--faint); }
   text-transform: uppercase;
 }
 .start-form input { width: 100%; padding: 10px 11px; background: var(--bg-desk); }
+.start-form textarea {
+  width: 100%;
+  min-height: 230px;
+  padding: 10px 11px;
+  background: var(--bg-desk);
+}
 .start-form .wide { grid-column: 1 / -1; }
+.intake-form { max-width: 860px; }
+.source-box textarea { display: block; }
+.intake-toolbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding-top: 2px;
+}
+.file-pick {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-width: 0;
+}
+.file-pick input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.file-pick span {
+  max-width: min(360px, 70vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+  color: var(--muted);
+  cursor: pointer;
+}
+.file-pick:hover span { border-color: var(--line-strong); color: var(--text); background: var(--hover); }
+.file-pick:focus-within span { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.source-stats {
+  flex: 0 0 auto;
+  color: var(--faint);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
 .start-command {
   grid-column: 1 / -1;
   display: flex;
@@ -668,6 +724,7 @@ input::placeholder { color: var(--faint); }
 	  .start-layout { grid-template-columns: 1fr; }
 	  .start-primary, .start-guide { padding: 14px; }
 	  .start-form { grid-template-columns: 1fr; }
+	  .intake-toolbar { align-items: flex-start; flex-direction: column; }
 	  .start-command, .sample-line { align-items: flex-start; flex-direction: column; }
 	  .recent-lines button { grid-template-columns: 1fr; }
 	  .studio-grid { grid-template-columns: minmax(0, 1fr); width: 100%; max-width: 100vw; padding: 8px; gap: 8px; overflow: hidden; }

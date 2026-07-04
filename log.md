@@ -300,3 +300,11 @@ Base: ChatGPT Stage 3.6 archive (native stubs, relative-path API, session-snapsh
 - Fixed mobile frame width overflow after Playwright detected a 435px app frame at 390px viewport.
 - Browser QA result: 1440/1024/390 all 0 clipping findings; candidate and QA generated; active tab stayed `AI 작업`.
 - Rebuilt raw standalone and `.app`; opened `.app` successfully.
+
+## 2026-07-04 14:00 KST — Source Intake First-Run Bootstrap
+
+- Added `통합 문서` to the start screen so a rough integrated idea/bible document can create a project directly.
+- Added deterministic `SourceIntake` parsing and file generation for setting bible, character inbox/files, plot board, open threads, source report, raw source archive, and EP001 seed files.
+- Wired project creation through `createProjectFromSourceIntake`, preserving local-first Tauri file writes and browser mock preview behavior.
+- Updated project docs and progress trackers for the new bootstrap path and its follow-ups.
+- Verified: `npm --workspace apps/desktop run check`; bundled source-intake/planning/envelopes smokes; Python unit tests; style node smokes; `npm run build`; static verify; AI pipeline smoke; `git diff --check`; Playwright Chromium visual QA at 390/768/1280 plus submit handoff.

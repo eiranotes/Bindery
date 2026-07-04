@@ -1,5 +1,17 @@
 # state.md — Current Handoff State
 
+## 2026-07-04 Source Intake First-Run Bootstrap (branch: feat/ai-mission-control)
+
+- Added a `통합 문서` first-run path to `MyBooks.svelte`.
+  - Authors can paste a rough integrated idea/bible/synopsis/cast memo or load a Markdown/TXT source file before creating the project.
+  - The UI keeps the existing line/form start-screen language and shows source character/line counts before submission.
+- Added `apps/desktop/src/lib/domain/sourceIntake.ts`.
+  - `SourceIntake` is deterministic and local-first: it classifies rough source lines into premise/logline, world rules, characters, plot beats, open threads, style notes, source digest, and an initial plot grid.
+  - Generated files include `canon/setting-bible.md`, `plot/open-threads.md`, `plot/plot-board.json`, `characters/cast-inbox.md`, per-character files when detected, `notes/source-intake.md`, `notes/source-raw.md`, and EP001 seed files.
+- Added `createProjectFromSourceIntake()` in `actions/project.ts`: create the project, write source-intake files, then reopen/hydrate the workspace.
+- Added `tests/sourceIntake.node.test.mjs`; final verification passes: `npm --workspace apps/desktop run check`, bundled source-intake/planning/envelopes smokes, Python unit tests, style node smokes, `npm run build`, static verify, AI pipeline smoke, `git diff --check`, and Playwright Chromium visual QA at 390/768/1280 plus submit handoff.
+- Follow-ups tracked in `docs/TASKS.md`: optional agent-assisted refinement, DOCX/PDF import, and approval/edit UI before source-intake overwrites generated template files.
+
 ## 2026-07-04 AI Envelope Schemas + Repair Loop (branch: feat/ai-mission-control)
 
 - After pushing `4d50bc9` to `origin/feat/ai-mission-control`, continued the next architecture-review roadmap item.

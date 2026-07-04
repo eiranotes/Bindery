@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { createProject, listTree, openProject, readFile } from '$lib/api/commands';
+import { createProject, listTree, openProject, readFile, writeFile } from '$lib/api/commands';
 import { candidateStore } from '$lib/stores/candidateStore';
 import { editorStore } from '$lib/stores/editorStore';
 import { fileTreeStore } from '$lib/stores/fileTreeStore';
@@ -9,20 +9,25 @@ import { computeStats } from '$lib/editor';
 import { hydrateArtifactsFromProject } from '$lib/stores/artifactStore';
 import { hydrateRunsFromProject } from '$lib/stores/runStore';
 import { loadCodexAction, loadPlotAction } from '$lib/actions/pipeline';
+import { buildSourceIntake, buildSourceIntakeFiles } from '$lib/domain/sourceIntake';
 import type { CreateProjectInput, FileNode, ProjectInfo } from '$lib/types';
 
+export type CreateSourceIntakeProjectInput = CreateProjectInput & {
+  sourceText: string;
+  sourceFileName?: string;
+};
+
 function firstWritable(nodes: FileNode[]): string | null {
+  const manuscript = findFirstFile(nodes, (path) => path.endsWith('manuscript.md'));
+  if (manuscript) return manuscript;
+  return findFirstFile(nodes, (path) => path.endsWith('.md'));
+}
+
+function findFirstFile(nodes: FileNode[], matches: (path: string) => boolean): string | null {
   for (const node of nodes) {
-    if (node.kind === 'file' && node.path.endsWith('manuscript.md')) return node.path;
+    if (node.kind === 'file' && matches(node.path)) return node.path;
     if (node.children) {
-      const child = firstWritable(node.children);
-      if (child) return child;
-    }
-  }
-  for (const node of nodes) {
-    if (node.kind === 'file' && node.path.endsWith('.md')) return node.path;
-    if (node.children) {
-      const child = firstWritable(node.children);
+      const child = findFirstFile(node.children, matches);
       if (child) return child;
     }
   }
@@ -62,6 +67,23 @@ export async function openProjectIntoWorkspace(path: string): Promise<ProjectInf
 
 export async function createProjectIntoWorkspace(input: CreateProjectInput): Promise<ProjectInfo> {
   const project = await createProject(input);
+  return openProjectIntoWorkspace(project.rootPath);
+}
+
+export async function createProjectFromSourceIntake(input: CreateSourceIntakeProjectInput): Promise<ProjectInfo> {
+  const project = await createProject({
+    basePath: input.basePath,
+    title: input.title,
+    author: input.author,
+    template: input.template ?? 'serial'
+  });
+  const refined = buildSourceIntake({
+    title: input.title,
+    sourceText: input.sourceText,
+    sourceFileName: input.sourceFileName
+  });
+  const files = buildSourceIntakeFiles(refined, input.sourceText);
+  await Promise.all(files.map((file) => writeFile(project.rootPath, file.path, file.content)));
   return openProjectIntoWorkspace(project.rootPath);
 }
 

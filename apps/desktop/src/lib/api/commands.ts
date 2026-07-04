@@ -54,6 +54,7 @@ characters:
 `;
 
 type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
+const mockProjectFiles = new Map<string, Map<string, string>>();
 
 async function getInvoke(): Promise<InvokeFn | null> {
   if (typeof window === 'undefined') return null;
@@ -88,6 +89,51 @@ function mockTree(): FileNode[] {
   ];
 }
 
+function isListableMockPath(path: string): boolean {
+  return /\.(md|ya?ml|json|txt)$/i.test(path) && !path.split('/').some((part) => part.startsWith('.') && part !== '.novelctl' && part !== '.gemini');
+}
+
+function mockTreeFromFiles(files: Map<string, string>): FileNode[] {
+  type MutableNode = FileNode & { children?: MutableNode[] };
+  const roots: MutableNode[] = [];
+  const dirs = new Map<string, MutableNode>();
+
+  function ensureDir(path: string): MutableNode {
+    const cached = dirs.get(path);
+    if (cached) return cached;
+    const parts = path.split('/').filter(Boolean);
+    const name = parts[parts.length - 1] ?? path;
+    const node: MutableNode = { name, path, kind: 'directory', children: [] };
+    dirs.set(path, node);
+    const parentPath = parts.slice(0, -1).join('/');
+    if (parentPath) ensureDir(parentPath).children?.push(node);
+    else roots.push(node);
+    return node;
+  }
+
+  for (const path of [...files.keys()].filter(isListableMockPath).sort()) {
+    const parts = path.split('/').filter(Boolean);
+    const fileName = parts[parts.length - 1];
+    const parentPath = parts.slice(0, -1).join('/');
+    const file: MutableNode = { name: fileName, path, kind: 'file' };
+    if (parentPath) ensureDir(parentPath).children?.push(file);
+    else roots.push(file);
+  }
+
+  function sort(nodes: MutableNode[]): FileNode[] {
+    return nodes
+      .sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name))
+      .map((node) => ({
+        name: node.name,
+        path: node.path,
+        kind: node.kind,
+        children: node.children ? sort(node.children) : undefined
+      }));
+  }
+
+  return sort(roots);
+}
+
 function titleFromPath(path: string): string {
   const trimmed = path.trim();
   if (!trimmed || trimmed === 'sample-project') return '샘플 작품';
@@ -100,6 +146,22 @@ function mockProjectPath(input: CreateProjectInput): string {
   return `${base}/${title.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim()}`;
 }
 
+function seedMockProject(input: CreateProjectInput, rootPath: string): void {
+  const title = input.title.trim() || '새 작품';
+  const author = input.author?.trim() || '미정';
+  mockProjectFiles.set(
+    rootPath,
+    new Map([
+      ['.novelctl/config.yaml', `title: "${title}"\nauthor: "${author}"\ntemplate: "${input.template ?? 'serial'}"\nlanguage: ko-KR\nentry: story/chapters/ep001/manuscript.md\n`],
+      ['story/chapters/ep001/index.md', `# EP001 작업 메모\n\n- 작품: ${title}\n- 작성자: ${author}\n- 원고: manuscript.md\n- 상태: 초안\n`],
+      ['story/chapters/ep001/manuscript.md', `---\nepisode: ep001\nstatus: draft\npov: protagonist\n---\n\n# EP001\n\n${title}의 첫 장면을 여기서 시작하세요.\n\n`],
+      ['canon/setting-bible.md', '# 설정집\n\n- 인물, 장소, 규칙을 확정한 뒤 여기에 정리합니다.\n'],
+      ['plot/open-threads.md', '# 열린 떡밥\n\n- 회수해야 할 질문과 장면 단서를 적어 둡니다.\n'],
+      ['notes/inbox.md', '# 메모함\n\n- 아직 분류하지 않은 아이디어를 모아 둡니다.\n']
+    ])
+  );
+}
+
 export async function openProject(path: string): Promise<ProjectInfo> {
   const invoke = await getInvoke();
   if (invoke) return invoke<ProjectInfo>('open_project', { path });
@@ -110,12 +172,15 @@ export async function createProject(input: CreateProjectInput): Promise<ProjectI
   const invoke = await getInvoke();
   if (invoke) return invoke<ProjectInfo>('create_project', input);
   const rootPath = mockProjectPath(input);
+  seedMockProject(input, rootPath);
   return { rootPath, title: input.title.trim() || '새 작품', hasNovelctlConfig: true, hasGeminiConfig: false };
 }
 
 export async function listTree(path: string): Promise<FileNode[]> {
   const invoke = await getInvoke();
   if (invoke) return invoke<FileNode[]>('list_tree', { path });
+  const files = mockProjectFiles.get(path);
+  if (files) return mockTreeFromFiles(files);
   return mockTree();
 }
 
@@ -126,6 +191,8 @@ export async function readFile(projectPath: string, relativePath: string): Promi
     const result = await invoke<{ path: string; content: string }>('read_file', { projectPath, relativePath });
     return result.content;
   }
+  const stored = mockProjectFiles.get(projectPath)?.get(path);
+  if (stored != null) return stored;
   if (path.endsWith('index.md')) return '# EP001 작업 메모\n\n- 원고: manuscript.md\n- 컨텍스트: 대기\n- QA: 대기\n';
   if (path.endsWith('setting-bible.md')) return '# 설정집\n\n- 확정 설정의 기준 문서입니다.\n';
   if (path.endsWith('open-threads.md')) return '# 열린 떡밥\n\n- 의료 리스크 노출.\n';
@@ -136,6 +203,9 @@ export async function writeFile(projectPath: string, relativePath: string, conte
   const path = relativePath;
   const invoke = await getInvoke();
   if (invoke) return invoke<void>('write_file', { projectPath, relativePath, content });
+  const files = mockProjectFiles.get(projectPath) ?? new Map<string, string>();
+  files.set(path, content);
+  mockProjectFiles.set(projectPath, files);
   console.info('[mock write]', projectPath, path, content.length);
 }
 
