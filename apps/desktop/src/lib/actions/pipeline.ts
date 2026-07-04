@@ -20,6 +20,17 @@ import type { QAIssue } from '$lib/domain/reports';
 import { settingsStore } from '$lib/stores/settingsStore';
 import { validateCandidateMarkdown, validateQAContract } from '$lib/domain/agentContracts';
 import { manuscriptContextWindow } from '$lib/domain/prompt';
+import type { PlotGrid } from '$lib/domain/plot';
+import {
+  buildLocalEpisodeBrief,
+  buildLocalScenePlan,
+  episodeBriefPrompt,
+  parseEpisodeBrief,
+  renderEpisodeBriefArtifact,
+  renderScenePlanArtifact,
+  scenePlanPrompt,
+  parseScenePlan
+} from '$lib/domain/planning';
 import { checkStyleCompliance } from '$lib/domain/style';
 import { styleStore } from '$lib/stores/styleStore';
 import { latestArtifact } from '$lib/stores/artifactStore';
@@ -37,6 +48,7 @@ import { uiStore } from '$lib/stores/uiStore';
 import { gotoStage } from '$lib/stores/pipelineStore';
 import { recordArtifact } from '$lib/stores/artifactStore';
 import { buildGuidanceText } from '$lib/domain/guidance';
+import { draftParamsStore } from '$lib/stores/draftParamsStore';
 import { toasts } from '$lib/stores/toastStore';
 
 const verdictLabel = { pass: '통과', warn: '주의', fail: '실패' } as const;
@@ -62,14 +74,107 @@ function prevEpisode(ep: string): string | null {
   return n > 1 ? `ep${String(n - 1).padStart(3, '0')}` : null;
 }
 
+async function readOpenThreads(): Promise<string> {
+  try {
+    return await readFile(projectRoot(), 'plot/open-threads.md');
+  } catch {
+    return '';
+  }
+}
+
+async function loadPlotGridSnapshot(): Promise<PlotGrid | null> {
+  const loaded = get(plotStore).grid;
+  if (loaded) return loaded;
+  try {
+    const raw = await readFile(projectRoot(), PLOT_BOARD_PATH);
+    const parsed = JSON.parse(raw) as PlotGrid;
+    if (parsed?.plotlines && parsed?.rows) return parsed;
+  } catch {
+    /* fall through to native/mock plot grid */
+  }
+  try {
+    return await getPlotGrid(projectRoot());
+  } catch {
+    return null;
+  }
+}
+
+function previousSummaryFor(ep: string): string {
+  const prev = prevEpisode(ep);
+  const prevSummary = prev ? latestArtifact('summarize', prev) : null;
+  return prevSummary?.content ?? '';
+}
+
+async function planningInputFor(ep: string) {
+  return {
+    episode: ep,
+    manuscript: get(editorStore).content,
+    plotGrid: await loadPlotGridSnapshot(),
+    openThreads: await readOpenThreads(),
+    previousSummary: previousSummaryFor(ep),
+    lengthTarget: get(draftParamsStore).lengthTarget
+  };
+}
+
+export async function runEpisodeBriefAction(): Promise<boolean> {
+  try {
+    const ep = episode();
+    const input = await planningInputFor(ep);
+    const fallback = buildLocalEpisodeBrief(input);
+    const agent = await runAgentText(projectRoot(), episodeBriefPrompt(input), `episode-brief-${ep}`);
+    const brief = agent.ok && agent.text.trim() ? parseEpisodeBrief(agent.text, fallback) : null;
+    const finalBrief = brief ?? fallback;
+    const content = renderEpisodeBriefArtifact(finalBrief);
+    recordArtifact('episode-brief', ep, finalBrief.source === 'agent' ? '회차 브리프' : '회차 브리프(로컬)', content);
+    toasts.push(
+      finalBrief.source === 'agent' ? '회차 브리프 생성됨 · 장면 계획의 기준으로 사용' : '로컬 회차 브리프 생성됨 · AI 연결 후 다시 실행하면 더 정밀해집니다',
+      finalBrief.source === 'agent' ? 'ok' : 'warn'
+    );
+    return true;
+  } catch {
+    toasts.push('회차 브리프 생성 실패', 'bad');
+    return false;
+  }
+}
+
+export async function runScenePlanAction(): Promise<boolean> {
+  try {
+    const ep = episode();
+    const briefArtifact = latestArtifact('episode-brief', ep);
+    if (!briefArtifact) {
+      toasts.push('장면 계획 전에 회차 브리프를 먼저 실행하세요', 'warn');
+      return false;
+    }
+    const input = await planningInputFor(ep);
+    const briefFallback = buildLocalEpisodeBrief(input);
+    const brief = parseEpisodeBrief(briefArtifact.content, briefFallback) ?? briefFallback;
+    const fallback = buildLocalScenePlan(input, brief);
+    const agent = await runAgentText(projectRoot(), scenePlanPrompt(input, brief), `scene-plan-${ep}`);
+    const plan = agent.ok && agent.text.trim() ? parseScenePlan(agent.text, fallback) : null;
+    const finalPlan = plan ?? fallback;
+    const content = renderScenePlanArtifact(finalPlan);
+    recordArtifact('scene-plan', ep, finalPlan.source === 'agent' ? '장면 계획' : '장면 계획(로컬)', content);
+    toasts.push(
+      finalPlan.source === 'agent' ? `장면 계획 생성됨 · ${finalPlan.scenes.length}개 카드` : `로컬 장면 계획 생성됨 · ${finalPlan.scenes.length}개 카드`,
+      finalPlan.source === 'agent' ? 'ok' : 'warn'
+    );
+    return true;
+  } catch {
+    toasts.push('장면 계획 생성 실패', 'bad');
+    return false;
+  }
+}
+
 /** 실제 QA 프롬프트 — 문체 지침·이전 회차 요약을 포함해 게이트 검사를 요청한다. */
 function buildQAPrompt(ep: string, manuscript: string): string {
   const style = get(styleStore);
   const prev = prevEpisode(ep);
   const prevSummary = prev ? latestArtifact('summarize', prev) : null;
+  const episodeBrief = latestArtifact('episode-brief', ep);
+  const scenePlan = latestArtifact('scene-plan', ep);
   const parts = [
     `너는 한국어 장편 연재소설의 QA 검수자다. 아래 원고를 게이트별로 0~100점 채점하고 이슈를 도출하라.`,
-    `게이트: 플롯, 연속성, 문체, 목소리, 어휘, 장면 패턴${style.guideline ? ', 문체 준수' : ''}`,
+    `게이트: 플롯, 회차 브리프 준수, 장면 계획 준수, 연속성, 문체, 목소리, 어휘, 장면 패턴${style.guideline ? ', 문체 준수' : ''}`,
     `보고서는 마크다운으로 쓰되, 마지막에 반드시 아래 형식의 JSON 블록을 포함하라:`,
     `<!-- bindery:qa-json`,
     `발췌 입력인 경우 앞/중간/끝을 모두 근거로 보되, 발췌 밖 사건은 추정이라고 표시하라.`,
@@ -81,6 +186,12 @@ function buildQAPrompt(ep: string, manuscript: string): string {
   }
   if (style.guideline) {
     parts.push('', '## 문체 지침서: 문체 준수 게이트의 기준', style.guideline.slice(0, 2000));
+  }
+  if (episodeBrief) {
+    parts.push('', '## 회차 브리프: 플롯/지식/금지사항 게이트 기준', episodeBrief.content.slice(0, 1800));
+  }
+  if (scenePlan) {
+    parts.push('', '## 장면 계획: 장면 기능/turn/exit hook 게이트 기준', scenePlan.content.slice(0, 2200));
   }
   parts.push('', `## 원고 (${ep})`, manuscriptContextWindow(manuscript, {
     maxChars: 14000,
@@ -186,16 +297,19 @@ export async function runContextAction() {
   const ep = episode();
   const prev = prevEpisode(ep);
   const prevSummary = prev ? latestArtifact('summarize', prev) : null;
-  let openThreads = '';
-  try {
-    openThreads = await readFile(projectRoot(), 'plot/open-threads.md');
-  } catch {
-    /* 열린 떡밥 파일이 없을 수 있음 */
-  }
+  const episodeBrief = latestArtifact('episode-brief', ep);
+  const scenePlan = latestArtifact('scene-plan', ep);
+  const openThreads = await readOpenThreads();
   const manuscript = get(editorStore).content;
   const relevant = get(codexStore).items.filter((c) => manuscript.includes(c.name));
   const content = [
     `# 컨텍스트 팩: ${ep}`,
+    '',
+    '## 회차 브리프',
+    episodeBrief ? episodeBrief.content.slice(0, 1400) : '(회차 브리프 없음: 초안 전에 회차 브리프 단계를 실행하세요)',
+    '',
+    '## 장면 계획',
+    scenePlan ? scenePlan.content.slice(0, 1800) : '(장면 계획 없음: 초안 전에 장면 계획 단계를 실행하세요)',
     '',
     '## 이전 회차 요약',
     prevSummary ? prevSummary.content.slice(0, 1200) : prev ? `(${prev} 요약 없음, 요약 단계를 먼저 실행하면 연속성이 강해집니다)` : '(첫 회차입니다)',
@@ -299,6 +413,13 @@ export async function runDraftAction(kind: 'draft' | 'revise' | 'continue' | 're
   try {
     const base = get(editorStore).content;
     const ep = episode();
+    const hasBrief = Boolean(latestArtifact('episode-brief', ep));
+    const hasScenePlan = Boolean(latestArtifact('scene-plan', ep));
+    if (!hasBrief || !hasScenePlan) {
+      candidateStore.update((s) => ({ ...s, generating: false }));
+      toasts.push('초안 후보 전에 회차 브리프와 장면 계획을 먼저 실행하세요', 'warn');
+      return false;
+    }
     // 산출물(컨텍스트/요약/QA/수정계획/표현분석)과 문체 지침서를 참고 블록으로 전달
     const sourceGuidance = draftSourceGuidance(ctx);
     const guidance = [buildGuidanceText(ep), sourceGuidance].filter((s) => s.trim()).join('\n\n');

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-07-04 (Plan-And-Write 회차/장면 계획 단계)
+
+- Added two planning steps before drafting: `회차 브리프` creates an EpisodeBrief from plot board/open threads/previous summary/manuscript context, and `장면 계획` turns that brief into scene cards with purpose, conflict, turn, POV, memory requirements, target length, tension, and exit hook.
+- Planning artifacts are saved like other pipeline outputs (`.bindery/artifacts/{episode}/episode-brief.md` and `scene-plan.md`) with embedded JSON blocks and readable Markdown; agent output is used when valid, otherwise clearly labeled local fallbacks are generated.
+- Draft generation now refuses to run until both planning artifacts exist, then injects them as hard guidance into draft/revise prompts. Context packs and QA prompts also include the brief and scene plan as plan-compliance criteria.
+- The AI pipeline now shows 9 steps in the run surface and Mission Control; `/brief` and `/plan` slash-menu entries hand off to the AI 작업 surface.
+
 ## 2026-07-04 (AI 미션 컨트롤 + run 기록)
 
 - Added the AI 미션 컨트롤 full-screen workspace (`작업실 → AI 파이프라인 → 미션 컨트롤`): left pipeline graph with per-step run buttons and run history, a large center viewer with 산출물/프롬프트/컨텍스트/검토 tabs, and a right inspector for run settings, risks (QA verdict, failed steps, candidates), and the human decision log.

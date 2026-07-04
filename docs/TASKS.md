@@ -1,6 +1,15 @@
 # Tasks
 
-Updated: 2026-07-04 (AI 미션 컨트롤 + run 기록)
+Updated: 2026-07-04 (Plan-And-Write 회차/장면 계획 단계)
+
+## Done (2026-07-04 Plan-And-Write 회차/장면 계획 단계 — feat/ai-mission-control)
+
+- [x] Add `EpisodeBrief` and `ScenePlan` pipeline steps ahead of draft generation.
+- [x] Link EpisodeBrief/ScenePlan generation to plot board rows, open threads, previous summaries, frontmatter characters, and manuscript excerpts.
+- [x] Persist planning artifacts to `.bindery/artifacts/{episode}/episode-brief.md` and `.bindery/artifacts/{episode}/scene-plan.md` with embedded JSON blocks.
+- [x] Feed planning artifacts into draft/revise guidance as hard context, context packs, and QA gate prompts.
+- [x] Guard draft generation so it fails visibly until both planning artifacts exist.
+- [x] Add `/brief` and `/plan` slash-menu entries that hand off to the AI 작업 run surface.
 
 ## Done (2026-07-04 AI 미션 컨트롤 + run 기록 — feat/ai-mission-control)
 
@@ -12,9 +21,9 @@ Updated: 2026-07-04 (AI 미션 컨트롤 + run 기록)
 ## Next (아키텍처 리뷰 후속 — 장기 기억/스키마)
 
 - [ ] Introduce `DraftCandidateEnvelope`/`QAReportEnvelope` JSON schemas with repair-on-invalid loops.
-- [ ] Add `EpisodeBrief` and `ScenePlan` steps ahead of draft generation (plot board linked).
 - [ ] Add `MemoryWriteProposal` approval UI so AI-proposed canon changes require human confirmation.
 - [ ] Split project memory into semantic/episodic/procedural indexes (`.bindery/memory`) with retrieval-based context packs.
+- [ ] Add explicit approval/edit UI for EpisodeBrief and ScenePlan artifacts before draft generation.
 
 ## Done (2026-07-03 리뷰 패치 반영 + 후속 계획 구현)
 

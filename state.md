@@ -1,5 +1,18 @@
 # state.md — Current Handoff State
 
+## 2026-07-04 Plan-And-Write Episode Brief + Scene Plan (branch: feat/ai-mission-control)
+
+- Continued the architecture review follow-up after the AI Mission Control/run persistence commit on `feat/ai-mission-control`.
+- Implemented the next roadmap item: `EpisodeBrief` and `ScenePlan` now exist as first-class pipeline steps before draft generation.
+  - `planning.ts`: typed `EpisodeBrief`/`ScenePlan` models, agent JSON parsers, readable Markdown artifact renderers, and deterministic local fallbacks from plot board/open threads/previous summary/frontmatter/manuscript excerpts.
+  - `pipeline.ts`: new `runEpisodeBriefAction` and `runScenePlanAction`; context packs include planning artifacts; QA prompts check brief/scene-plan compliance; `runDraftAction` refuses to generate until both artifacts exist.
+  - `prompt.ts`/`pipelineStore.ts`/`AIStudio.svelte`: pipeline order is now `episode-brief -> scene-plan -> context -> draft -> analyze -> qa -> revise -> summarize -> commit`, automatically reflected in Mission Control.
+  - `guidance.ts`: `episode-brief` and `scene-plan` feed draft/revise prompts as hard guidance.
+  - `wikilink.ts`: `/brief` and `/plan` slash-menu entries hand off to the AI 작업 run surface.
+- Added `tests/planning.node.test.mjs`; direct Node strip-types cannot resolve the app's bundler-style extensionless imports, so the verified path bundles it with repo-local esbuild and runs the bundle.
+- Verified: `npm --workspace apps/desktop run check` (0 errors / 0 warnings), bundled planning smoke OK, styleSystem/styleAnalyzer node smokes OK, Python 18 tests OK, `npm run build` OK with the known chunk-size warning, static verify OK, AI pipeline adapter smoke PASS (codex), and `git diff --check` OK.
+- Remaining follow-ups from the review: DraftCandidateEnvelope/QAReportEnvelope schemas + repair loop, explicit approval/edit UI for planning artifacts, MemoryWriteProposal approval UI, `.bindery/memory` semantic/episodic/procedural indexes, retrieval-based context packs.
+
 ## 2026-07-04 AI Mission Control + Run Persistence (branch: feat/ai-mission-control)
 
 - Implemented the first slice of the architecture review (`Bindery_AI_pipeline_architecture_review_2026-07-03.md`) — Phase 1 items 1/3/4(부분)/5 of its priority list:
@@ -8,7 +21,7 @@
   - `guidance.ts`: GuidanceSection now carries `hardness`(hard/soft/reference), `sourceId`, `tokenEstimate` (+`estimateTokens`); prompt text output unchanged.
   - `pipeline.ts` `runDraftAction`: honors `settingsStore.aiDefaultCandidateCount` (1–4) with re-call + variation directive; candidates relabeled 후보 A–D. Apply/discard/run-all/reset record human decisions.
 - Browser-verified on the dev server: run chip starts on first step run, artifacts/prompt/context tabs render (hardness badges + token totals), candidate count honored with style scores, apply-all logs a decision and returns to 집필, 전체 실행 finishes the run into history as 검토 대기 (superseded run marked 중단), Esc closes, 0 console errors. svelte-check 0/0, Python 18 tests OK, node smokes OK.
-- Not yet done from the review (follow-ups): DraftCandidateEnvelope/QAReportEnvelope JSON schemas, EpisodeBrief/ScenePlan steps, MemoryWriteProposal approval UI, retrieval-based context pack, auto repair passes.
+- Not yet done from the review (follow-ups): DraftCandidateEnvelope/QAReportEnvelope JSON schemas, explicit approval/edit UI for EpisodeBrief/ScenePlan artifacts, MemoryWriteProposal approval UI, retrieval-based context pack, auto repair passes.
 
 ## 2026-07-03 Pipeline Gap Closure + UI Restructure
 

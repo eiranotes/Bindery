@@ -1,5 +1,16 @@
 # log.md — Stage 3 Work Log
 
+## 2026-07-04 Plan-And-Write Episode Brief + Scene Plan
+
+- Picked up after the pushed `feat(ai): add mission control workspace with persisted pipeline runs` commit; current branch remains `feat/ai-mission-control`.
+- Added `apps/desktop/src/lib/domain/planning.ts` for EpisodeBrief/ScenePlan schemas, parsers, renderers, agent prompts, and local fallbacks.
+- Added `runEpisodeBriefAction` and `runScenePlanAction` to the action layer. The new steps read current episode state, plot board rows, open threads, previous summaries, frontmatter characters, and manuscript excerpts.
+- Changed the pipeline order to nine steps: `회차 브리프 -> 장면 계획 -> 컨텍스트 -> 초안 후보 -> 표현 분석 -> QA -> 수정 계획 -> 요약 -> 기록`.
+- Enforced the Plan-And-Write guard in `runDraftAction`: draft generation now returns a visible warning until both planning artifacts exist.
+- Fed planning artifacts into draft/revise hard guidance, context packs, and QA prompts; added `/brief` and `/plan` slash-command handoffs.
+- Updated `docs/PROJECT_STATUS.md`, `docs/TASKS.md`, `docs/DECISIONS.md`, `docs/CHANGELOG.md`, and `docs/AI_WRITING_PIPELINE_FLOW_20260703.md`.
+- Verification: Svelte check 0/0; planning smoke OK when bundled with repo-local esbuild because direct Node strip-types does not resolve SvelteKit bundler-style extensionless imports; styleSystem/styleAnalyzer node smokes OK; Python 18 tests OK; production build OK with the known chunk-size warning; static verify OK; AI pipeline adapter smoke PASS (codex); `git diff --check` OK.
+
 ## 2026-07-04 AI Mission Control + Run Persistence (feat/ai-mission-control)
 
 - Read the external architecture review (`Bindery_AI_pipeline_architecture_review_2026-07-03.md`) and implemented its Phase 1 UX-flow slice on a separate branch.

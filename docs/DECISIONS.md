@@ -1,6 +1,18 @@
 # Decisions
 
-Updated: 2026-07-03 (리뷰 패치 반영 + 후속 계획 구현)
+Updated: 2026-07-04 (Plan-And-Write 회차/장면 계획 단계)
+
+## Drafting Requires Episode Brief And Scene Plan
+
+Decision: The AI pipeline now starts draft generation only after `episode-brief` and `scene-plan` artifacts exist for the current episode. These artifacts are treated as hard guidance in draft/revise prompts, included in context packs, and supplied to QA as plan-compliance gates.
+
+Reason: The architecture review's Plan-And-Write principle requires the model to plan the episode and scene beats before writing prose. Keeping the guard in `runDraftAction` makes the contract apply to full-run, single-step, and slash-command handoff flows instead of relying only on UI order.
+
+## Planning Artifacts Are Agent-First With Local Fallbacks
+
+Decision: `EpisodeBrief` and `ScenePlan` are typed domain artifacts with embedded JSON blocks and readable Markdown. The app asks the configured agent for JSON first, then falls back to deterministic local planning from the plot board, open threads, previous summaries, frontmatter characters, and manuscript excerpts if the CLI is unavailable or invalid.
+
+Reason: Authors should be able to exercise the pipeline offline or in browser/mock mode, but local fallbacks must be clearly labeled and reviewable. The JSON block preserves a future path to approval/edit UI, schema validation, and memory writeback without breaking today's artifact shelf.
 
 ## Long Manuscripts Use Front Middle Tail Context Windows
 

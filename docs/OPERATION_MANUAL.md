@@ -174,13 +174,16 @@ CodeMirror 기반 Markdown 에디터다.
 
 | 명령 | 목적 |
 |---|---|
+| `/brief` | 회차 브리프 생성 화면으로 handoff |
+| `/plan` | 장면 계획 생성 화면으로 handoff |
+| `/context` | 컨텍스트 팩 생성 화면으로 handoff |
 | `/draft` | 후보 초안 생성 |
 | `/qa` | QA 실행 |
 | `/revise` | 수정 후보 생성 |
 | `/continue` | 이어쓰기 후보 생성 |
 | `/rewrite` | 선택 영역 재작성 후보 생성 |
 
-현재는 UI/프론트 액션 중심이며 실제 Gemini 실행은 `novelctl`/Tauri command 연결 단계에서 확장한다.
+현재 집필 화면에서는 AI를 직접 실행하지 않고 `AI 작업` 실행 단계로 handoff한다. 초안 후보는 `회차 브리프`와 `장면 계획` 산출물이 먼저 있어야 실행된다.
 
 ### 5.5 스마트 입력
 
@@ -211,9 +214,9 @@ manuscript.md
 향후 확장 대상:
 
 ```text
-00_brief.md
-01_context-pack.md
-02_scene-plan.md
+00_episode-brief.md
+01_scene-plan.md
+02_context-pack.md
 03_draft.md
 04_summary.md
 05_canon-delta.md

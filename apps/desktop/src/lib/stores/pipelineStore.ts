@@ -22,6 +22,8 @@ export type PipelineState = {
 };
 
 const initialSteps: Record<PipelineStep, StepRunStatus> = {
+  'episode-brief': 'idle',
+  'scene-plan': 'idle',
   context: 'idle',
   draft: 'idle',
   analyze: 'idle',

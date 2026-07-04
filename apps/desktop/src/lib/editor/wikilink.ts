@@ -34,6 +34,8 @@ export type AICommandRequest = {
 };
 
 const AI_COMMANDS: AICommand[] = [
+  { name: 'brief', label: '/brief', hint: '회차 브리프 생성' },
+  { name: 'plan', label: '/plan', hint: '장면 계획 생성' },
   { name: 'context', label: '/context', hint: '이번 회차의 컨텍스트 묶음 생성' },
   { name: 'draft', label: '/draft', hint: '초안 후보 A/B 생성' },
   { name: 'continue', label: '/continue', hint: '커서 위치부터 이어쓰기' },

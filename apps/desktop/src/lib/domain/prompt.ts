@@ -4,9 +4,11 @@
 import { parseFrontmatter } from './frontmatter';
 import type { CodexItem } from './codex';
 
-export type PipelineStep = 'context' | 'draft' | 'analyze' | 'qa' | 'revise' | 'summarize' | 'commit';
+export type PipelineStep = 'episode-brief' | 'scene-plan' | 'context' | 'draft' | 'analyze' | 'qa' | 'revise' | 'summarize' | 'commit';
 
 export const STEP_META: Record<PipelineStep, { label: string; desc: string }> = {
+  'episode-brief': { label: '회차 브리프', desc: '이번 회차 목표 확정' },
+  'scene-plan':    { label: '장면 계획',   desc: '장면 카드와 beat 설계' },
   context:   { label: '컨텍스트',   desc: '회차 자료 묶기' },
   draft:     { label: '초안 후보',  desc: 'AI 원고 후보 생성' },
   analyze:   { label: '표현 분석',  desc: '반복·상투 표현 찾기' },
@@ -17,8 +19,10 @@ export const STEP_META: Record<PipelineStep, { label: string; desc: string }> = 
 };
 
 const TEMPLATES: Record<PipelineStep, string> = {
+  'episode-brief': '이번 회차가 반드시 달성해야 할 beat, 금지 사항, 독자 지식 목표, 인물 상태 목표를 JSON 브리프로 정리하라. 초안은 쓰지 않는다.',
+  'scene-plan': '승인된 회차 브리프를 장면 카드로 나누고 각 장면의 목적, 갈등, turn, target_length, tension, exit_hook을 정리하라. 초안은 쓰지 않는다.',
   context: '다음 회차의 집필 컨텍스트 팩을 구성하라. 이전 회차 요약, 등장 설정, 열린 떡밥을 정리한다.',
-  draft: '아래 컨텍스트와 원고를 바탕으로 다음 분량의 초안 후보 2개(A/B)를 작성하라. 후보는 .novelctl/runs/ 아래에 저장하고 원본을 수정하지 않는다.',
+  draft: '아래 컨텍스트와 회차 브리프/장면 계획을 바탕으로 다음 분량의 초안 후보 2개(A/B)를 작성하라. 계획에 없는 플롯 전환이나 설정 변경은 만들지 말고, 후보는 원본을 수정하지 않는다.',
   analyze: '원고의 반복 어휘, 상투적 반응 묘사, 관성적 대사 태그, AI 클리셰를 위치와 함께 보고하라.',
   qa: '원고를 플롯/연속성/문체/목소리/어휘 게이트로 검사하고 bindery:qa-json 블록을 포함해 보고하라.',
   revise: 'QA 이슈를 바탕으로 우선순위가 매겨진 수정 계획 체크리스트를 작성하라.',

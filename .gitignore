@@ -4,6 +4,8 @@ build/
 target/
 .DS_Store
 *.log
+*.pyc
+__pycache__/
 browser-smoke.png
 .snapshots/
 .superloopy/

@@ -110,6 +110,12 @@ export function collectGuidance(episode: string): GuidanceSection[] {
   if (prevSummary)
     sections.push(section(`이전 회차 요약 (${prev})`, `${prev} 산출물`, clip(prevSummary.content, 1100), 'reference', `artifact:summarize:${prev}`));
 
+  const episodeBrief = latestArtifact('episode-brief', episode);
+  if (episodeBrief) sections.push(section('회차 브리프', `${episode} 산출물`, clip(episodeBrief.content, 1400), 'hard', `artifact:episode-brief:${episode}`));
+
+  const scenePlan = latestArtifact('scene-plan', episode);
+  if (scenePlan) sections.push(section('장면 계획', `${episode} 산출물`, clip(scenePlan.content, 1800), 'hard', `artifact:scene-plan:${episode}`));
+
   const context = latestArtifact('context', episode);
   if (context) sections.push(section('컨텍스트 팩', `${episode} 산출물`, clip(context.content, 1600), 'reference', `artifact:context:${episode}`));
 

@@ -27,7 +27,17 @@
   import type { Creativity } from '$lib/stores/draftParamsStore';
   import { toasts } from '$lib/stores/toastStore';
   import { testAgentCli, writeFile, listTree } from '$lib/api/commands';
-  import { runQAAction, runRevisionAction, runDraftAction, runAnalyzeAction, runContextAction, runSummarizeAction, runCommitAction } from '$lib/actions/pipeline';
+  import {
+    runQAAction,
+    runRevisionAction,
+    runDraftAction,
+    runAnalyzeAction,
+    runContextAction,
+    runSummarizeAction,
+    runCommitAction,
+    runEpisodeBriefAction,
+    runScenePlanAction
+  } from '$lib/actions/pipeline';
   import { openFileInEditor } from '$lib/actions/project';
   import { buildGuidanceText } from '$lib/domain/guidance';
   import { assemblePrompt, STEP_META } from '$lib/domain/prompt';
@@ -68,7 +78,7 @@
   $: fileName = $editorStore.path?.split('/').pop() ?? '원고 미선택';
   $: episodeArtifacts = artifactsForEpisode($artifactStore, episode);
   // 집필(초안/수정) 프롬프트에 자동 포함되는 산출물 종류
-  const guidanceSteps = new Set<PipelineStep>(['context', 'summarize', 'qa', 'revise', 'analyze']);
+  const guidanceSteps = new Set<PipelineStep>(['episode-brief', 'scene-plan', 'context', 'summarize', 'qa', 'revise', 'analyze']);
   let viewArtifact: Artifact | null = null;
   $: if ($aiCommandContextStore?.command === 'continue') draftKind = 'continue';
   $: if ($aiCommandContextStore?.command === 'rewrite') draftKind = 'rewrite';
@@ -169,6 +179,8 @@
   }
 
   const runners: Record<PipelineStep, () => void | boolean | Promise<void | boolean>> = {
+    'episode-brief': runEpisodeBriefAction,
+    'scene-plan': runScenePlanAction,
     context: runContextAction,
     draft: () => runDraftAction(draftKind, $aiCommandContextStore ?? undefined),
     analyze: () => runAnalyzeAction(),
