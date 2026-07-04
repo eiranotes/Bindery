@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bindery — AI 파이프라인 워크벤치 재설계 (2026-07-04)</title>
+<style>
+  /* DESIGN.md 토큰 (light) */
+  :root {
+    --bg: #F4F2EE; --bg-1: #FBFAF8; --bg-2: #FFFFFF; --bg-desk: #FDFCFA;
+    --text: #2F2B26; --muted: #6F6A61; --faint: #A09A8E;
+    --line: rgba(72,66,56,.13); --line-strong: rgba(72,66,56,.24);
+    --accent: #315E63; --accent-2: #8B6F3D;
+    --ok: #1F9D6B; --warn: #B07C10; --bad: #CF4E63;
+    --accent-soft: rgba(49,94,99,.09); --ok-soft: rgba(31,157,107,.1); --warn-soft: rgba(176,124,16,.1); --bad-soft: rgba(207,78,99,.1);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 400 13.5px/1.45 Pretendard, 'Noto Sans KR', system-ui, sans-serif; }
+  .frame { max-width: 1280px; margin: 24px auto; border: 1px solid var(--line-strong); background: var(--bg-1); }
+  .note { max-width: 1280px; margin: 8px auto; color: var(--muted); font-size: 12px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+  .label { color: var(--faint); font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
+
+  /* 상단 바 — 파이프라인이 첫 탭 */
+  .topbar { display: flex; align-items: center; gap: 14px; padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--bg-1); }
+  .tabs { display: flex; gap: 2px; }
+  .tabs b { padding: 5px 12px; border-radius: 6px; font-weight: 650; color: var(--muted); }
+  .tabs b.on { background: var(--accent-soft); color: var(--text); }
+  .top-right { margin-left: auto; color: var(--muted); font-size: 12px; }
+
+  /* 타깃 밴드 — 무엇을 대상으로 실행하는지 한 줄 */
+  .target { display: flex; align-items: center; gap: 18px; padding: 9px 14px; border-bottom: 1px solid var(--line); background: var(--bg-2); flex-wrap: wrap; }
+  .target .kv { display: grid; gap: 1px; }
+  .target .kv b { font-size: 12.5px; font-weight: 650; }
+  .target select { font-size: 12.5px; }
+  .btn { border: 1px solid var(--line-strong); background: var(--bg-2); border-radius: 6px; padding: 6px 12px; font-size: 12.5px; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .status-fixed { color: var(--ok); font-weight: 700; }
+
+  .grid { display: grid; grid-template-columns: 300px minmax(0,1fr) 280px; min-height: 620px; }
+  .rail, .inspector { border-right: 1px solid var(--line); padding: 12px 14px; background: var(--bg-1); display: grid; gap: 6px; align-content: start; }
+  .inspector { border-right: 0; border-left: 1px solid var(--line); }
+  .center { min-width: 0; background: var(--bg-desk); display: grid; grid-template-rows: auto minmax(0,1fr); }
+
+  /* 좌: 단계 테이블 (카드 없음, 행+배지) */
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 7px 4px; border-bottom: 1px solid var(--line); font-size: 12px; vertical-align: middle; }
+  th { color: var(--faint); font-size: 10px; text-transform: uppercase; letter-spacing: .07em; }
+  .badge { display: inline-block; padding: 1px 6px; border: 1px solid var(--line-strong); border-radius: 4px; font-size: 10px; font-weight: 700; color: var(--muted); }
+  .badge.ai { color: var(--accent); border-color: var(--accent); }
+  .badge.hybrid { color: var(--accent-2); border-color: var(--accent-2); }
+  .badge.fallback { color: var(--warn); border-color: var(--warn); }
+  .st-done { color: var(--ok); } .st-run { color: var(--accent); } .st-fail { color: var(--bad); } .st-idle { color: var(--faint); }
+  .dur { color: var(--faint); font-variant-numeric: tabular-nums; }
+  .row-btn { border: 1px solid var(--line); background: transparent; border-radius: 5px; padding: 2px 8px; font-size: 11px; }
+
+  /* 중앙 탭 뷰어 */
+  .ctabs { display: flex; gap: 2px; padding: 8px 14px; border-bottom: 1px solid var(--line); background: var(--bg-1); }
+  .ctabs span { padding: 5px 11px; border-radius: 6px; color: var(--muted); font-size: 12.5px; }
+  .ctabs span.on { background: var(--accent-soft); color: var(--text); font-weight: 650; }
+  .viewer { padding: 14px 18px; overflow: auto; }
+
+  /* 아웃라인 테이블 (중앙 탭 '작품 플롯') */
+  .outline-actions { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+  .approve { color: var(--ok); font-weight: 700; }
+  .draft { color: var(--warn); font-weight: 700; }
+
+  /* 우 인스펙터 kv */
+  .kvt { display: grid; border-top: 1px solid var(--line); }
+  .kvt div { display: grid; grid-template-columns: 88px minmax(0,1fr); gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+  .kvt dt { color: var(--faint); } .kvt dd { margin: 0; }
+  .est { color: var(--faint); font-size: 10.5px; }
+
+  .warnband { margin: 0 0 10px; padding: 8px 10px; border: 1px solid var(--warn); background: var(--warn-soft); color: var(--warn); font-size: 12px; }
+</style>
+</head>
+<body>
+<p class="note">재설계 목표: ① AI 파이프라인을 최상위 화면으로 승격(작업실 하위 탭 제거) ② 연결/바이블 온보딩 스테이지 → 배너로 축약 ③ 작품 플롯(다회차 아웃라인) 승인 → 회차 실행 → 검토 → 픽스 흐름 ④ 카드 중첩 제거: 테이블·kv 행·스플릿 페인만 사용 ⑤ 단계별 AI/Static/Hybrid 배지 + 실측 모드·경과·사용량(추정 라벨) 표시.</p>
+
+<div class="frame">
+  <div class="topbar">
+    <b>Bindery</b>
+    <nav class="tabs"><b class="on">파이프라인</b><b>집필</b><b>자료</b><b>작업실</b></nav>
+    <span class="top-right">codex · gpt-5.3-codex (명시) · 연결됨</span>
+  </div>
+
+  <!-- 타깃 밴드: 이번 실행이 무엇을 대상으로 하는지 항상 표시 -->
+  <div class="target">
+    <div class="kv"><span class="label">회차</span><b><select><option>ep002 — 계약 보류</option></select></b></div>
+    <div class="kv"><span class="label">원고</span><b class="mono">story/chapters/ep002/manuscript.md · 3,412자</b></div>
+    <div class="kv"><span class="label">baseline</span><b class="mono">a91f4c02</b></div>
+    <div class="kv"><span class="label">상태</span><b class="status-fixed">ep001 픽스됨 → ep002 집필 중</b></div>
+    <div class="kv"><span class="label">후보</span><b>2개 요청</b></div>
+    <span style="margin-left:auto"></span>
+    <button class="btn primary">이번 회차 전체 실행</button>
+    <button class="btn">다음 회차 준비</button>
+  </div>
+
+  <div class="grid">
+    <!-- 좌 레일: 흐름 순서 그대로 -->
+    <aside class="rail">
+      <span class="label">작품 플롯</span>
+      <table>
+        <tr><td>아웃라인</td><td class="st-done">12화 · 승인 9</td><td><button class="row-btn">보기</button></td></tr>
+      </table>
+      <span class="label">회차 파이프라인 · ep002</span>
+      <table>
+        <tr><th>#</th><th>단계</th><th>실행</th><th>상태</th><th></th></tr>
+        <tr><td>1</td><td>회차 브리프</td><td><span class="badge hybrid">Hybrid→AI</span></td><td class="st-done">완료 <span class="dur">14.2s</span></td><td><button class="row-btn">실행</button></td></tr>
+        <tr><td>2</td><td>장면 계획</td><td><span class="badge hybrid">Hybrid→AI</span></td><td class="st-done">완료 <span class="dur">11.8s</span></td><td><button class="row-btn">실행</button></td></tr>
+        <tr><td>3</td><td>컨텍스트</td><td><span class="badge">Static</span></td><td class="st-done">완료 <span class="dur">0.1s</span></td><td><button class="row-btn">실행</button></td></tr>
+        <tr><td>4</td><td>초안 후보</td><td><span class="badge ai">Hybrid</span></td><td class="st-run">실행 중 · 경과 0:42 · 마지막 출력 8s 전</td><td></td></tr>
+        <tr><td>5</td><td>표현 분석</td><td><span class="badge">Static</span></td><td class="st-idle">대기</td><td><button class="row-btn">실행</button></td></tr>
+        <tr><td>6</td><td>QA</td><td><span class="badge hybrid">Hybrid</span></td><td class="st-idle">대기</td><td><button class="row-btn">실행</button></td></tr>
+        <tr><td>7</td><td>수정 계획</td><td><span class="badge hybrid">Hybrid</span></td><td class="st-idle">대기</td><td><button class="row-btn">실행</button></td></tr>
+        <tr><td>8</td><td>요약</td><td><span class="badge fallback">Hybrid→로컬</span></td><td class="st-idle">대기</td><td><button class="row-btn">실행</button></td></tr>
+        <tr><td>9</td><td>기록·픽스</td><td><span class="badge">Static</span></td><td class="st-idle">대기</td><td><button class="row-btn">실행</button></td></tr>
+      </table>
+      <span class="label">Run 히스토리</span>
+      <table>
+        <tr><td class="mono">0704_1502</td><td>ep001</td><td class="st-done">완료 · ~41.2k자</td></tr>
+        <tr><td class="mono">0704_1381</td><td>ep001</td><td class="st-fail">QA 실패 중단</td></tr>
+      </table>
+    </aside>
+
+    <!-- 중앙: 뷰어 (아웃라인/산출물/프롬프트/검토/QA) -->
+    <section class="center">
+      <nav class="ctabs"><span>산출물</span><span>프롬프트</span><span>컨텍스트</span><span class="on">작품 플롯</span><span>검토</span></nav>
+      <div class="viewer">
+        <div class="outline-actions">
+          <button class="btn primary">AI 아웃라인 제안</button>
+          <label>회차 수 <input type="number" value="12" style="width:56px"></label>
+          <button class="btn">승인 회차 → 플롯 보드 반영</button>
+          <span class="est">근거: canon/setting-bible.md · notes/source-intake.md · 열린 떡밥</span>
+        </div>
+        <table>
+          <tr><th>회차</th><th>로그라인</th><th>필수 beat</th><th>떡밥</th><th>리스크</th><th>승인</th></tr>
+          <tr><td class="mono">ep001</td><td>후보 자료에서 은폐된 의료 리스크를 발견한다</td><td>발견 · 대립 · 보류 선언</td><td>medical-risk</td><td>-</td><td class="approve">승인</td></tr>
+          <tr><td class="mono">ep002</td><td>계약 보류의 여파로 길드 정치가 개입한다</td><td>압박 · 대안 등장 · 재정렬</td><td>guild-politics</td><td>인물 동기 근거 약함</td><td class="approve">승인</td></tr>
+          <tr><td class="mono">ep003</td><td>대안 후보의 검증 과정에서 새 균열 발견</td><td>검증 · 반전 훅</td><td>medical-risk, eira-arc</td><td>-</td><td class="draft">검토 필요</td></tr>
+        </table>
+        <div class="warnband" style="margin-top:12px">검토 탭 예시 — 후보 diff는 생성 시점 baseline(a91f4c02) 기준. 현재 원고가 baseline과 다르면 경고 후 「현재 원고 기준으로 보기」로 전환해야 hunk 적용 가능. QA 버튼은 「현재 원고 QA」와 「선택 후보 QA」로 분리, 결과에 검사 대상·hash 명시.</div>
+      </div>
+    </section>
+
+    <!-- 우 인스펙터 -->
+    <aside class="inspector">
+      <span class="label">입력 기준</span>
+      <dl class="kvt">
+        <div><dt>아웃라인</dt><dd>ep002 승인 row 1개</dd></div>
+        <div><dt>회차 플롯</dt><dd>2개 장면</dd></div>
+        <div><dt>설정 자료</dt><dd>4개 문서 · 12개 항목</dd></div>
+        <div><dt>이전 회차</dt><dd>ep001 픽스본 + 요약</dd></div>
+      </dl>
+      <span class="label">실행 설정</span>
+      <dl class="kvt">
+        <div><dt>실행기</dt><dd>codex CLI</dd></div>
+        <div><dt>모델</dt><dd>gpt-5.3-codex <span class="est">(명시)</span></dd></div>
+        <div><dt>분량</dt><dd>약 5,000자</dd></div>
+        <div><dt>후보 수</dt><dd>2개</dd></div>
+      </dl>
+      <span class="label">사용량 · 이번 run</span>
+      <dl class="kvt">
+        <div><dt>브리프</dt><dd>입력 11.2k자 → 출력 2.1k자 <span class="est">≈6.7k tok 추정</span></dd></div>
+        <div><dt>장면계획</dt><dd>입력 9.8k자 → 출력 3.0k자 <span class="est">≈6.4k tok 추정</span></dd></div>
+        <div><dt>합계</dt><dd><span class="est">추정치 — CLI가 정확 사용량을 보고하지 않음</span></dd></div>
+      </dl>
+      <span class="label">위험 · 결정</span>
+      <dl class="kvt">
+        <div><dt>QA</dt><dd>미실행</dd></div>
+        <div><dt>결정</dt><dd class="mono">run-all · 15:02</dd></div>
+      </dl>
+    </aside>
+  </div>
+</div>
+
+<p class="note">환경설정(AI Runner) 추가 행: 「모델」 텍스트 입력(비우면 CLI 기본), custom 실행기는 「모델 인자 템플릿」(예: --model {model}). 연결 테스트 결과에 provider·명령·모델 표기. 온보딩 스테이지(01 연결/02 바이블)는 삭제하고, 미연결/바이블 없음은 워크벤치 상단 배너 1줄 + 이동 버튼으로 대체.</p>
+</body>
+</html>

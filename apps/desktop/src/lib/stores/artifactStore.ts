@@ -6,7 +6,8 @@ import { readFile, writeFile } from '$lib/api/commands';
 import { projectStore } from '$lib/stores/projectStore';
 import type { PipelineStep } from '$lib/domain/prompt';
 
-export type ArtifactStep = PipelineStep;
+/** 파이프라인 단계 + 작품 단위 산출물(outline). outline은 episode='work'로 기록한다. */
+export type ArtifactStep = PipelineStep | 'outline';
 
 export type Artifact = {
   id: string;

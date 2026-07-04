@@ -1,5 +1,7 @@
 import { parseFrontmatter } from './frontmatter';
 import type { PlotGrid, PlotRow, Tension } from './plot';
+import type { EpisodeOutlineRow } from './outline';
+import { renderOutlineRowContext } from './outline';
 
 export type CharacterStateTarget = {
   character: string;
@@ -46,12 +48,16 @@ export type ScenePlan = {
   warnings: string[];
 };
 
-type PlanningInput = {
+export type PlanningInput = {
   episode: string;
   manuscript: string;
   plotGrid: PlotGrid | null;
   openThreads: string;
   previousSummary?: string;
+  /** 이전 회차의 최종 원고(사람이 수정한 파일 기준) 끝부분 발췌 — 연속성 근거 */
+  previousManuscriptTail?: string;
+  /** 승인된 작품 아웃라인에서 이 회차의 row */
+  outlineRow?: EpisodeOutlineRow | null;
   lengthTarget?: number;
   sourceContext?: string;
   codexContext?: string;
@@ -146,20 +152,25 @@ export function buildLocalEpisodeBrief(input: PlanningInput): EpisodeBrief {
   const characters = metadataCharacters(input.manuscript);
   const lead = firstParagraphs(input.manuscript, 1)[0];
   const sourceDigest = clampLine(input.sourceContext || input.codexContext || '', 220);
+  const outlineBeats = input.outlineRow?.beats?.length ? input.outlineRow.beats : [];
   const hitBeats = plotBeats.length
     ? plotBeats
-    : lead
-      ? [`현재 원고의 핵심 상황을 다음 결정으로 전진시킨다: ${lead}`]
-      : sourceDigest
-        ? [`원천 자료의 중심 갈등을 이번 회차의 선택과 훅으로 구체화한다: ${sourceDigest}`]
-      : ['이번 회차의 중심 갈등, 선택, 다음 훅을 명확히 만든다.'];
+    : outlineBeats.length
+      ? outlineBeats
+      : lead
+        ? [`현재 원고의 핵심 상황을 다음 결정으로 전진시킨다: ${lead}`]
+        : sourceDigest
+          ? [`원천 자료의 중심 갈등을 이번 회차의 선택과 훅으로 구체화한다: ${sourceDigest}`]
+          : ['이번 회차의 중심 갈등, 선택, 다음 훅을 명확히 만든다.'];
 
   return {
     schema_version: 'bindery.episode_brief.v1',
     episode: input.episode,
-    logline: rows.length
-      ? `${input.episode}은 ${rows.map((row) => row.title).join(' -> ')} 흐름으로 플롯 beat를 전진시킨다.`
-      : `${input.episode}은 현재 원고 상태를 기준으로 중심 갈등을 정리하고 다음 장면의 목표를 고정한다.`,
+    logline: input.outlineRow?.logline
+      ? input.outlineRow.logline
+      : rows.length
+        ? `${input.episode}은 ${rows.map((row) => row.title).join(' -> ')} 흐름으로 플롯 beat를 전진시킨다.`
+        : `${input.episode}은 현재 원고 상태를 기준으로 중심 갈등을 정리하고 다음 장면의 목표를 고정한다.`,
     must_hit_beats: hitBeats,
     must_not_happen: ['확정되지 않은 설정 변경을 원고에 단정하지 않는다.', '장기 영향 사건은 brief/scene plan에 없는 경우 새로 확정하지 않는다.'],
     reader_knowledge_target: threads.length
@@ -439,6 +450,9 @@ export function episodeBriefPrompt(input: PlanningInput): string {
     `## Episode`,
     input.episode,
     '',
+    '## Approved Episode Outline (작품 아웃라인에서 이 회차의 승인 계획 — hard constraint)',
+    input.outlineRow ? renderOutlineRowContext(input.outlineRow) : '(승인된 아웃라인 row 없음)',
+    '',
     '## Plot Board Rows',
     plotLines,
     '',
@@ -453,6 +467,9 @@ export function episodeBriefPrompt(input: PlanningInput): string {
     '',
     '## Previous Summary',
     input.previousSummary?.trim() || '(없음)',
+    '',
+    '## Previous Episode Final Manuscript Ending (사람이 검수·수정한 최종본의 끝부분 — 연속성의 1차 근거)',
+    input.previousManuscriptTail?.trim() || '(첫 회차이거나 이전 회차 원고 없음)',
     '',
     '## Current Manuscript Excerpt',
     bodyText(input.manuscript).slice(0, 9000) || '(빈 원고)'

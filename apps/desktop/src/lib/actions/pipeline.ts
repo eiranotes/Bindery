@@ -1,6 +1,6 @@
 // Action layer: single place that runs pipeline steps and writes results into
-// stores. Both the pipeline bar and the editor's AI command menu call these,
-// so behaviour stays consistent no matter how a step is triggered.
+// stores. Both the pipeline workbench and the editor's AI command menu call
+// these, so behaviour stays consistent no matter how a step is triggered.
 import { get } from 'svelte/store';
 import {
   runQA,
@@ -20,6 +20,7 @@ import type { QAIssue } from '$lib/domain/reports';
 import { settingsStore } from '$lib/stores/settingsStore';
 import { validateCandidateMarkdown, validateQAContract } from '$lib/domain/agentContracts';
 import { manuscriptContextWindow } from '$lib/domain/prompt';
+import type { PipelineStep } from '$lib/domain/prompt';
 import type { PlotGrid } from '$lib/domain/plot';
 import {
   draftCandidateEnvelopeSchemaText,
@@ -38,6 +39,18 @@ import {
   scenePlanPrompt,
   parseScenePlan
 } from '$lib/domain/planning';
+import {
+  buildLocalOutline,
+  outlinePrompt,
+  parseEpisodeOutline,
+  renderOutlineArtifact,
+  applyOutlineToPlotGrid,
+  outlineRowFor
+} from '$lib/domain/outline';
+import type { EpisodeOutline, EpisodeOutlineRow } from '$lib/domain/outline';
+import { outlineStore, persistOutline } from '$lib/stores/outlineStore';
+import { setEpisodeProgress } from '$lib/stores/episodeProgressStore';
+import { contentHash, shortHash } from '$lib/domain/hash';
 import { checkStyleCompliance } from '$lib/domain/style';
 import { styleStore } from '$lib/stores/styleStore';
 import { latestArtifact } from '$lib/stores/artifactStore';
@@ -46,14 +59,18 @@ import type { AnalysisMode } from '$lib/domain/analysis';
 import { projectStore } from '$lib/stores/projectStore';
 import { editorStore } from '$lib/stores/editorStore';
 import { qaStore } from '$lib/stores/qaStore';
+import type { QATarget } from '$lib/stores/qaStore';
 import { revisionStore } from '$lib/stores/revisionStore';
 import { candidateStore } from '$lib/stores/candidateStore';
 import { analysisStore } from '$lib/stores/analysisStore';
 import { codexStore } from '$lib/stores/codexStore';
 import { plotStore } from '$lib/stores/plotStore';
+import { gotoPipeline } from '$lib/stores/uiStore';
 import { uiStore } from '$lib/stores/uiStore';
-import { gotoStage } from '$lib/stores/pipelineStore';
+import { setStepMode } from '$lib/stores/pipelineStore';
+import type { StepExecMode } from '$lib/stores/pipelineStore';
 import { recordArtifact } from '$lib/stores/artifactStore';
+import { recordRunStep, recordHumanDecision, runStore } from '$lib/stores/runStore';
 import { buildGuidanceText } from '$lib/domain/guidance';
 import { draftParamsStore } from '$lib/stores/draftParamsStore';
 import { toasts } from '$lib/stores/toastStore';
@@ -79,6 +96,46 @@ function episode(): string {
 function prevEpisode(ep: string): string | null {
   const n = parseInt(ep.replace(/\D/g, ''), 10);
   return n > 1 ? `ep${String(n - 1).padStart(3, '0')}` : null;
+}
+
+// ---------------------------------------------------------------------------
+// 실행 관측 — 단계별 실제 사용 모드(agent/fallback/static)와 입출력 문자수를
+// run 기록에 남긴다. 토큰은 CLI가 보고하지 않으므로 추정치로만 기록한다.
+// ---------------------------------------------------------------------------
+
+type StepUsageAcc = { promptChars: number; outputChars: number; calls: number };
+const stepUsage = new Map<PipelineStep, StepUsageAcc>();
+
+function beginStepUsage(step: PipelineStep) {
+  stepUsage.set(step, { promptChars: 0, outputChars: 0, calls: 0 });
+}
+
+/** runAgentText 래퍼 — 입출력 크기를 단계별로 누적한다. */
+async function agentCall(step: PipelineStep, prompt: string, label: string) {
+  const acc = stepUsage.get(step) ?? { promptChars: 0, outputChars: 0, calls: 0 };
+  acc.promptChars += prompt.length;
+  acc.calls += 1;
+  stepUsage.set(step, acc);
+  const result = await runAgentText(projectRoot(), prompt, label);
+  if (result.ok) acc.outputChars += result.text.length;
+  return result;
+}
+
+/** 한국어+마크다운 대략 2자/token — 표시용 추정치 (과금 계산 아님). */
+function estimateTokens(chars: number): number {
+  return Math.ceil(chars / 2);
+}
+
+function reportStepExec(step: PipelineStep, mode: StepExecMode) {
+  setStepMode(step, mode);
+  const acc = stepUsage.get(step);
+  recordRunStep(step, {
+    mode,
+    promptChars: acc?.promptChars ?? 0,
+    outputChars: acc?.outputChars ?? 0,
+    tokenEstimate: acc && acc.promptChars + acc.outputChars > 0 ? estimateTokens(acc.promptChars + acc.outputChars) : undefined,
+    tokenSource: acc && acc.calls > 0 ? 'estimated' : 'unavailable'
+  });
 }
 
 async function readOpenThreads(): Promise<string> {
@@ -139,10 +196,40 @@ function codexPlanningContext(): string {
     .join('\n');
 }
 
-function previousSummaryFor(ep: string): string {
+/** 이전 회차 요약 — 메모리 산출물이 없으면 디스크(canon/summaries)에서 읽는다. */
+async function previousSummaryFor(ep: string): Promise<string> {
   const prev = prevEpisode(ep);
-  const prevSummary = prev ? latestArtifact('summarize', prev) : null;
-  return prevSummary?.content ?? '';
+  if (!prev) return '';
+  const prevSummary = latestArtifact('summarize', prev);
+  if (prevSummary?.content) return prevSummary.content;
+  try {
+    return await readFile(projectRoot(), `canon/summaries/${prev}.md`);
+  } catch {
+    return '';
+  }
+}
+
+/** 이전 회차의 최종 원고 끝부분 — 사람이 수작업으로 수정한 파일이 진실이다.
+ *  다음 회차 계획이 "수정 전 AI 요약"이 아니라 실제 확정 원고를 잇게 한다. */
+async function previousManuscriptTail(ep: string): Promise<string> {
+  const prev = prevEpisode(ep);
+  if (!prev) return '';
+  const currentPath = get(editorStore).path || '';
+  const candidates = [
+    currentPath.includes(ep) ? currentPath.replace(ep, prev) : '',
+    `story/chapters/${prev}/manuscript.md`
+  ].filter(Boolean);
+  for (const path of candidates) {
+    try {
+      const raw = await readFile(projectRoot(), path);
+      const body = raw.replace(/^---[\s\S]*?\n---\n?/, '').trim();
+      if (!body) continue;
+      return body.length > 2400 ? `...(앞부분 생략)\n${body.slice(-2400)}` : body;
+    } catch {
+      /* try next candidate */
+    }
+  }
+  return '';
 }
 
 async function planningInputFor(ep: string) {
@@ -151,23 +238,108 @@ async function planningInputFor(ep: string) {
     manuscript: get(editorStore).content,
     plotGrid: await loadPlotGridSnapshot(),
     openThreads: await readOpenThreads(),
-    previousSummary: previousSummaryFor(ep),
+    previousSummary: await previousSummaryFor(ep),
+    previousManuscriptTail: await previousManuscriptTail(ep),
+    outlineRow: outlineRowFor(get(outlineStore).outline, ep),
     lengthTarget: get(draftParamsStore).lengthTarget,
     sourceContext: await readPlanningSourceContext(),
     codexContext: codexPlanningContext()
   };
 }
 
-export async function runEpisodeBriefAction(): Promise<boolean> {
+// ---------------------------------------------------------------------------
+// 작품 아웃라인 — 바이블/원천에서 N화 회별 아웃라인을 제안하고 승인만 반영한다.
+// ---------------------------------------------------------------------------
+
+export async function runOutlineAction(episodeCount: number): Promise<boolean> {
+  outlineStore.update((s) => ({ ...s, generating: true }));
   try {
-    const ep = episode();
+    const input = {
+      episodeCount,
+      sourceContext: await readPlanningSourceContext(),
+      codexContext: codexPlanningContext(),
+      openThreads: await readOpenThreads(),
+      plotGrid: await loadPlotGridSnapshot(),
+      previousOutline: get(outlineStore).outline
+    };
+    const agent = await runAgentText(projectRoot(), outlinePrompt(input), 'episode-outline');
+    const parsed = agent.ok && agent.text.trim() ? parseEpisodeOutline(agent.text, episodeCount) : null;
+    const outline = parsed ?? buildLocalOutline(input);
+    // 기존 승인 상태는 회차 기준으로 보존한다 — 재제안이 사람의 승인을 지우면 안 된다.
+    const previous = get(outlineStore).outline;
+    if (previous) {
+      for (const row of outline.rows) {
+        const before = previous.rows.find((r) => r.episode === row.episode);
+        if (before?.status === 'approved' && outline.source === 'local') row.status = 'approved';
+      }
+    }
+    await persistOutline(outline);
+    recordArtifact('outline', 'work', outline.source === 'agent' ? `작품 아웃라인 · ${outline.rows.length}화` : `작품 아웃라인(로컬) · ${outline.rows.length}화`, renderOutlineArtifact(outline));
+    outlineStore.update((s) => ({ ...s, generating: false }));
+    toasts.push(
+      outline.source === 'agent'
+        ? `아웃라인 ${outline.rows.length}화 제안됨 · 검토 후 회차별로 승인하세요`
+        : `로컬 뼈대 아웃라인 ${outline.rows.length}화 생성됨 · AI 연결 후 다시 실행하면 정밀해집니다`,
+      outline.source === 'agent' ? 'ok' : 'warn'
+    );
+    return true;
+  } catch {
+    outlineStore.update((s) => ({ ...s, generating: false }));
+    toasts.push('아웃라인 생성 실패', 'bad');
+    return false;
+  }
+}
+
+export async function updateOutlineRowAction(episodeId: string, patch: Partial<EpisodeOutlineRow>): Promise<void> {
+  const current = get(outlineStore).outline;
+  if (!current) return;
+  const next: EpisodeOutline = {
+    ...current,
+    rows: current.rows.map((row) => (row.episode === episodeId ? { ...row, ...patch, episode: row.episode } : row)),
+    updatedAt: new Date().toISOString()
+  };
+  await persistOutline(next);
+}
+
+/** 승인 — 지정 회차(생략 시 전체 draft)를 approved로 바꾸고 플롯 보드에 반영한다. */
+export async function approveOutlineAction(episodeIds?: string[]): Promise<void> {
+  const current = get(outlineStore).outline;
+  if (!current) {
+    toasts.push('승인할 아웃라인이 없습니다. 먼저 아웃라인을 생성하세요', 'warn');
+    return;
+  }
+  const targets = new Set(episodeIds ?? current.rows.map((row) => row.episode));
+  const next: EpisodeOutline = {
+    ...current,
+    rows: current.rows.map((row) => (targets.has(row.episode) ? { ...row, status: 'approved' as const } : row)),
+    updatedAt: new Date().toISOString()
+  };
+  await persistOutline(next);
+  const grid = await loadPlotGridSnapshot();
+  const { grid: merged, added } = applyOutlineToPlotGrid(next, grid);
+  plotStore.update((s) => ({ ...s, grid: merged }));
+  await savePlotAction();
+  recordHumanDecision('approve-outline', `${targets.size}개 회차${added ? ` · 플롯 row ${added}개 추가` : ''}`);
+  recordArtifact('outline', 'work', `작품 아웃라인 승인 · ${next.rows.filter((r) => r.status === 'approved').length}/${next.rows.length}화`, renderOutlineArtifact(next));
+  toasts.push(added ? `아웃라인 승인 · 플롯 보드에 ${added}개 회차 row 추가됨` : '아웃라인 승인 · 플롯 보드는 기존 row 유지', 'ok');
+}
+
+// ---------------------------------------------------------------------------
+// 회차 계획 단계
+// ---------------------------------------------------------------------------
+
+export async function runEpisodeBriefAction(): Promise<boolean> {
+  const ep = episode();
+  beginStepUsage('episode-brief');
+  try {
     const input = await planningInputFor(ep);
     const fallback = buildLocalEpisodeBrief(input);
-    const agent = await runAgentText(projectRoot(), episodeBriefPrompt(input), `episode-brief-${ep}`);
+    const agent = await agentCall('episode-brief', episodeBriefPrompt(input), `episode-brief-${ep}`);
     const brief = agent.ok && agent.text.trim() ? parseEpisodeBrief(agent.text, fallback) : null;
     const finalBrief = brief ?? fallback;
     const content = renderEpisodeBriefArtifact(finalBrief);
     recordArtifact('episode-brief', ep, finalBrief.source === 'agent' ? '회차 브리프' : '회차 브리프(로컬)', content);
+    reportStepExec('episode-brief', finalBrief.source === 'agent' ? 'agent' : 'fallback');
     toasts.push(
       finalBrief.source === 'agent' ? '회차 브리프 생성됨 · 장면 계획의 기준으로 사용' : '로컬 회차 브리프 생성됨 · AI 연결 후 다시 실행하면 더 정밀해집니다',
       finalBrief.source === 'agent' ? 'ok' : 'warn'
@@ -180,8 +352,9 @@ export async function runEpisodeBriefAction(): Promise<boolean> {
 }
 
 export async function runScenePlanAction(): Promise<boolean> {
+  const ep = episode();
+  beginStepUsage('scene-plan');
   try {
-    const ep = episode();
     const briefArtifact = latestArtifact('episode-brief', ep);
     if (!briefArtifact) {
       toasts.push('장면 계획 전에 회차 브리프를 먼저 실행하세요', 'warn');
@@ -191,11 +364,12 @@ export async function runScenePlanAction(): Promise<boolean> {
     const briefFallback = buildLocalEpisodeBrief(input);
     const brief = parseEpisodeBrief(briefArtifact.content, briefFallback) ?? briefFallback;
     const fallback = buildLocalScenePlan(input, brief);
-    const agent = await runAgentText(projectRoot(), scenePlanPrompt(input, brief), `scene-plan-${ep}`);
+    const agent = await agentCall('scene-plan', scenePlanPrompt(input, brief), `scene-plan-${ep}`);
     const plan = agent.ok && agent.text.trim() ? parseScenePlan(agent.text, fallback) : null;
     const finalPlan = plan ?? fallback;
     const content = renderScenePlanArtifact(finalPlan);
     recordArtifact('scene-plan', ep, finalPlan.source === 'agent' ? '장면 계획' : '장면 계획(로컬)', content);
+    reportStepExec('scene-plan', finalPlan.source === 'agent' ? 'agent' : 'fallback');
     toasts.push(
       finalPlan.source === 'agent' ? `장면 계획 생성됨 · ${finalPlan.scenes.length}개 카드` : `로컬 장면 계획 생성됨 · ${finalPlan.scenes.length}개 카드`,
       finalPlan.source === 'agent' ? 'ok' : 'warn'
@@ -230,13 +404,13 @@ function normalizeQAAgentOutput(text: string, episodeId: string): { ok: boolean;
 }
 
 async function runQATextWithRepair(ep: string, prompt: string): Promise<string | null> {
-  const agent = await runAgentText(projectRoot(), prompt, `qa-${ep}`);
+  const agent = await agentCall('qa', prompt, `qa-${ep}`);
   if (!agent.ok) return null;
   const normalized = normalizeQAAgentOutput(agent.text, ep);
   if (normalized.ok && normalized.markdown) return normalized.markdown;
 
-  const repair = await runAgentText(
-    projectRoot(),
+  const repair = await agentCall(
+    'qa',
     repairJsonPrompt('QAReportEnvelope', qaReportEnvelopeSchemaText(ep), agent.text, normalized.reason ?? 'invalid QA output'),
     `qa-repair-${ep}`
   );
@@ -284,12 +458,12 @@ function candidateFromEnvelope(envelope: NonNullable<ReturnType<typeof validateD
 
 async function runDraftEnvelopeCandidate(ep: string, kind: string, base: string, guidance: string): Promise<Candidate[] | null> {
   const prompt = buildDraftEnvelopePrompt(ep, kind, base, guidance);
-  const agent = await runAgentText(projectRoot(), prompt, `draft-envelope-${ep}`);
+  const agent = await agentCall('draft', prompt, `draft-envelope-${ep}`);
   if (!agent.ok) return null;
   let check = validateDraftCandidateEnvelope(agent.text, base);
   if (!check.ok) {
-    const repair = await runAgentText(
-      projectRoot(),
+    const repair = await agentCall(
+      'draft',
       repairJsonPrompt('DraftCandidateEnvelope', draftCandidateEnvelopeSchemaText(), agent.text, check.reason ?? 'invalid draft candidate output'),
       `draft-envelope-repair-${ep}`
     );
@@ -301,7 +475,7 @@ async function runDraftEnvelopeCandidate(ep: string, kind: string, base: string,
 }
 
 /** 실제 QA 프롬프트 — 문체 지침·이전 회차 요약을 포함해 게이트 검사를 요청한다. */
-function buildQAPrompt(ep: string, manuscript: string): string {
+function buildQAPrompt(ep: string, manuscript: string, targetLabel: string): string {
   const style = get(styleStore);
   const prev = prevEpisode(ep);
   const prevSummary = prev ? latestArtifact('summarize', prev) : null;
@@ -309,7 +483,9 @@ function buildQAPrompt(ep: string, manuscript: string): string {
   const scenePlan = latestArtifact('scene-plan', ep);
   const parts = [
     `너는 한국어 장편 연재소설의 QA 검수자다. 아래 원고를 게이트별로 0~100점 채점하고 이슈를 도출하라.`,
+    `검사 대상: ${targetLabel}`,
     `게이트: 플롯, 회차 브리프 준수, 장면 계획 준수, 연속성, 문체, 목소리, 어휘, 장면 패턴${style.guideline ? ', 문체 준수' : ''}`,
+    `시점(POV) 위반은 본문에서 직접 인용 가능한 줄 근거가 있을 때만 fail로 판정하고, 근거가 추정이면 info로 낮춰라.`,
     `보고서는 마크다운으로 쓰되, 마지막에 반드시 아래 형식의 JSON 블록을 포함하라:`,
     `<!-- bindery:qa-json`,
     `발췌 입력인 경우 앞/중간/끝을 모두 근거로 보되, 발췌 밖 사건은 추정이라고 표시하라.`,
@@ -328,7 +504,7 @@ function buildQAPrompt(ep: string, manuscript: string): string {
   if (scenePlan) {
     parts.push('', '## 장면 계획: 장면 기능/turn/exit hook 게이트 기준', scenePlan.content.slice(0, 2200));
   }
-  parts.push('', `## 원고 (${ep})`, manuscriptContextWindow(manuscript, {
+  parts.push('', `## 원고 (${ep} · ${targetLabel})`, manuscriptContextWindow(manuscript, {
     maxChars: 14000,
     frontChars: 5200,
     middleChars: 3000,
@@ -352,30 +528,51 @@ function styleComplianceIssues(content: string): QAIssue[] {
   }));
 }
 
-export async function runQAAction(): Promise<boolean> {
-  qaStore.update((s) => ({ ...s, running: true }));
+export type QATargetKind = 'current-editor' | 'candidate';
+
+/** QA — 기본은 현재 에디터 원고, 'candidate'면 선택된 후보 본문을 검사한다.
+ *  결과에는 검사 대상과 content hash가 함께 남는다. */
+export async function runQAAction(targetKind: QATargetKind = 'current-editor'): Promise<boolean> {
+  const ep = episode();
+  const cand = get(candidateStore);
+  const active = cand.candidates.find((c) => c.id === cand.activeId) ?? null;
+  if (targetKind === 'candidate' && !active) {
+    toasts.push('선택된 후보가 없습니다. 후보를 먼저 선택하세요', 'warn');
+    return false;
+  }
+  const manuscript = targetKind === 'candidate' && active ? active.content : get(editorStore).content;
+  const target: QATarget = targetKind === 'candidate' && active
+    ? { kind: 'candidate', label: `${active.label} (후보)`, episode: ep, contentHash: contentHash(manuscript), candidateId: active.id, candidateLabel: active.label }
+    : { kind: 'current-editor', label: '현재 원고', episode: ep, contentHash: contentHash(manuscript) };
+
+  qaStore.update((s) => ({ ...s, running: true, target }));
+  beginStepUsage('qa');
   try {
-    const ep = episode();
-    const manuscript = get(editorStore).content;
     // 1순위: 에이전트 실검사. 실패 시 novelctl 보고서/기본 보고서로 폴백.
     let report = '';
-    const agentReport = await runQATextWithRepair(ep, buildQAPrompt(ep, manuscript));
+    let usedAgent = false;
+    const agentReport = await runQATextWithRepair(ep, buildQAPrompt(ep, manuscript, target.label));
     const qaContract = agentReport ? validateQAContract(agentReport) : { ok: false, reason: 'agent unavailable' };
     if (agentReport && qaContract.ok) {
       report = agentReport;
+      usedAgent = true;
     } else {
       report = (await runQA(projectRoot(), ep)).report;
     }
     const parsed = parseQAReport(report);
-    // 클라이언트 문체 준수 게이트 — 금지어 스캔 이슈를 항상 병합
+    // 클라이언트 문체 준수 게이트 — 금지어 스캔 이슈를 항상 병합 (검사 대상 본문 기준)
     const compliance = styleComplianceIssues(manuscript);
     if (compliance.length) {
       parsed.issues = [...compliance, ...parsed.issues];
       if (parsed.verdict === 'pass') parsed.verdict = 'warn';
     }
-    qaStore.update((s) => ({ ...s, report: parsed, raw: report, running: false }));
-    recordArtifact('qa', ep, `QA 보고서 · ${verdictLabel[parsed.verdict]} ${parsed.score ?? ''}`.trim(), report);
-    toasts.push(`QA 완료 ${verdictLabel[parsed.verdict]} (${parsed.score ?? '-'})${compliance.length ? ` · 금지 표현 ${compliance.length}건` : ''}`, parsed.verdict === 'fail' ? 'bad' : parsed.verdict === 'warn' ? 'warn' : 'ok');
+    qaStore.update((s) => ({ ...s, report: parsed, raw: report, running: false, target }));
+    recordArtifact('qa', ep, `QA ${verdictLabel[parsed.verdict]} ${parsed.score ?? ''} · 대상 ${target.label} · ${shortHash(manuscript)}`.trim(), report);
+    reportStepExec('qa', usedAgent ? 'agent' : 'fallback');
+    toasts.push(
+      `QA 완료(${target.label}) ${verdictLabel[parsed.verdict]} (${parsed.score ?? '-'})${compliance.length ? ` · 금지 표현 ${compliance.length}건` : ''}`,
+      parsed.verdict === 'fail' ? 'bad' : parsed.verdict === 'warn' ? 'warn' : 'ok'
+    );
     return parsed.verdict !== 'fail';
   } catch (e) {
     qaStore.update((s) => ({ ...s, running: false }));
@@ -394,7 +591,7 @@ function buildRevisionPrompt(ep: string): string {
     `형식: 각 항목을 "- [ ] [fail|warn|info] <구체적 수정 지시>" 한 줄로. 심각도 높은 것부터. 항목은 10개 이하.`,
     `수정 지시는 실행 가능한 동사형으로 쓰고, 원문 위치(L줄번호)가 있으면 유지하라.`,
     '',
-    `## QA 이슈 (${ep})`,
+    `## QA 이슈 (${ep}${qa.target ? ` · 대상 ${qa.target.label}` : ''})`,
     issueLines || '(이슈 없음: 리듬과 반복 관점의 개선 항목을 스스로 제안하라)',
     '',
     '## QA 보고서 원문',
@@ -403,19 +600,23 @@ function buildRevisionPrompt(ep: string): string {
 }
 
 export async function runRevisionAction(): Promise<boolean> {
+  const ep = episode();
   revisionStore.update((s) => ({ ...s, generating: true }));
+  beginStepUsage('revise');
   try {
-    const ep = episode();
     // 1순위: QA 이슈 기반 에이전트 생성. 실패 시 기본 계획 폴백.
     let plan = '';
-    const agent = await runAgentText(projectRoot(), buildRevisionPrompt(ep), `revise-${ep}`);
+    let usedAgent = false;
+    const agent = await agentCall('revise', buildRevisionPrompt(ep), `revise-${ep}`);
     if (agent.ok && agent.text.trim()) {
       plan = agent.text;
+      usedAgent = true;
     } else {
       plan = (await generateRevisionPlan(projectRoot(), ep)).plan;
     }
     revisionStore.update((s) => ({ ...s, items: parseRevisionPlan(plan), raw: plan, generating: false }));
     recordArtifact('revise', ep, '수정 계획', plan);
+    reportStepExec('revise', usedAgent ? 'agent' : 'fallback');
     toasts.push('수정 계획 생성됨', 'ok');
     return true;
   } catch {
@@ -430,7 +631,9 @@ export async function runRevisionAction(): Promise<boolean> {
 export async function runContextAction() {
   const ep = episode();
   const prev = prevEpisode(ep);
-  const prevSummary = prev ? latestArtifact('summarize', prev) : null;
+  const prevSummary = await previousSummaryFor(ep);
+  const prevTail = await previousManuscriptTail(ep);
+  const outlineRow = outlineRowFor(get(outlineStore).outline, ep);
   const episodeBrief = latestArtifact('episode-brief', ep);
   const scenePlan = latestArtifact('scene-plan', ep);
   const openThreads = await readOpenThreads();
@@ -439,6 +642,9 @@ export async function runContextAction() {
   const content = [
     `# 컨텍스트 팩: ${ep}`,
     '',
+    '## 승인 아웃라인 (이 회차)',
+    outlineRow ? `- [${outlineRow.status === 'approved' ? '승인' : '미승인'}] ${outlineRow.title}: ${outlineRow.logline}` : '(작품 아웃라인 없음: 파이프라인의 작품 플롯 탭에서 생성/승인하세요)',
+    '',
     '## 회차 브리프',
     episodeBrief ? episodeBrief.content.slice(0, 1400) : '(회차 브리프 없음: 초안 전에 회차 브리프 단계를 실행하세요)',
     '',
@@ -446,7 +652,10 @@ export async function runContextAction() {
     scenePlan ? scenePlan.content.slice(0, 1800) : '(장면 계획 없음: 초안 전에 장면 계획 단계를 실행하세요)',
     '',
     '## 이전 회차 요약',
-    prevSummary ? prevSummary.content.slice(0, 1200) : prev ? `(${prev} 요약 없음, 요약 단계를 먼저 실행하면 연속성이 강해집니다)` : '(첫 회차입니다)',
+    prevSummary ? prevSummary.slice(0, 1200) : prev ? `(${prev} 요약 없음, 요약 단계를 먼저 실행하면 연속성이 강해집니다)` : '(첫 회차입니다)',
+    '',
+    '## 이전 회차 최종 원고 끝부분 (사람 확정본)',
+    prevTail ? prevTail.slice(-1400) : prev ? `(${prev} 원고 파일을 찾지 못했습니다)` : '(첫 회차입니다)',
     '',
     '## 관련 설정 항목 (원고에 등장)',
     relevant.length ? relevant.map((c) => `- ${c.name} (${c.type}): ${c.summary ?? ''}`).join('\n') : '(원고에서 감지된 설정 항목이 없습니다)',
@@ -455,6 +664,7 @@ export async function runContextAction() {
     openThreads.trim() ? openThreads.trim().slice(0, 800) : '(plot/open-threads.md 없음)'
   ].join('\n');
   recordArtifact('context', ep, '컨텍스트 팩', content);
+  reportStepExec('context', 'static');
   toasts.push('컨텍스트 팩 구성됨 · 초안 프롬프트에 반영', 'ok');
 }
 
@@ -463,6 +673,7 @@ export async function runContextAction() {
 export async function runSummarizeAction() {
   const ep = episode();
   const manuscript = get(editorStore).content;
+  beginStepUsage('summarize');
   const prompt = [
     '너는 한국어 연재소설 편집자다. 아래 원고를 다음 회차 집필과 연속성 검사에 쓸 요약으로 정리하라.',
     '아래 마크다운 형식을 그대로 채워라. 설명 문장은 넣지 말고 요약만 쓴다.',
@@ -484,11 +695,13 @@ export async function runSummarizeAction() {
       label: `${ep} summary`
     })
   ].join('\n');
-  const agent = await runAgentText(projectRoot(), prompt, `summarize-${ep}`);
-  const summary = agent.ok && agent.text.trim() ? agent.text.trim() : localSummary(manuscript);
-  recordArtifact('summarize', ep, agent.ok && agent.text.trim() ? '회차 요약' : '회차 요약(오프라인)', summary);
+  const agent = await agentCall('summarize', prompt, `summarize-${ep}`);
+  const usedAgent = agent.ok && Boolean(agent.text.trim());
+  const summary = usedAgent ? agent.text.trim() : localSummary(manuscript);
+  recordArtifact('summarize', ep, usedAgent ? '회차 요약' : '회차 요약(오프라인)', summary);
   await writeFile(projectRoot(), `canon/summaries/${ep}.md`, `# ${ep} 요약\n\n${summary}\n`).catch(() => {});
-  toasts.push(agent.ok && agent.text.trim() ? '회차 요약 생성됨 · canon/summaries 반영' : '오프라인 요약 생성됨 · canon/summaries 반영', agent.ok && agent.text.trim() ? 'ok' : 'warn');
+  reportStepExec('summarize', usedAgent ? 'agent' : 'fallback');
+  toasts.push(usedAgent ? '회차 요약 생성됨 · canon/summaries 반영' : '오프라인 요약 생성됨 · canon/summaries 반영', usedAgent ? 'ok' : 'warn');
 }
 
 /** AI 미연결 시 폴백 — 원고 앞부분과 기본 통계로 최소 요약을 만든다(정직하게 오프라인임을 표시). */
@@ -510,23 +723,32 @@ function localSummary(manuscript: string): string {
   ].join('\n');
 }
 
-/** 기록 — 현재 원고를 스냅샷하고 기록 저널 산출물을 남긴다. */
+/** 기록·픽스 — 현재 원고를 스냅샷하고 회차를 픽스 상태로 남긴다.
+ *  픽스된 원고 파일이 다음 회차 계획의 연속성 입력이 된다. */
 export async function runCommitAction() {
   const ep = episode();
   const ed = get(editorStore);
   const target = ed.path || 'manuscript.md';
+  const qa = get(qaStore);
+  const run = get(runStore).active;
   const snap = await createSnapshot(projectRoot(), target, `${ep} 파이프라인 기록`, ed.content);
+  const hash = contentHash(ed.content);
   const journal = [
-    `# 기록: ${ep}`,
+    `# 기록·픽스: ${ep}`,
     '',
     `- 시각: ${new Date().toLocaleString()}`,
     `- 대상: ${target}`,
     `- 스냅샷: ${snap.id}`,
     `- sha256: ${snap.sha256}`,
-    `- 분량: 공백 제외 ${ed.content.replace(/\s/g, '').length.toLocaleString()}자`
-  ].join('\n');
-  recordArtifact('commit', ep, '기록 저널', journal);
-  toasts.push(`스냅샷 기록됨: ${snap.id}`, 'ok');
+    `- content hash: ${hash}`,
+    `- 분량: 공백 제외 ${ed.content.replace(/\s/g, '').length.toLocaleString()}자`,
+    `- QA: ${qa.report ? `${qa.report.verdict} (${qa.report.score ?? '-'})${qa.target ? ` · 대상 ${qa.target.label}` : ''}` : '미실행'}`,
+    run ? `- run: ${run.runId}` : ''
+  ].filter(Boolean).join('\n');
+  recordArtifact('commit', ep, '기록·픽스 저널', journal);
+  setEpisodeProgress(ep, { status: 'fixed', fixedAt: new Date().toISOString(), runId: run?.runId, manuscriptPath: target, contentHash: hash });
+  reportStepExec('commit', 'static');
+  toasts.push(`스냅샷 기록됨: ${snap.id} · ${ep} 픽스`, 'ok');
 }
 
 function draftSourceGuidance(ctx?: DraftSourceContext): string {
@@ -544,6 +766,7 @@ function draftSourceGuidance(ctx?: DraftSourceContext): string {
 
 export async function runDraftAction(kind: 'draft' | 'revise' | 'continue' | 'rewrite' = 'draft', ctx?: DraftSourceContext): Promise<boolean> {
   candidateStore.update((s) => ({ ...s, generating: true }));
+  beginStepUsage('draft');
   try {
     const base = get(editorStore).content;
     const ep = episode();
@@ -561,22 +784,43 @@ export async function runDraftAction(kind: 'draft' | 'revise' | 'continue' | 're
     // 부족하면 추가 호출하되, 빈 결과가 나오면 무한 반복하지 않는다.
     const targetCount = Math.max(1, Math.min(4, get(settingsStore).aiDefaultCandidateCount || 1));
     const collected: Candidate[] = [];
+    let usedEnvelope = false;
     for (let attempt = 0; collected.length < targetCount && attempt <= targetCount; attempt++) {
       const variation = attempt > 0 ? `\n\n### 후보 변주 지시\n이전 후보와 다른 접근(장면 진입, 리듬, 묘사 초점)을 시도하라. 사건과 확정 설정은 동일하게 유지한다.` : '';
-      const batch = (
-        (await runDraftEnvelopeCandidate(ep, kind, base, guidance + variation)) ??
-        (await generateCandidate(projectRoot(), ep, kind, base, guidance + variation))
-      ).filter((c) => validateCandidateMarkdown(c.content, base).ok);
+      const envelopeBatch = await runDraftEnvelopeCandidate(ep, kind, base, guidance + variation);
+      if (envelopeBatch) usedEnvelope = true;
+      const batch = (envelopeBatch ?? (await generateCandidate(projectRoot(), ep, kind, base, guidance + variation)))
+        .filter((c) => validateCandidateMarkdown(c.content, base).ok);
       if (!batch.length) break;
       collected.push(...batch);
     }
     if (!collected.length) throw new Error('agent returned no usable candidate markdown');
     const labels = ['후보 A', '후보 B', '후보 C', '후보 D'];
     const candidates = collected.slice(0, targetCount).map((c, i) => ({ ...c, id: `${c.id}-${i}`, label: labels[i] ?? c.label }));
-    candidateStore.set({ candidates, activeId: candidates[0]?.id ?? null, generating: false, appliedHunks: new Set(), sessionSnapshotId: null });
-    for (const c of candidates) recordArtifact('draft', ep, `${c.label} (${kind})`, c.content);
-    gotoStage('review');
-    uiStore.update((s) => ({ ...s, centerView: 'ai' }));
+    // 생성 시점 baseline 세션 — 이후 diff/QA가 "무엇을 기준으로 만들어졌는지" 고정
+    const basisArtifactIds = (['episode-brief', 'scene-plan', 'context', 'qa', 'revise', 'analyze', 'summarize'] as PipelineStep[])
+      .map((step) => latestArtifact(step, ep)?.id)
+      .filter((id): id is string => Boolean(id));
+    candidateStore.set({
+      candidates,
+      activeId: candidates[0]?.id ?? null,
+      generating: false,
+      appliedHunks: new Set(),
+      sessionSnapshotId: null,
+      session: {
+        episode: ep,
+        manuscriptPath: get(editorStore).path || 'manuscript.md',
+        baselineContent: base,
+        baselineHash: contentHash(base),
+        candidateCountRequested: targetCount,
+        basisArtifactIds,
+        createdAt: new Date().toISOString()
+      }
+    });
+    for (const c of candidates) recordArtifact('draft', ep, `${c.label} (${kind}) · baseline ${shortHash(base)}`, c.content);
+    setEpisodeProgress(ep, { status: 'drafting' });
+    reportStepExec('draft', usedEnvelope ? 'agent' : 'fallback');
+    gotoPipeline('review');
     toasts.push(`후보 ${candidates.length}개 생성됨: 검토 단계에서 비교하세요`, 'ok');
     return true;
   } catch {
@@ -604,6 +848,7 @@ export async function runAnalyzeAction(mode?: AnalysisMode): Promise<boolean> {
         : ['- 임계치를 넘는 반복 없음'])
     ].join('\n');
     recordArtifact('analyze', episode(), `표현 분석 · 플래그 ${flagged.length}`, md);
+    reportStepExec('analyze', 'static');
     toasts.push(`반복 분석 완료: ${flagged.length}개 표현 플래그`, flagged.length ? 'warn' : 'ok');
     return true;
   } catch {

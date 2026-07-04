@@ -296,6 +296,8 @@ export async function runAgentText(projectPath: string, prompt: string, label: s
     agentCliPath: settings.agentCliPath || null,
     agentProvider: settings.agentProvider || 'codex',
     agentOutputMode: settings.agentOutputMode || 'stdout',
+    agentModel: settings.agentModel?.trim() || null,
+    agentModelArgTemplate: settings.agentModelArgTemplate?.trim() || null,
     label
   });
 }
@@ -335,7 +337,18 @@ export async function generateCandidate(
   const agentProvider = settings.agentProvider || 'antigravity';
   const agentOutputMode = settings.agentOutputMode || (agentProvider === 'antigravity' ? 'file' : 'stdout');
   if (invoke) {
-    const candidates = await invoke<Candidate[]>('generate_candidate', { projectPath, episode, kind, base, agentCliPath, agentProvider, agentOutputMode, guidance: guidance || null });
+    const candidates = await invoke<Candidate[]>('generate_candidate', {
+      projectPath,
+      episode,
+      kind,
+      base,
+      agentCliPath,
+      agentProvider,
+      agentOutputMode,
+      agentModel: settings.agentModel?.trim() || null,
+      agentModelArgTemplate: settings.agentModelArgTemplate?.trim() || null,
+      guidance: guidance || null
+    });
     const usable = candidates.filter((c) => validateCandidateMarkdown(c.content, base).ok);
     if (!usable.length) throw new Error('agent returned no usable candidate markdown');
     return usable;

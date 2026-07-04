@@ -8,6 +8,9 @@ import { uiStore } from '$lib/stores/uiStore';
 import { computeStats } from '$lib/editor';
 import { hydrateArtifactsFromProject } from '$lib/stores/artifactStore';
 import { hydrateRunsFromProject } from '$lib/stores/runStore';
+import { hydrateOutlineFromProject } from '$lib/stores/outlineStore';
+import { hydrateEpisodeProgress } from '$lib/stores/episodeProgressStore';
+import { emptyCandidateState } from '$lib/stores/candidateStore';
 import { loadCodexAction, loadPlotAction } from '$lib/actions/pipeline';
 import { buildSourceIntake, buildSourceIntakeFiles, parseAgentSourceIntake, sourceIntakeAgentPrompt } from '$lib/domain/sourceIntake';
 import type { CreateProjectInput, FileNode, ProjectInfo } from '$lib/types';
@@ -60,9 +63,17 @@ export async function openProjectIntoWorkspace(path: string): Promise<ProjectInf
     editorStore.set({ path: null, content: '', savedContent: '', dirty: false, mode: 'source', wordCount: 0 });
   }
 
-  candidateStore.set({ candidates: [], activeId: null, generating: false, appliedHunks: new Set(), sessionSnapshotId: null });
-  uiStore.update((s) => ({ ...s, centerView: 'write', binderTab: 'episodes' }));
-  await Promise.all([loadCodexAction(), loadPlotAction(), hydrateArtifactsFromProject(project.rootPath), hydrateRunsFromProject(project.rootPath)]);
+  candidateStore.set(emptyCandidateState());
+  // AI 파이프라인이 기본 작업면이다. 집필은 상단 탭으로 언제든 전환한다.
+  uiStore.update((s) => ({ ...s, centerView: 'pipeline', binderTab: 'episodes' }));
+  await Promise.all([
+    loadCodexAction(),
+    loadPlotAction(),
+    hydrateArtifactsFromProject(project.rootPath),
+    hydrateRunsFromProject(project.rootPath),
+    hydrateOutlineFromProject(project.rootPath),
+    hydrateEpisodeProgress(project.rootPath)
+  ]);
   return project;
 }
 

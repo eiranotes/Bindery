@@ -1,9 +1,8 @@
 <script lang="ts">
   import { projectStore } from '$lib/stores/projectStore';
-  import { primaryViews, isStudioView, toggleSidebar, uiStore } from '$lib/stores/uiStore';
+  import { primaryViews, isStudioView, toggleSidebar, uiStore, gotoView } from '$lib/stores/uiStore';
   import { themeStore, toggleTheme } from '$lib/stores/themeStore';
   import { settingsStore } from '$lib/stores/settingsStore';
-  import { gotoStage } from '$lib/stores/pipelineStore';
 
   const providerLabel: Record<string, string> = {
     codex: 'Codex',
@@ -14,19 +13,19 @@
 
   $: agentReady = Boolean($settingsStore.agentCliPath);
   $: agentName = providerLabel[$settingsStore.agentProvider] ?? $settingsStore.agentProvider;
+  $: agentModel = $settingsStore.agentModel?.trim() || 'CLI 기본';
 
   function backToBooks() {
     projectStore.update((s) => ({ ...s, current: null }));
-    uiStore.update((s) => ({ ...s, centerView: 'write', binderTab: 'episodes' }));
+    uiStore.update((s) => ({ ...s, centerView: 'pipeline', binderTab: 'episodes' }));
   }
   function openAIConnect() {
-    gotoStage('connect');
-    uiStore.update((s) => ({ ...s, centerView: 'ai' }));
+    uiStore.update((s) => ({ ...s, prefsOpen: true, prefsSection: 'aiRunner' }));
   }
-  // 작업실 탭 — 문체/AI/내보내기 도구면. 이미 도구면이면 그대로 두고, 아니면 파이프라인으로 진입.
+  // 작업실 탭 — 문체/내보내기 도구. AI 파이프라인은 최상위 탭으로 승격됐다.
   $: studioActive = isStudioView($uiStore.centerView);
   function openStudio() {
-    uiStore.update((s) => (isStudioView(s.centerView) ? s : { ...s, centerView: 'ai' }));
+    uiStore.update((s) => (isStudioView(s.centerView) ? s : { ...s, centerView: 'style' }));
   }
 </script>
 
@@ -53,15 +52,15 @@
     </button>
     <nav class="main-tabs" aria-label="주요 화면">
       {#each primaryViews as view}
-        <button class:on={$uiStore.centerView === view.id} title={view.hint} on:click={() => uiStore.update((s) => ({ ...s, centerView: view.id }))}>{view.label}</button>
+        <button class:on={$uiStore.centerView === view.id} title={view.hint} on:click={() => gotoView(view.id)}>{view.label}</button>
       {/each}
-      <button class:on={studioActive} title="문체·AI·내보내기 작업실" on:click={openStudio}>작업실</button>
+      <button class:on={studioActive} title="문체·내보내기 작업실" on:click={openStudio}>작업실</button>
     </nav>
   </div>
 
   <div class="topbar-right">
-    <button class="agent-state" class:ready={agentReady} title="AI 연결 상태, 누르면 연결 설정으로 이동" on:click={openAIConnect}>
-      <span class="dot" class:ok={agentReady}></span>{agentName} {agentReady ? '연결됨' : '미설정'}
+    <button class="agent-state" class:ready={agentReady} title="AI 연결 상태 · 환경설정" on:click={openAIConnect}>
+      <span class="dot" class:ok={agentReady}></span>{agentName} · {agentModel}
     </button>
     {#if $settingsStore.mockMode}<span class="mock-pill">데모</span>{/if}
     <button class="ghost quiet-action" class:on={$uiStore.centerView === 'help'} on:click={() => uiStore.update((s) => ({ ...s, centerView: 'help' }))}>도움말</button>

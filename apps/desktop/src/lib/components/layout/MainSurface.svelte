@@ -5,7 +5,7 @@
   import SnapshotPanel from '$lib/components/snapshots/SnapshotPanel.svelte';
   import JobConsole from '$lib/components/agents/JobConsole.svelte';
   import ExportPanel from '$lib/components/export/ExportPanel.svelte';
-  import AIStudio from '$lib/components/ai/AIStudio.svelte';
+  import PipelineWorkbench from '$lib/components/pipeline/PipelineWorkbench.svelte';
   import StyleStudio from '$lib/components/style/StyleStudio.svelte';
   import HelpSurface from './HelpSurface.svelte';
   import { uiStore, studioViews, gotoView } from '$lib/stores/uiStore';
@@ -18,7 +18,9 @@
 </script>
 
 <section class="panel main-surface writing-surface">
-  {#if $uiStore.centerView === 'write'}
+  {#if $uiStore.centerView === 'pipeline'}
+    <PipelineWorkbench />
+  {:else if $uiStore.centerView === 'write'}
     <div class="write-head">
       <div>
         <span class="eyebrow">집필</span>
@@ -44,7 +46,7 @@
       <div class="surface-copy">
         <span class="eyebrow">자료</span>
         <h1>설정집과 플롯</h1>
-        <p>원고와 분리된 작품 자료입니다. 설정 항목은 AI 파이프라인의 바이블로도 쓰입니다.</p>
+        <p>원고와 분리된 작품 자료입니다. 파이프라인의 아웃라인은 여기의 플롯 보드로 승인 반영됩니다.</p>
       </div>
       <button class="ghost" on:click={loadPlotAction}>플롯 새로고침</button>
     </div>
@@ -55,16 +57,14 @@
   {:else if $uiStore.centerView === 'help'}
     <HelpSurface />
   {:else}
-    <!-- 작업실 — 문체·AI·내보내기 도구면. 상단 서브내비로 전환한다. -->
+    <!-- 작업실 — 문체/내보내기 도구. AI 파이프라인은 상단 최상위 탭으로 승격됐다. -->
     <nav class="studio-subnav" aria-label="작업실 도구">
       {#each studioViews as v}
         <button class:on={$uiStore.centerView === v.id} title={v.hint} on:click={() => gotoView(v.id)}>{v.label}</button>
       {/each}
     </nav>
     <div class="studio-body">
-      {#if $uiStore.centerView === 'ai'}
-        <AIStudio />
-      {:else if $uiStore.centerView === 'style'}
+      {#if $uiStore.centerView === 'style'}
         <StyleStudio />
       {:else if $uiStore.centerView === 'export'}
         <div class="export-grid three">

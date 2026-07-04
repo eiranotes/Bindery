@@ -1,26 +1,26 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { scanCodexAction, loadPlotAction } from '$lib/actions/pipeline';
-  import { uiStore } from '$lib/stores/uiStore';
-  import { gotoStage } from '$lib/stores/pipelineStore';
-  import type { HarnessStage } from '$lib/stores/pipelineStore';
+  import { uiStore, gotoPipeline } from '$lib/stores/uiStore';
+  import type { PipelineTab } from '$lib/stores/uiStore';
   import { writingModeStore } from '$lib/stores/writingModeStore';
   import { editorStore } from '$lib/stores/editorStore';
 
-  function openAI(stage: HarnessStage) {
-    gotoStage(stage);
-    uiStore.update((s) => ({ ...s, centerView: 'ai' }));
+  function openPipeline(tab: PipelineTab) {
+    gotoPipeline(tab);
   }
 
   type Cmd = { id: string; label: string; hint?: string; run: () => void };
   const commands: Cmd[] = [
+    { id: 'pipeline', label: '파이프라인 열기', hint: '화면', run: () => gotoPipeline() },
     { id: 'write', label: '집필 화면 열기', hint: '화면', run: () => uiStore.update((s) => ({ ...s, centerView: 'write' })) },
     { id: 'materials', label: '자료 화면 열기', hint: '화면', run: () => uiStore.update((s) => ({ ...s, centerView: 'materials' })) },
     { id: 'export', label: '내보내기 화면 열기', hint: '화면', run: () => uiStore.update((s) => ({ ...s, centerView: 'export' })) },
-    { id: 'ai-connect', label: 'AI 작업: 연결 설정', hint: 'AI', run: () => openAI('connect') },
-    { id: 'ai-bible', label: 'AI 작업: 바이블 확인', hint: 'AI', run: () => openAI('bible') },
-    { id: 'ai-run', label: 'AI 작업: 파이프라인 실행', hint: 'AI', run: () => openAI('run') },
-    { id: 'ai-review', label: 'AI 작업: 후보·QA 검토', hint: 'AI', run: () => openAI('review') },
+    { id: 'pipe-outline', label: '파이프라인: 작품 아웃라인', hint: 'AI', run: () => openPipeline('outline') },
+    { id: 'pipe-artifact', label: '파이프라인: 산출물 보기', hint: 'AI', run: () => openPipeline('artifact') },
+    { id: 'pipe-prompt', label: '파이프라인: 프롬프트 미리보기', hint: 'AI', run: () => openPipeline('prompt') },
+    { id: 'pipe-context', label: '파이프라인: 컨텍스트 검사', hint: 'AI', run: () => openPipeline('context') },
+    { id: 'pipe-review', label: '파이프라인: 후보·QA 검토', hint: 'AI', run: () => openPipeline('review') },
     { id: 'style', label: '문체 재현 열기', hint: '문체', run: () => uiStore.update((s) => ({ ...s, centerView: 'style' })) },
     { id: 'scan', label: '설정집 링크 스캔', hint: '자료', run: scanCodexAction },
     { id: 'plot', label: '플롯 보드 새로고침', hint: '자료', run: loadPlotAction },

@@ -1,7 +1,15 @@
 # AI 프로젝트/회차 파이프라인 도식
 
-Updated: 2026-07-04
+Updated: 2026-07-04 (workbench pass — outline·baseline·픽스·모델·배지)
 Status: current implementation map
+
+## 이번 갱신 요약
+
+- `연결→바이블→실행→검토` 온보딩 스테이지는 삭제됐고, `파이프라인` 최상위 탭의 워크벤치가 이 흐름을 통째로 감쌌다. 미연결/바이블 없음은 배너로만 노출된다.
+- 「작품 아웃라인 → 회차별 승인 → 회차 파이프라인 → 검토 → 픽스」 순서가 실제 구현이 됐다. `plot/episode-outline.json`, `.bindery/episodes.json`이 그 진실 파일이다.
+- 후보 diff는 생성 시점 baseline이 기본이고, 라이브 에디터가 달라지면 경고+적용 차단. QA는 「현재 원고 QA」와 「선택 후보 QA」로 분리되고 결과에 대상·hash가 남는다.
+- 단계마다 Static/Hybrid 배지 + 실제 실행 모드(agent/fallback), 경과·입출력 자수·토큰 추정(estimated 라벨)이 인스펙터에 표시된다.
+- Settings v3에 `agentModel`이 있고, codex/gemini는 `-m {model}`, custom은 `{model}` 템플릿을 실제로 프로세스 인자로 전달한다.
 
 이 문서는 Bindery의 현재 구현을 기준으로, 처음 프로젝트를 만드는 순간부터 AI 파이프라인을 거쳐 한 회차를 검토/기록하는 흐름을 정리한다. 핵심 분기는 `바이블/통합 문서가 있는 시작`과 `바이블 없이 시작`이다.
 

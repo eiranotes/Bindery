@@ -1,22 +1,17 @@
-// AI 작업 하네스 상태 — 연결→바이블→실행→검토 단계와 파이프라인 각 단계의
-// 실행 상태를 한곳에서 관리한다. AI 스튜디오 레일과 실행 화면이 함께 읽는다.
+// 파이프라인 실행 상태 — 단계별 실행 상태와 "실제로 어떤 모드로 실행됐는지"
+// (agent / fallback / static)를 워크벤치가 함께 읽는다.
+// 과거의 connect→bible→run→review 온보딩 스테이지는 제거됐다.
 import { writable } from 'svelte/store';
 import type { PipelineStep } from '$lib/domain/prompt';
 
-export type HarnessStage = 'connect' | 'bible' | 'run' | 'review';
-
-export const harnessStages: Array<{ id: HarnessStage; label: string; desc: string }> = [
-  { id: 'connect', label: '연결', desc: 'AI 실행기 설정' },
-  { id: 'bible', label: '바이블', desc: '설정집 확인' },
-  { id: 'run', label: '실행', desc: '파이프라인 진행' },
-  { id: 'review', label: '검토', desc: '후보·QA·수정' }
-];
-
 export type StepRunStatus = 'idle' | 'running' | 'done' | 'failed';
 
+/** 최근 실행에서 실제 사용된 경로 — Hybrid 단계가 AI로 돌았는지 로컬로 폴백했는지 */
+export type StepExecMode = 'agent' | 'fallback' | 'static';
+
 export type PipelineState = {
-  stage: HarnessStage;
   stepStatus: Record<PipelineStep, StepRunStatus>;
+  stepModes: Partial<Record<PipelineStep, StepExecMode>>;
   /** 바이블 없이 진행을 명시적으로 선택했는지 */
   bibleSkipped: boolean;
 };
@@ -34,19 +29,19 @@ const initialSteps: Record<PipelineStep, StepRunStatus> = {
 };
 
 export const pipelineStore = writable<PipelineState>({
-  stage: 'connect',
   stepStatus: { ...initialSteps },
+  stepModes: {},
   bibleSkipped: false
 });
-
-export function gotoStage(stage: HarnessStage) {
-  pipelineStore.update((s) => ({ ...s, stage }));
-}
 
 export function setStepStatus(step: PipelineStep, status: StepRunStatus) {
   pipelineStore.update((s) => ({ ...s, stepStatus: { ...s.stepStatus, [step]: status } }));
 }
 
+export function setStepMode(step: PipelineStep, mode: StepExecMode) {
+  pipelineStore.update((s) => ({ ...s, stepModes: { ...s.stepModes, [step]: mode } }));
+}
+
 export function resetPipeline() {
-  pipelineStore.update((s) => ({ ...s, stepStatus: { ...initialSteps } }));
+  pipelineStore.update((s) => ({ ...s, stepStatus: { ...initialSteps }, stepModes: {} }));
 }

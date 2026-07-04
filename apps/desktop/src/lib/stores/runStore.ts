@@ -16,6 +16,15 @@ export type RunStepRecord = {
   artifactId?: string;
   artifactTitle?: string;
   error?: string;
+  /** 실제 실행 경로 — hybrid 단계가 AI로 돌았는지 로컬 폴백했는지 */
+  mode?: 'agent' | 'fallback' | 'static';
+  durationMs?: number;
+  /** 사용량 — CLI가 정확 토큰을 보고하지 않으므로 문자수 기반 추정만 기록한다 */
+  promptChars?: number;
+  outputChars?: number;
+  /** 추정 토큰 (한국어 ≈ 2자/token). tokenSource는 항상 'estimated'. */
+  tokenEstimate?: number;
+  tokenSource?: 'estimated' | 'unavailable';
 };
 
 export type HumanDecision = {
@@ -104,7 +113,11 @@ export function recordRunStep(step: PipelineStep, patch: Partial<RunStepRecord>)
   runStore.update((s) => {
     if (!s.active) return s;
     const prev = s.active.steps[step] ?? { status: 'idle' as StepRunStatus };
-    const active = { ...s.active, steps: { ...s.active.steps, [step]: { ...prev, ...patch } } };
+    const merged = { ...prev, ...patch };
+    if (merged.startedAt && merged.finishedAt && merged.durationMs == null) {
+      merged.durationMs = Math.max(0, new Date(merged.finishedAt).getTime() - new Date(merged.startedAt).getTime());
+    }
+    const active = { ...s.active, steps: { ...s.active.steps, [step]: merged } };
     persistRun(active);
     return { ...s, active };
   });

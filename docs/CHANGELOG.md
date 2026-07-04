@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-07-04 (AI 파이프라인 전면 배치 + 아웃라인·baseline·픽스·모델 계약)
+
+- Promoted the AI pipeline to a top-level `파이프라인` tab in the main shell, replacing the old `작업실 > AI` sub-tab and the on-boarding stages (`01 연결 / 02 바이블 / 03 실행 / 04 검토`) with a single workbench: target band + step table + tabbed viewer (산출물 / 프롬프트 / 컨텍스트 / 작품 플롯 / 검토) + inspector. Missing connection or bible is now a one-line banner instead of a wizard page.
+- Added a bible/source → N-episode outline step (`domain/outline.ts`, `plot/episode-outline.json`) with AI-first generation, local skeleton fallback, editable table, per-episode approval, and merge-into-plot-board that never overwrites existing rows. EpisodeBrief now consumes the approved outline row as a hard constraint.
+- Added a candidate review session (`baselineContent`/`baselineHash`/`basisArtifactIds`) so candidate diff defaults to `baseline → candidate`; the panel warns and blocks whole-file apply when the live editor drifted from the baseline, and offers an explicit `현재 원고 기준` toggle.
+- Split QA into `현재 원고 QA` and `선택 후보 QA`; every QA artifact/toast records the target label + content hash, and the dashboard shows what was checked. The QA prompt now demands line evidence before POV/first-person can escalate to `fail`.
+- Added `.bindery/episodes.json` (planned/drafting/fixed) so the `기록` step fixes a chapter and the next episode plan reads the fixed manuscript file directly from disk for continuity, not just the AI summary.
+- Added Hybrid/Static badges on each step plus per-run usage recording — `promptChars`, `outputChars`, `tokenEstimate` (labelled estimated), `durationMs`, and whether the hybrid step ran on the agent or fell back to local. Inspector shows totals and a `폴백` tag when a hybrid step downgraded.
+- Added an AI Runner model contract: settings v3 stores `agentModel` (blank = CLI default) and `agentModelArgTemplate` for `custom` providers. Rust `run_agent_text` / `generate_candidate` now pass `-m {model}` to codex/gemini and apply the template for custom; run settings snapshot and top-bar identity include the selected model.
+- Cleaned card nesting: `AIStudio.svelte` and `AIMissionControl.svelte` were replaced by `PipelineWorkbench.svelte` + `OutlineTable.svelte`; `CandidateDiffPanel` and `QADashboard` moved to table/kv/split-pane surfaces aligned with `DESIGN.md`. `harnessStages`/`gotoStage` were removed.
+- Verified with `npm --workspace apps/desktop run check` (0 errors 0 warnings), `npm --workspace apps/desktop run build` (Vite build ok), `cargo check`, and a new `tests/outline.node.test.mjs` smoke test covering local/agent outline parsing, plot-board merge, artifact rendering, and content hash stability.
+
 ## 2026-07-04 (AI project pipeline flow documentation)
 
 - Added `docs/AI_PROJECT_PIPELINE_FLOW_20260704.md`, a Korean implementation map from project creation/opening through bible-backed or bible-less starts, source intake, the 9-step episode AI pipeline, candidate review, QA, summary, snapshot, and current "fixed" operation.

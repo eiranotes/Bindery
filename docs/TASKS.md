@@ -1,6 +1,20 @@
 # Tasks
 
-Updated: 2026-07-04 (AI project pipeline flow documentation)
+Updated: 2026-07-04 (pipeline workbench pass)
+
+## Done (2026-07-04, pipeline workbench pass)
+
+- [x] Promote AI pipeline to a top-level `파이프라인` tab and remove the connect/bible/run/review on-boarding stages; missing connection/bible collapsed into workbench banners.
+- [x] Add bible/source → N-episode outline (`domain/outline.ts`, `plot/episode-outline.json`, `OutlineTable.svelte`, agent + local fallback) with per-episode approval that merges into `plot/plot-board.json` without overwriting existing rows.
+- [x] Feed the approved outline row into EpisodeBrief prompt and context pack as hard constraint input.
+- [x] Add `CandidateReviewSession` with baseline content/hash/basisArtifactIds, default candidate diff to `baseline → candidate`, warn and block whole-apply when live editor drifted, expose `현재 원고 기준` toggle.
+- [x] Add `QATarget` and split QA into `현재 원고 QA` / `선택 후보 QA`; record target label + content hash in the qaStore, artifacts, and toasts; require line-level evidence before POV/first-person findings can be `fail`.
+- [x] Add Static/Hybrid step badges and record actual step mode (agent/fallback/static), `durationMs`, `promptChars`, `outputChars`, `tokenEstimate` (labelled `estimated`) into `run.json`; show usage totals and `폴백` flag in the inspector.
+- [x] Add `.bindery/episodes.json` (planned/drafting/fixed) and make the `기록` step fix the chapter; next episode plan reads the previous fixed manuscript file from disk for continuity.
+- [x] Settings v3 `agentModel` + `agentModelArgTemplate`; Rust `run_agent_text` / `generate_candidate` pass `-m {model}` for codex/gemini and expand the template for `custom`; top bar and run snapshots surface the effective model.
+- [x] Remove `AIStudio.svelte` and `AIMissionControl.svelte` in favor of `PipelineWorkbench.svelte` + `OutlineTable.svelte`; drop `harnessStages/gotoStage`; flatten card-in-card patterns into tables/kv rows/split panes aligned with `DESIGN.md`.
+- [x] Add `tests/outline.node.test.mjs` covering local skeleton, agent parse rejection, plot-board merge safety, artifact rendering, and content-hash line-ending stability.
+- [x] Verify with `npm --workspace apps/desktop run check` (0/0), `npm --workspace apps/desktop run build`, `cargo check`, `tests/outline.node.test.mjs`, `tests/envelopes.node.test.mjs`, `tests/sourceIntake.node.test.mjs`.
 
 ## Done (2026-07-04 AI project pipeline flow documentation)
 

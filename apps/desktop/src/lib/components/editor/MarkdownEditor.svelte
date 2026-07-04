@@ -23,8 +23,7 @@
   import { computeStats, novelExtensions, pushCodex, pushQAIssues, pushRepetition, readAICommand, wordCountField, focusModeExtension, typewriterExtension } from '$lib/editor';
   import type { Settings } from '$lib/stores/settingsStore';
   import type { AICommandRequest, WordStats } from '$lib/editor';
-  import { uiStore } from '$lib/stores/uiStore';
-  import { gotoStage } from '$lib/stores/pipelineStore';
+  import { uiStore, gotoPipeline } from '$lib/stores/uiStore';
   import { aiCommandContextStore } from '$lib/stores/aiCommandContextStore';
   import { recordWriting } from '$lib/stores/statsStore';
   import { writeFile } from '$lib/api/commands';
@@ -74,8 +73,8 @@
     autosaveTimer = setTimeout(saveNow, $settingsStore.autosaveDelayMs);
   }
 
-  // 집필 화면에서는 AI를 실행하지 않는다. 슬래시 명령은 AI 작업 화면의
-  // 실행 단계로 안내만 하고, 실제 실행은 하네스에서 진행한다.
+  // 집필 화면에서는 AI를 실행하지 않는다. 슬래시 명령은 파이프라인 워크벤치의
+  // 검토 탭으로 문맥을 넘기고, 실제 실행은 워크벤치에서 진행한다.
   function runAICommand(cmd: AICommandRequest) {
     aiCommandContextStore.set({
       command: cmd.name,
@@ -84,10 +83,9 @@
       cursorOffset: cmd.cursorOffset,
       createdAt: new Date().toISOString()
     });
-    gotoStage('run');
-    uiStore.update((s) => ({ ...s, centerView: 'ai' }));
+    gotoPipeline('review');
     const unit = cmd.selectedText?.trim() ? '선택 영역' : '커서 주변';
-    toasts.push(`/${cmd.name} · ${unit} 문맥을 AI 작업 화면에 넘겼습니다`, 'info');
+    toasts.push(`/${cmd.name} · ${unit} 문맥을 파이프라인 워크벤치에 넘겼습니다`, 'info');
   }
 
   function buildState(doc: string) {

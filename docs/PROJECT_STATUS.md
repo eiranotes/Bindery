@@ -1,6 +1,19 @@
 # Project Status
 
-Updated: 2026-07-04 (AI project pipeline flow documentation)
+Updated: 2026-07-04 (AI pipeline foregrounded + outline + baseline + fixed + model contract)
+
+## Completed (2026-07-04, pipeline workbench pass)
+
+- Foregrounded the AI pipeline: `파이프라인` is now a top-level tab in the shell and shows a workbench (target band → outline/steps rail → tabbed viewer → inspector). The former on-boarding stages (`connect/bible/run/review`) collapsed into a one-line banner and the `pipelineStore` dropped its `stage` field.
+- Bible/source → N-episode outline is implemented end to end: `domain/outline.ts` (agent-first prompt + parse + local skeleton fallback), `plot/episode-outline.json` persistence via `outlineStore`, editable `OutlineTable.svelte`, per-episode approve/unapprove, and safe merge into `plot/plot-board.json`. `EpisodeBrief` and the context pack now consume the approved row.
+- Candidate diff sessions are baseline-anchored (`candidateStore.session`): default diff is `baseline → candidate`, live-editor drift raises a warning, and hunk/whole-file apply is blocked in baseline mode when the editor no longer matches the recorded hash. `현재 원고 기준` toggle is explicit.
+- QA target is explicit (`current-editor` vs selected `candidate`); QA artifacts, toasts, dashboard, and `qaStore.target` record the label + content hash. The QA prompt requires line evidence before POV/first-person findings can escalate to fail.
+- Episode fix state is real: `.bindery/episodes.json` (`planned/drafting/fixed`) is written by the `기록` step, exposed on the target band, and the next episode plan reads the previous fixed manuscript file from disk to feed continuity, not just the AI summary.
+- Each step declares Static/Hybrid, and per-run records now persist `mode` (agent/fallback/static), `durationMs`, `promptChars`, `outputChars`, `tokenEstimate` (labelled `estimated`), so the inspector shows real usage and flags `폴백` when a hybrid step downgraded.
+- Settings v3 adds `agentModel` (blank = CLI default) and `agentModelArgTemplate`. `run_agent_text` and `generate_candidate` in Rust pass `-m {model}` to codex/gemini and expand the template for `custom`. Top bar and run snapshots show the effective model.
+- UI cleanup: `AIStudio.svelte` and `AIMissionControl.svelte` were removed. `PipelineWorkbench.svelte` and `OutlineTable.svelte` and the redesigned `CandidateDiffPanel`/`QADashboard` use tables, kv rows, and split panes aligned with `DESIGN.md`. `harnessStages/gotoStage` are gone.
+- Verified: `npm --workspace apps/desktop run check` (0 errors 0 warnings), `npm --workspace apps/desktop run build` (Vite build ok), `cargo check`, `tests/outline.node.test.mjs` (new), `tests/envelopes.node.test.mjs`, `tests/sourceIntake.node.test.mjs` all pass. `tests/planning.node.test.mjs` still fails on Node ESM extension resolution — pre-existing before this pass.
+- Browser-verified in Chrome against the mock-mode sample project: `파이프라인` opens by default; the target band shows `ep001 · story/chapters/ep001/manuscript.md · baseline af33036e · Codex CLI · gpt-5.3-codex`; the `AI 실행기 미연결` and `작품 아웃라인 없음` banners render at the top; `AI 아웃라인 제안` creates the 8-episode local skeleton (ep001/ep002 inherit plot-board titles/beats, ep003+ carry AI/원천 근거 없음 risks); `전체 승인 · 플롯 반영` writes `plot/plot-board.json` and adds 6 rows (existing rows preserved); `회차 브리프` runs in 26ms and the inspector shows `회차 브리프 ≈1,548t · 26ms · 폴백`; the `검토` tab shows separate `현재 원고 QA` / `선택 후보 QA` buttons and the QA dashboard shows `검사 대상: 현재 원고 · 후보 없음`. No console errors.
 
 ## Current State
 

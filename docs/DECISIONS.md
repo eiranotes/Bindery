@@ -1,6 +1,32 @@
 # Decisions
 
-Updated: 2026-07-04 (AI pipeline observability + UX cleanup plan)
+Updated: 2026-07-04 (pipeline workbench pass)
+
+## AI Pipeline Is A Top-Level Surface, Not A Sub-Tab
+
+Decision: The AI pipeline lives on a top-level `파이프라인` tab that renders a workbench (target band + step table + tabbed viewer + inspector). The former on-boarding stages (`01 연결 / 02 바이블 / 03 실행 / 04 검토`) collapsed into a one-line banner. `harnessStages/gotoStage` and `AIStudio`/`AIMissionControl` are gone. Reason: the product loop is bible → outline → per-episode plan → generate → QA → human edit → fix; the tool has to reflect that loop at the shell level rather than hiding it under `작업실`.
+
+## Bible → Approved Outline Precedes EpisodeBrief
+
+Decision: `plot/episode-outline.json` is the sanctioned bridge between the bible/source intake and the per-episode brief. AI proposes rows, humans approve per episode, approved rows merge into `plot/plot-board.json` without overwriting existing rows, and EpisodeBrief consumes the approved row as a hard constraint. Reason: previously the source intake produced only an EP001 seed, so EP0N briefs had no whole-work plan to comply with. Approval must belong to the author.
+
+## Candidate Diff Baseline Is The Generation Snapshot
+
+Decision: A `CandidateReviewSession` records `baselineContent`/`baselineHash`/`basisArtifactIds` at generation time. Diffs default to `baseline → candidate`; whole-file apply is blocked and hunk apply is blocked when the live editor drifted from the baseline in baseline mode. `현재 원고 기준` is an explicit toggle. Reason: authors hand-edit output between generation and review; showing a diff against the live editor silently hides what the AI actually proposed.
+
+## QA Target Must Be Explicit
+
+Decision: QA runs against `current-editor` or `candidate`; every artifact, dashboard row, and store entry carries the target label plus content hash. The QA prompt requires line-level evidence before POV/first-person findings can be `fail`. Reason: `QA 실행` used to always target the live editor; combined with candidate selection UI it looked like candidate QA. Fixing this eliminates a whole class of false blame.
+
+## Episode Fix Is A Real State On Disk
+
+Decision: `.bindery/episodes.json` records `planned / drafting / fixed` per episode; `기록` writes fixed with snapshot id and content hash; the next episode planner reads the previous fixed manuscript file directly for continuity. Reason: the pipeline flow states that human-edited output feeds the next chapter, but previously only the AI summary carried continuity. Fixed status makes the human edit the source of truth.
+
+## Model Selection Is Part Of The Runner Contract
+
+Decision: Settings v3 adds `agentModel` (blank = CLI default) and `agentModelArgTemplate` for `custom` providers. Rust passes `-m {model}` for codex/gemini and expands the template for custom. Provider + model appear in the top bar, run settings snapshot, and inspector. Antigravity keeps CLI default because no supported model flag has been verified. Reason: without an explicit model contract, the app silently used whatever the CLI defaulted to; that broke run reproducibility and made cost/latency comparisons meaningless.
+
+
 
 ## Pipeline Runs Need Observable Execution Contracts
 

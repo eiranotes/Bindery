@@ -74,7 +74,7 @@
     const raw = window.prompt('환경설정 JSON을 붙여넣으세요');
     if (!raw) return;
     try {
-      settingsStore.update((current) => ({ ...current, ...JSON.parse(raw), version: 2 }));
+      settingsStore.update((current) => ({ ...current, ...JSON.parse(raw), version: 3 }));
       toasts.push('환경설정을 가져왔습니다', 'ok');
     } catch {
       toasts.push('JSON 형식이 올바르지 않습니다', 'bad');
@@ -220,6 +220,16 @@
                 <input bind:value={$settingsStore.agentCliPath} placeholder="codex 또는 /opt/homebrew/bin/codex" />
               </label>
               <label class="pref-row">
+                <span>모델</span>
+                <input bind:value={$settingsStore.agentModel} placeholder="비우면 CLI 기본 모델. 예: gpt-5.3-codex, gemini-1.5-pro" />
+              </label>
+              {#if $settingsStore.agentProvider === 'custom'}
+                <label class="pref-row">
+                  <span>모델 인자 템플릿</span>
+                  <input bind:value={$settingsStore.agentModelArgTemplate} placeholder="--model {'{model}'}" />
+                </label>
+              {/if}
+              <label class="pref-row">
                 <span>출력 방식</span>
                 <select bind:value={$settingsStore.agentOutputMode}>
                   {#each outputOptions as [value, label]}<option value={value}>{label}</option>{/each}
@@ -242,7 +252,7 @@
                 {#if testOk !== null}<span class="test-state" class:ok={testOk} class:bad={!testOk}>{testOk ? '응답 확인됨' : '실패'}</span>{/if}
               </div>
               {#if testResult}<pre class="test-console">{testResult}</pre>{/if}
-              <p class="path-note">임시 출력 폴더: <code>.bindery/tmp/agent</code></p>
+              <p class="path-note">모델을 비우면 CLI의 기본 모델이 사용됩니다. codex/gemini는 <code>-m {'{model}'}</code>로, custom 실행기는 위의 인자 템플릿으로 전달됩니다. 임시 출력 폴더: <code>.bindery/tmp/agent</code></p>
             </div>
           {:else if active === 'aiDefaults'}
             <div class="setting-group">

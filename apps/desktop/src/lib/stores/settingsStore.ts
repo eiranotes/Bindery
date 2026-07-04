@@ -8,12 +8,16 @@ export type DraftKind = 'draft' | 'continue' | 'rewrite';
 export type CanonViolationPolicy = 'warn' | 'block';
 
 export type Settings = {
-  version: 2;
+  version: 3;
   /** Legacy field kept for migration from earlier builds. */
   geminiCliPath?: string;
   agentProvider: AgentProvider;
   agentCliPath: string;
   agentOutputMode: AgentOutputMode;
+  /** 모델 id. 빈 문자열이면 CLI 기본 모델(cli-default)을 명시적으로 사용한다. */
+  agentModel: string;
+  /** custom 실행기용 모델 인자 템플릿. 예: "--model {model}" */
+  agentModelArgTemplate: string;
   novelctlPath: string;
   agentDefaultTimeoutSec: number;
   agentTestCommand: string;
@@ -86,11 +90,13 @@ export type Settings = {
 };
 
 const defaults: Settings = {
-  version: 2,
+  version: 3,
   geminiCliPath: 'gemini',
   agentProvider: 'codex',
   agentCliPath: 'codex',
   agentOutputMode: 'stdout',
+  agentModel: '',
+  agentModelArgTemplate: '--model {model}',
   novelctlPath: 'novelctl',
   agentDefaultTimeoutSec: 240,
   agentTestCommand: '--version',
@@ -164,13 +170,18 @@ const defaults: Settings = {
 
 function migrate(raw: Partial<Settings>): Settings {
   const migrated = { ...defaults, ...raw };
-  migrated.version = 2;
+  migrated.version = 3;
   if (!raw.agentCliPath && raw.geminiCliPath) {
     migrated.agentProvider = 'gemini';
     migrated.agentCliPath = raw.geminiCliPath;
     migrated.agentOutputMode = 'stdout';
   }
   if (migrated.agentProvider === 'antigravity' && !raw.agentOutputMode) migrated.agentOutputMode = 'file';
+  // v2 → v3: 모델은 명시적 cli-default(빈 문자열)로 시작한다.
+  if (typeof raw.agentModel !== 'string') migrated.agentModel = '';
+  if (typeof raw.agentModelArgTemplate !== 'string' || !raw.agentModelArgTemplate.includes('{model}')) {
+    migrated.agentModelArgTemplate = defaults.agentModelArgTemplate;
+  }
   return migrated;
 }
 

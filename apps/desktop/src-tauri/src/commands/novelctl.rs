@@ -311,6 +311,8 @@ pub fn run_agent_text(
     agent_cli_path: Option<String>,
     agent_provider: Option<String>,
     agent_output_mode: Option<String>,
+    agent_model: Option<String>,
+    agent_model_arg_template: Option<String>,
     label: Option<String>,
 ) -> AppResult<AgentTextResult> {
     let provider = agent_provider.unwrap_or_else(|| "codex".into());
@@ -322,6 +324,7 @@ pub fn run_agent_text(
         }
     });
     let label = label.unwrap_or_else(|| "agent".into());
+    let model_args = build_model_args(&provider, &agent_model, &agent_model_arg_template);
     match exec_agent_text(
         &project_path,
         &prompt,
@@ -329,6 +332,7 @@ pub fn run_agent_text(
         &provider,
         &mode,
         &label,
+        &model_args,
     ) {
         Some(text) => Ok(AgentTextResult {
             ok: true,
@@ -343,6 +347,36 @@ pub fn run_agent_text(
     }
 }
 
+/// Provider별 모델 인자를 만든다. 지원이 확인된 플래그만 사용한다:
+/// codex CLI `exec -m <model>`, gemini CLI `-m <model>`. custom은 사용자가 준
+/// 템플릿(`--model {model}` 등)을 공백 분리로 적용하고, antigravity 등 확인되지
+/// 않은 실행기는 CLI 기본 모델을 그대로 둔다.
+fn build_model_args(
+    provider: &str,
+    agent_model: &Option<String>,
+    template: &Option<String>,
+) -> Vec<String> {
+    let model = match agent_model.as_deref().map(str::trim) {
+        Some(m) if !m.is_empty() => m,
+        _ => return Vec::new(),
+    };
+    match provider {
+        "codex" | "gemini" => vec!["-m".into(), model.into()],
+        "custom" => {
+            let tpl = template
+                .as_deref()
+                .map(str::trim)
+                .filter(|t| !t.is_empty() && t.contains("{model}"))
+                .unwrap_or("--model {model}");
+            tpl.replace("{model}", model)
+                .split_whitespace()
+                .map(|s| s.to_string())
+                .collect()
+        }
+        _ => Vec::new(),
+    }
+}
+
 #[tauri::command]
 pub fn generate_candidate(
     project_path: String,
@@ -352,6 +386,8 @@ pub fn generate_candidate(
     agent_cli_path: Option<String>,
     agent_provider: Option<String>,
     agent_output_mode: Option<String>,
+    agent_model: Option<String>,
+    agent_model_arg_template: Option<String>,
     guidance: Option<String>,
 ) -> AppResult<Vec<Candidate>> {
     let now = Utc::now().to_rfc3339();
@@ -363,6 +399,7 @@ pub fn generate_candidate(
             "stdout".into()
         }
     });
+    let model_args = build_model_args(&provider, &agent_model, &agent_model_arg_template);
     let prompt = agent_prompt(&episode, &kind, &base, guidance.as_deref().unwrap_or(""));
     if let Some(generated) = exec_agent_text(
         &project_path,
@@ -371,6 +408,7 @@ pub fn generate_candidate(
         &provider,
         &mode,
         &format!("candidate-{}", episode),
+        &model_args,
     ) {
         return Ok(agent_candidates(&generated, &kind, &provider, &mode, &now));
     }
@@ -502,20 +540,23 @@ fn exec_agent_text(
     provider: &str,
     mode: &str,
     label: &str,
+    model_args: &[String],
 ) -> Option<String> {
     let bin = agent_cli_path
         .filter(|p| !p.trim().is_empty())
         .unwrap_or_else(|| default_agent_command(provider));
     if mode == "file" && provider != "codex" {
-        if let Some(text) = exec_agent_file(project_path, prompt, &bin, label) {
+        if let Some(text) = exec_agent_file(project_path, prompt, &bin, label, model_args) {
             return Some(text);
         }
     }
     if provider == "codex" {
-        return exec_codex_text(project_path, prompt, &bin, label);
+        return exec_codex_text(project_path, prompt, &bin, label, model_args);
     }
     let mut cmd = Command::new(&bin);
-    cmd.current_dir(project_path).arg("-p").arg(prompt);
+    cmd.current_dir(project_path);
+    cmd.args(model_args);
+    cmd.arg("-p").arg(prompt);
     match output_with_timeout(cmd, Duration::from_secs(240)) {
         Ok((true, _code, stdout, _stderr)) if !stdout.trim().is_empty() => {
             Some(stdout.trim().to_string())
@@ -535,7 +576,13 @@ fn agent_tmp_file(project_path: &str, label: &str) -> Option<(std::path::PathBuf
     Some((abs, rel))
 }
 
-fn exec_codex_text(project_path: &str, prompt: &str, bin: &str, label: &str) -> Option<String> {
+fn exec_codex_text(
+    project_path: &str,
+    prompt: &str,
+    bin: &str,
+    label: &str,
+    model_args: &[String],
+) -> Option<String> {
     let (output_abs, _rel) = agent_tmp_file(project_path, label)?;
     let mut cmd = Command::new(bin);
     cmd.current_dir(project_path)
@@ -543,10 +590,9 @@ fn exec_codex_text(project_path: &str, prompt: &str, bin: &str, label: &str) -> 
         .arg("--skip-git-repo-check")
         .arg("--ephemeral")
         .arg("-s")
-        .arg("read-only")
-        .arg("-o")
-        .arg(&output_abs)
-        .arg(prompt);
+        .arg("read-only");
+    cmd.args(model_args);
+    cmd.arg("-o").arg(&output_abs).arg(prompt);
     match output_with_timeout(cmd, Duration::from_secs(240)) {
         Ok((true, _code, _stdout, _stderr)) => {
             let text = fs::read_to_string(output_abs).ok()?;
@@ -561,7 +607,13 @@ fn exec_codex_text(project_path: &str, prompt: &str, bin: &str, label: &str) -> 
     }
 }
 
-fn exec_agent_file(project_path: &str, prompt: &str, bin: &str, label: &str) -> Option<String> {
+fn exec_agent_file(
+    project_path: &str,
+    prompt: &str,
+    bin: &str,
+    label: &str,
+    model_args: &[String],
+) -> Option<String> {
     let (output_abs, output_rel) = agent_tmp_file(project_path, label)?;
     let root = project_root(project_path).ok()?;
     let wrapped = format!(
@@ -569,7 +621,9 @@ fn exec_agent_file(project_path: &str, prompt: &str, bin: &str, label: &str) -> 
         output_rel, prompt
     );
     let mut cmd = Command::new(bin);
-    cmd.current_dir(&root).arg("-p").arg(wrapped);
+    cmd.current_dir(&root);
+    cmd.args(model_args);
+    cmd.arg("-p").arg(wrapped);
     let _ = output_with_timeout(cmd, Duration::from_secs(240));
     if output_abs.exists() {
         let text = fs::read_to_string(output_abs).ok()?;

@@ -6,16 +6,21 @@ import type { CodexItem } from './codex';
 
 export type PipelineStep = 'episode-brief' | 'scene-plan' | 'context' | 'draft' | 'analyze' | 'qa' | 'revise' | 'summarize' | 'commit';
 
-export const STEP_META: Record<PipelineStep, { label: string; desc: string }> = {
-  'episode-brief': { label: '회차 브리프', desc: '이번 회차 목표 확정' },
-  'scene-plan':    { label: '장면 계획',   desc: '장면 카드와 beat 설계' },
-  context:   { label: '컨텍스트',   desc: '회차 자료 묶기' },
-  draft:     { label: '초안 후보',  desc: 'AI 원고 후보 생성' },
-  analyze:   { label: '표현 분석',  desc: '반복·상투 표현 찾기' },
-  qa:        { label: 'QA',        desc: '게이트 검사 및 이슈 도출' },
-  revise:    { label: '수정 계획',  desc: '수정 체크리스트 생성' },
-  summarize: { label: '요약',       desc: '회차 요약' },
-  commit:    { label: '기록',       desc: '스냅샷 및 로그' }
+/** 단계의 실행 성격 — hybrid는 AI 우선 + 로컬 폴백, static은 AI 호출 없음. */
+export type StepExecKind = 'hybrid' | 'static';
+
+export const STEP_EXEC_LABEL: Record<StepExecKind, string> = { hybrid: 'Hybrid', static: 'Static' };
+
+export const STEP_META: Record<PipelineStep, { label: string; desc: string; exec: StepExecKind }> = {
+  'episode-brief': { label: '회차 브리프', desc: '이번 회차 목표 확정', exec: 'hybrid' },
+  'scene-plan':    { label: '장면 계획',   desc: '장면 카드와 beat 설계', exec: 'hybrid' },
+  context:   { label: '컨텍스트',   desc: '회차 자료 묶기', exec: 'static' },
+  draft:     { label: '초안 후보',  desc: 'AI 원고 후보 생성', exec: 'hybrid' },
+  analyze:   { label: '표현 분석',  desc: '반복·상투 표현 찾기', exec: 'static' },
+  qa:        { label: 'QA',        desc: '게이트 검사 및 이슈 도출', exec: 'hybrid' },
+  revise:    { label: '수정 계획',  desc: '수정 체크리스트 생성', exec: 'hybrid' },
+  summarize: { label: '요약',       desc: '회차 요약', exec: 'hybrid' },
+  commit:    { label: '기록·픽스',  desc: '스냅샷 후 회차 픽스', exec: 'static' }
 };
 
 const TEMPLATES: Record<PipelineStep, string> = {
