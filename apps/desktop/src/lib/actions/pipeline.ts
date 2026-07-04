@@ -14,8 +14,10 @@ import {
   writeFile,
   createSnapshot
 } from '$lib/api/commands';
+import type { Candidate } from '$lib/api/commands';
 import { parseQAReport, parseRevisionPlan } from '$lib/domain/reports';
 import type { QAIssue } from '$lib/domain/reports';
+import { settingsStore } from '$lib/stores/settingsStore';
 import { validateCandidateMarkdown, validateQAContract } from '$lib/domain/agentContracts';
 import { manuscriptContextWindow } from '$lib/domain/prompt';
 import { checkStyleCompliance } from '$lib/domain/style';
@@ -300,9 +302,21 @@ export async function runDraftAction(kind: 'draft' | 'revise' | 'continue' | 're
     // 산출물(컨텍스트/요약/QA/수정계획/표현분석)과 문체 지침서를 참고 블록으로 전달
     const sourceGuidance = draftSourceGuidance(ctx);
     const guidance = [buildGuidanceText(ep), sourceGuidance].filter((s) => s.trim()).join('\n\n');
-    const candidates = (await generateCandidate(projectRoot(), ep, kind, base, guidance))
-      .filter((c) => validateCandidateMarkdown(c.content, base).ok);
-    if (!candidates.length) throw new Error('agent returned no usable candidate markdown');
+    // 환경설정의 후보 수만큼 확보한다. 에이전트 경로는 호출당 1개가 일반적이라
+    // 부족하면 추가 호출하되, 빈 결과가 나오면 무한 반복하지 않는다.
+    const targetCount = Math.max(1, Math.min(4, get(settingsStore).aiDefaultCandidateCount || 1));
+    const collected: Candidate[] = [];
+    for (let attempt = 0; collected.length < targetCount && attempt <= targetCount; attempt++) {
+      const variation = attempt > 0 ? `\n\n### 후보 변주 지시\n이전 후보와 다른 접근(장면 진입, 리듬, 묘사 초점)을 시도하라. 사건과 확정 설정은 동일하게 유지한다.` : '';
+      const batch = (await generateCandidate(projectRoot(), ep, kind, base, guidance + variation)).filter(
+        (c) => validateCandidateMarkdown(c.content, base).ok
+      );
+      if (!batch.length) break;
+      collected.push(...batch);
+    }
+    if (!collected.length) throw new Error('agent returned no usable candidate markdown');
+    const labels = ['후보 A', '후보 B', '후보 C', '후보 D'];
+    const candidates = collected.slice(0, targetCount).map((c, i) => ({ ...c, id: `${c.id}-${i}`, label: labels[i] ?? c.label }));
     candidateStore.set({ candidates, activeId: candidates[0]?.id ?? null, generating: false, appliedHunks: new Set(), sessionSnapshotId: null });
     for (const c of candidates) recordArtifact('draft', ep, `${c.label} (${kind})`, c.content);
     gotoStage('review');

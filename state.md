@@ -1,5 +1,15 @@
 # state.md — Current Handoff State
 
+## 2026-07-04 AI Mission Control + Run Persistence (branch: feat/ai-mission-control)
+
+- Implemented the first slice of the architecture review (`Bindery_AI_pipeline_architecture_review_2026-07-03.md`) — Phase 1 items 1/3/4(부분)/5 of its priority list:
+  - `runStore.ts`: PipelineRun model (runId, settings snapshot, per-step status/artifact links, human decisions), persisted to `.bindery/runs/{runId}/run.json` + `.bindery/runs/index.json`, hydrated on project open (stale `running` runs normalize to 중단).
+  - `AIMissionControl.svelte` (`components/ai/mission/`): full-screen workspace — left step graph with run buttons + run history, center 산출물/프롬프트/컨텍스트/검토 tabs (검토 embeds CandidateDiffPanel/QADashboard/RevisionPanel), right inspector (settings, risks, decision log). Esc closes; entry from the AI rail and run stage.
+  - `guidance.ts`: GuidanceSection now carries `hardness`(hard/soft/reference), `sourceId`, `tokenEstimate` (+`estimateTokens`); prompt text output unchanged.
+  - `pipeline.ts` `runDraftAction`: honors `settingsStore.aiDefaultCandidateCount` (1–4) with re-call + variation directive; candidates relabeled 후보 A–D. Apply/discard/run-all/reset record human decisions.
+- Browser-verified on the dev server: run chip starts on first step run, artifacts/prompt/context tabs render (hardness badges + token totals), candidate count honored with style scores, apply-all logs a decision and returns to 집필, 전체 실행 finishes the run into history as 검토 대기 (superseded run marked 중단), Esc closes, 0 console errors. svelte-check 0/0, Python 18 tests OK, node smokes OK.
+- Not yet done from the review (follow-ups): DraftCandidateEnvelope/QAReportEnvelope JSON schemas, EpisodeBrief/ScenePlan steps, MemoryWriteProposal approval UI, retrieval-based context pack, auto repair passes.
+
 ## 2026-07-03 Pipeline Gap Closure + UI Restructure
 
 - Audit conclusion: style-analysis and AI writing pipelines run end to end (local-first analysis, native→Python CLI delegation, propose→review→apply). Three gaps were closed this pass.

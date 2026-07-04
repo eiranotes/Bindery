@@ -34,7 +34,33 @@ function renderCapsule(capsule: PromptCapsule): string {
   return lines.join('\n');
 }
 
-export type GuidanceSection = { label: string; source: string; content: string };
+/** 구속 강도 — hard는 위반 시 실패로 다뤄야 하는 규칙, soft는 지향점, reference는 참고 맥락. */
+export type GuidanceHardness = 'hard' | 'soft' | 'reference';
+
+export type GuidanceSection = {
+  label: string;
+  source: string;
+  content: string;
+  /** 컨텍스트 인스펙터용 메타데이터 — 프롬프트 텍스트에는 영향 없음 */
+  hardness: GuidanceHardness;
+  sourceId: string;
+  tokenEstimate: number;
+};
+
+/** 한국어+마크다운 기준 대략적인 토큰 추정 (표시용, 과금 계산 아님). */
+export function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 2);
+}
+
+function section(
+  label: string,
+  source: string,
+  content: string,
+  hardness: GuidanceHardness,
+  sourceId: string
+): GuidanceSection {
+  return { label, source, content, hardness, sourceId, tokenEstimate: estimateTokens(content) };
+}
 
 // 강제 강도별 서문 — 지침이 문장을 딱딱하게 만들지 않도록 이탈 허용 범위를 명시한다.
 const STRICTNESS_PREAMBLE: Record<StyleStrictness, string> = {
@@ -57,44 +83,47 @@ export function collectGuidance(episode: string): GuidanceSection[] {
     `- 창의성(${CREATIVITY_LABEL[params.creativity]}): ${CREATIVITY_DIRECTIVE[params.creativity]}`,
     params.notes.trim() ? `- 작가 지시: ${params.notes.trim()}` : ''
   ].filter(Boolean);
-  sections.push({ label: '집필 파라미터', source: 'AI 작업 설정', content: paramLines.join('\n') });
+  sections.push(section('집필 파라미터', 'AI 작업 설정', paramLines.join('\n'), 'soft', 'draft-params'));
 
   const style = get(styleStore);
   if (style.applyToDraft && style.guideline) {
-    sections.push({
-      label: `문체 지침서 (적용 강도: ${style.strictness === 'flexible' ? '유연' : style.strictness === 'strict' ? '엄격' : '균형'})`,
-      source: '문체 스튜디오',
-      content: `${STRICTNESS_PREAMBLE[style.strictness]}\n\n${clip(style.guideline, 2400)}`
-    });
+    sections.push(
+      section(
+        `문체 지침서 (적용 강도: ${style.strictness === 'flexible' ? '유연' : style.strictness === 'strict' ? '엄격' : '균형'})`,
+        '문체 스튜디오',
+        `${STRICTNESS_PREAMBLE[style.strictness]}\n\n${clip(style.guideline, 2400)}`,
+        // 유연/균형은 이탈을 허용하는 지향점, 엄격은 위반을 실패로 간주하는 규칙
+        style.strictness === 'strict' ? 'hard' : 'soft',
+        'style-guideline'
+      )
+    );
   }
 
   // 문체 시스템에서 장면 라우팅으로 만든 캡슐이 있으면 구조화된 규칙을 함께 전달한다.
+  // 금지 목록을 포함하므로 hard로 다룬다.
   if (style.applyToDraft && style.promptCapsule) {
-    sections.push({
-      label: '문체 캡슐 (장면 라우팅 규칙)',
-      source: '문체 시스템',
-      content: renderCapsule(style.promptCapsule)
-    });
+    sections.push(section('문체 캡슐 (장면 라우팅 규칙)', '문체 시스템', renderCapsule(style.promptCapsule), 'hard', 'style-capsule'));
   }
 
   const prev = previousEpisode(episode);
   const prevSummary = prev ? latestArtifact('summarize', prev) : null;
-  if (prevSummary) sections.push({ label: `이전 회차 요약 (${prev})`, source: `${prev} 산출물`, content: clip(prevSummary.content, 1100) });
+  if (prevSummary)
+    sections.push(section(`이전 회차 요약 (${prev})`, `${prev} 산출물`, clip(prevSummary.content, 1100), 'reference', `artifact:summarize:${prev}`));
 
   const context = latestArtifact('context', episode);
-  if (context) sections.push({ label: '컨텍스트 팩', source: `${episode} 산출물`, content: clip(context.content, 1600) });
+  if (context) sections.push(section('컨텍스트 팩', `${episode} 산출물`, clip(context.content, 1600), 'reference', `artifact:context:${episode}`));
 
   const summary = latestArtifact('summarize', episode);
-  if (summary) sections.push({ label: '현재 회차 요약', source: `${episode} 산출물`, content: clip(summary.content, 900) });
+  if (summary) sections.push(section('현재 회차 요약', `${episode} 산출물`, clip(summary.content, 900), 'reference', `artifact:summarize:${episode}`));
 
   const qa = latestArtifact('qa', episode);
-  if (qa) sections.push({ label: '최근 QA 이슈', source: `${episode} 산출물`, content: clip(qa.content, 1200) });
+  if (qa) sections.push(section('최근 QA 이슈', `${episode} 산출물`, clip(qa.content, 1200), 'reference', `artifact:qa:${episode}`));
 
   const revise = latestArtifact('revise', episode);
-  if (revise) sections.push({ label: '수정 계획', source: `${episode} 산출물`, content: clip(revise.content, 900) });
+  if (revise) sections.push(section('수정 계획', `${episode} 산출물`, clip(revise.content, 900), 'reference', `artifact:revise:${episode}`));
 
   const analyze = latestArtifact('analyze', episode);
-  if (analyze) sections.push({ label: '표현 분석(반복 주의)', source: `${episode} 산출물`, content: clip(analyze.content, 700) });
+  if (analyze) sections.push(section('표현 분석(반복 주의)', `${episode} 산출물`, clip(analyze.content, 700), 'reference', `artifact:analyze:${episode}`));
 
   return sections;
 }
