@@ -1,6 +1,42 @@
 # Decisions
 
-Updated: 2026-07-04 (Pipeline source clarity + workspace UI fixes)
+Updated: 2026-07-04 (AI pipeline observability + UX cleanup plan)
+
+## Pipeline Runs Need Observable Execution Contracts
+
+Decision: CLI-backed AI steps must expose live execution evidence and persisted usage metadata. Future run records should include a target contract, per-step event stream, duration, provider/mode, retry/repair state, artifact links, and token usage with an explicit source label: exact, reported, estimated, or unavailable.
+
+Reason: A spinner alone makes long local CLI execution look frozen and leaves authors unable to audit what happened. Token and cost data also vary by provider, so Bindery must distinguish confirmed accounting from local estimates instead of showing a false sense of precision.
+
+## AI Workspaces Prefer Workbench Layouts Over Text Cards
+
+Decision: AI 작업, Mission Control, candidate review, plot planning, and preferences should use workbench layouts: step tables, logs, inspectors, key-value rows, split panes, and disclosure sections. Nested rounded cards and paragraphs inside compact tool panels should be removed unless the panel is a primary reading artifact.
+
+Reason: Bindery is a dense writing IDE, not a marketing page. Repeated cards with explanatory prose make the tool feel generic and reduce scan speed. `DESIGN.md` already prefers dense, predictable work surfaces and bans card-inside-card density.
+
+## QA Must Declare Its Target And Evidence Source
+
+Decision: QA runs must declare whether they inspect the current editor, a selected draft candidate, the generation baseline, or mixed applied content. QA artifacts and run records should persist that target, including candidate id/session/hash when applicable. QA findings should also distinguish static evidence from AI judgment.
+
+Reason: Candidate Review currently makes it easy to assume QA is checking the selected 후보 A/B, even though the current implementation checks live editor content. Target metadata prevents ambiguous reports and makes candidate comparison auditable.
+
+## AI Runner Model Selection Must Be Explicit
+
+Decision: AI Runner settings should store the selected model separately from provider, CLI path, output mode, and timeout. `CLI default` is a valid explicit model mode, but it must be shown and persisted instead of being an invisible fallback. Runs, usage summaries, artifacts, and Mission Control should record provider, model, model source, and output mode.
+
+Reason: Without a model contract, two runs with the same prompt can silently use different CLI defaults. Model choice affects quality, cost, token limits, and reproducibility.
+
+## Provider Model Flags Must Be Verified Before Wiring
+
+Decision: Bindery should not invent provider-specific model flags. Codex, Gemini, Antigravity, and custom providers need separate argument mapping, and custom providers should support a user-defined argument template such as `--model {model}`.
+
+Reason: CLI model selection syntax can differ by provider and version. A wrong flag can make the runner fail or, worse, silently ignore the requested model.
+
+## POV QA Cannot Fail Without Declared POV Evidence
+
+Decision: First-person/third-person or POV consistency findings should require a declared expected POV plus line-level evidence before they can be `fail`. If expected POV is unknown, or if the model is making an unsupported editorial inference, the issue should be downgraded to review/info.
+
+Reason: POV and narrator checks are high-value but easy for AI judgment to overreach. False positives are more damaging than a cautious review note because they create unnecessary rewrite pressure.
 
 ## Planning Steps Must Show And Use Their Source Basis
 

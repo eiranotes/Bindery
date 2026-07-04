@@ -1,6 +1,26 @@
 # Tasks
 
-Updated: 2026-07-04 (Pipeline source clarity + workspace UI fixes)
+Updated: 2026-07-04 (AI pipeline observability + UX cleanup plan)
+
+## Next (AI pipeline observability + UX cleanup)
+
+- [ ] Add `PipelineTarget` so full-run execution explicitly records single episode vs episode range, manuscript path, baseline hash, candidate count, and plot/outline basis.
+- [ ] Add `RunEvent` streaming persistence under `.bindery/runs/{runId}/events.ndjson` for CLI spawn, stdout, stderr, file-output polling, schema repair, usage reporting, artifact writes, heartbeat, finish, and failure events.
+- [ ] Add `StepUsage` summaries to `run.json` and `.bindery/runs/{runId}/usage.json`, including duration, output mode, prompt/output chars, token counts, token source label, estimated cost when available, timeout, exit code, and repair attempts.
+- [ ] Add `AgentModelConfig` to settings so AI Runner can choose `CLI default` or an explicit provider model, with custom model argument templates for custom providers.
+- [ ] Pass selected model data through `run_agent_text`, `generate_candidate`, streaming events, run settings, usage summaries, and artifacts.
+- [ ] Show provider/model/output mode in AI 작업, Mission Control, live logs, and run history.
+- [ ] Add a streaming-capable native/Tauri agent command path while keeping the existing final-result command as a compatibility fallback.
+- [ ] Add Mission Control live execution UI: elapsed time, latest event, provider/mode, no-output waiting state, retry/repair state, usage label, and a log tab.
+- [ ] Add per-step execution source badges so every pipeline step declares Static, AI, Hybrid, or Fallback, plus the actual mode used in the latest run.
+- [ ] Add `CandidateReviewSession` so candidate diffs compare generation baseline to candidate by default and warn when current editor content differs.
+- [ ] Add `QATarget` and target-aware QA buttons for current editor, selected candidate, baseline, and applied mixed content.
+- [ ] Persist QA target metadata in run records and QA artifacts, including candidate id/session/hash when candidate QA is used.
+- [ ] Split QA findings into static evidence and AI judgment, with deterministic POV/first-person evidence required before fail severity.
+- [ ] Add bible/source based episode-outline proposal generation before EpisodeBrief, with explicit episode count/range and approval before writing plot-board rows.
+- [ ] Rename or clarify `전체 실행` semantics so it cannot imply all episodes unless a range target is selected.
+- [ ] Audit AI 작업, Mission Control, Candidate Review, Plot Board, Preferences, and Materials for nested-card/text-card slop and flatten them into tables, rails, inspectors, and disclosure rows.
+- [ ] Verify model-setting migration, provider/custom model argument construction, streaming, usage, baseline diff, QA target selection, POV false-positive guards, and anti-slop UI changes with unit tests, mock streaming tests, Svelte check, build, and browser visual QA at 390/768/1280.
 
 ## Done (2026-07-04 Pipeline source clarity + workspace UI fixes)
 

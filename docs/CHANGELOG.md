@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-07-04 (AI pipeline observability + UX cleanup plan)
+
+- Added `docs/AI_PIPELINE_OBSERVABILITY_UX_PLAN_20260704.md`, covering CLI streaming, run event logs, token/usage reporting, explicit episode targets, candidate diff baselines, bible-to-episode outline generation, and AI workspace anti-slop cleanup.
+- Extended the plan with pipeline source badges (Static/AI/Hybrid/Fallback), explicit QA targets for current editor vs selected candidate/baseline, candidate-linked QA metadata, and POV/first-person false-positive guards.
+- Added model-selection planning for AI Runner settings, including `CLI default` vs explicit provider models, custom provider model argument templates, and provider/model recording in run telemetry.
+- Updated project tracking docs so the next implementation pass has concrete tasks for Mission Control live logs, usage summaries, no-output waiting states, and card-heavy UI flattening.
+
 ## 2026-07-04 (Pipeline source clarity + workspace UI fixes)
 
 - Fixed writing mode switching so the `본문` editor remains visible after using preview.

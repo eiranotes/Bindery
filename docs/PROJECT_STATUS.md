@@ -1,10 +1,21 @@
 # Project Status
 
-Updated: 2026-07-04 (Pipeline source clarity + workspace UI fixes)
+Updated: 2026-07-04 (AI pipeline observability + UX cleanup plan)
 
 ## Current State
 
 Bindery is a writing-first macOS/Svelte/Tauri app covering the full local novel workflow: first-run project creation from a blank template or from a rough integrated idea/bible source (paste, Markdown/TXT, or DOCX), episode management (create/switch/status), writing with scene jump and daily stats, materials (editable plot board, codex item creation), style replication with adjustable enforcement strength, a 9-step AI harness (`회차 브리프 -> 장면 계획 -> 컨텍스트 -> 초안 후보 -> 표현 분석 -> QA -> 수정 계획 -> 요약 -> 기록`) whose every step leaves file-synced artifacts that feed drafting (with author-tunable length/creativity/instructions), schema-validated draft/QA agent outputs with one repair retry before fallback, agent-based QA with style-compliance and continuity gates, snapshot compare/restore, project-wide search, and real TXT/HTML/EPUB export. Rough source intake is local-first but can now ask the configured AI runner to read the preserved `notes/source-raw.md` and return a validated semantic split before harness files are finalized. Standalone/Tauri launches can be pointed at a real project folder with `BINDERY_START_PROJECT` or `--project`, so validation builds can open a seeded author project without relying on browser preview or stale localStorage. The shell keeps the collapsible binder navigator on the writing screen and gives AI/materials/export surfaces a single focused work area; top navigation and analysis rows remain resilient so dense Korean labels truncate or scroll instead of stacking into vertical text. The style analyzer follows the v3 MVP procedure locally first: normalize input, group scene candidates, code local features, generate evidence, apply globality decisions, build a surface profile, then hand semantic interpretation to the configured AI runner only where local regex analysis is insufficient. The structured style runtime now includes repository sync, deterministic SceneClassification, StyleRouter, StyleStack merge, PromptCapsule, feature-based StyleMatchScore, Korean surface analysis, structured-output guards, and validated SkillPack export paths in TypeScript and Python. Storage is local-only by design; `styles/` JSON is the editable source and SQLite is the query/index cache.
+
+## Planned (2026-07-04, AI pipeline observability + UX cleanup)
+
+- Added `docs/AI_PIPELINE_OBSERVABILITY_UX_PLAN_20260704.md` as the implementation plan for CLI streaming, run event persistence, token/usage reporting, explicit pipeline targets, candidate diff baselines, bible-to-episode outline generation, and anti-slop AI workspace cleanup.
+- Next implementation should make every running CLI step show elapsed time, latest event, provider/mode, stdout/stderr or file-output progress, retry/repair state, and token usage with an exact/reported/estimated/unavailable label.
+- AI Runner settings also need an explicit model contract: `CLI default` must be shown as a real option, explicit provider model ids must be persisted, and provider/model/output mode should appear in run records, usage summaries, Mission Control, and live logs.
+- The same pass should label each pipeline step as Static, AI, Hybrid, or Fallback, then record the actual mode used in the latest run.
+- Mission Control should gain a live log tab and per-step usage/duration summaries backed by `.bindery/runs/{runId}/events.ndjson`, `usage.json`, and richer `run.json` metadata.
+- The AI pipeline should stop implying broad "전체 실행" semantics unless the author chooses an explicit episode range; candidate diff review should default to the generation baseline and warn when the live editor changed.
+- QA needs an explicit target contract so the app can distinguish current-editor QA from selected-candidate QA, baseline QA, and mixed applied-content QA. POV/first-person findings should require declared expected POV plus line-level evidence before they can fail a gate.
+- UI cleanup should replace text-heavy nested cards with dense workbench tables, rails, split panes, key-value rows, and disclosure sections aligned with `DESIGN.md`.
 
 ## Completed (2026-07-04, Pipeline source clarity + workspace UI fixes)
 
