@@ -1,5 +1,16 @@
 # log.md — Stage 3 Work Log
 
+## 2026-07-04 AI Mission Control + Run Persistence (feat/ai-mission-control)
+
+- Read the external architecture review (`Bindery_AI_pipeline_architecture_review_2026-07-03.md`) and implemented its Phase 1 UX-flow slice on a separate branch.
+- Added `runStore.ts`: runs get an id, settings snapshot, per-step status with artifact links, and a human decision log; persisted to `.bindery/runs/{runId}/run.json` plus `.bindery/runs/index.json` and hydrated on project open.
+- Added `AIMissionControl.svelte`: a full-screen pipeline workspace with a left step graph/run history, a large center viewer (산출물, 프롬프트, 컨텍스트, 검토 tabs), and a right inspector (settings, risks, decision log). Entry points from the AI rail and the run stage; Esc closes.
+- Extended `GuidanceSection` with hardness/sourceId/tokenEstimate so the 컨텍스트 tab can show what enters the draft prompt, how binding it is, and its approximate weight.
+- Wired `aiDefaultCandidateCount` (already in settings v2) into `runDraftAction`: repeated agent calls with a variation directive until the target count, candidates relabeled 후보 A–D.
+- Recorded human decisions from candidate apply/discard and pipeline run-all/reset.
+- Fixed a broken uncommitted state before branching: missing `uiStore` import in AIStudio and dead `.line-form/.line-row` CSS (committed on main as part of the settings v2 pass).
+- Verified: svelte-check 0/0, Python 18 tests, node smokes, and a full browser click-through of the mission control flow with 0 console errors.
+
 ## 2026-07-03 Studio Surface + Card Flattening
 
 - Reduced the top navigation from five tabs to three by folding `문체`/`AI`/`내보내기` under a single `작업실` surface with a slim sub-nav (`uiStore.ts` `primaryViews`/`studioViews`/`isStudioView`, `TopBar.svelte`, `MainSurface.svelte`). The AI and style tools stay as separate screens but no longer crowd the top bar.

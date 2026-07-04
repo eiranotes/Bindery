@@ -7,6 +7,7 @@ import { projectStore } from '$lib/stores/projectStore';
 import { uiStore } from '$lib/stores/uiStore';
 import { computeStats } from '$lib/editor';
 import { hydrateArtifactsFromProject } from '$lib/stores/artifactStore';
+import { hydrateRunsFromProject } from '$lib/stores/runStore';
 import { loadCodexAction, loadPlotAction } from '$lib/actions/pipeline';
 import type { CreateProjectInput, FileNode, ProjectInfo } from '$lib/types';
 
@@ -55,7 +56,7 @@ export async function openProjectIntoWorkspace(path: string): Promise<ProjectInf
 
   candidateStore.set({ candidates: [], activeId: null, generating: false, appliedHunks: new Set(), sessionSnapshotId: null });
   uiStore.update((s) => ({ ...s, centerView: 'write', binderTab: 'episodes' }));
-  await Promise.all([loadCodexAction(), loadPlotAction(), hydrateArtifactsFromProject(project.rootPath)]);
+  await Promise.all([loadCodexAction(), loadPlotAction(), hydrateArtifactsFromProject(project.rootPath), hydrateRunsFromProject(project.rootPath)]);
   return project;
 }
 

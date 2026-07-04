@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-07-04 (AI 미션 컨트롤 + run 기록)
+
+- Added the AI 미션 컨트롤 full-screen workspace (`작업실 → AI 파이프라인 → 미션 컨트롤`): left pipeline graph with per-step run buttons and run history, a large center viewer with 산출물/프롬프트/컨텍스트/검토 tabs, and a right inspector for run settings, risks (QA verdict, failed steps, candidates), and the human decision log.
+- Pipeline executions are now recorded as runs: each run gets a `runId`, a settings snapshot, per-step status/artifact links, and human decisions (run-all, apply-all, apply-hunk, discard, reset), persisted to `.bindery/runs/{runId}/run.json` and `.bindery/runs/index.json`, and restored as history when the project reopens.
+- Draft/revise prompt guidance sections now carry hardness (규칙/지향/참고), source IDs, and token estimates; the 컨텍스트 tab shows exactly what will enter the prompt and how heavy it is.
+- Draft candidate generation now honors the 환경설정 후보 수 (1–4): the agent path is called again with a variation directive until the target count is reached, and candidates are relabeled 후보 A–D.
+
 ## 2026-07-03 (리뷰 패치 반영 + 후속 계획 구현)
 
 - AI prompt preview, QA, and summary now include front/middle/tail manuscript context windows so long episodes do not lose late-scene turns and hooks.

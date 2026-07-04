@@ -1,6 +1,20 @@
 # Tasks
 
-Updated: 2026-07-03 (리뷰 패치 반영 + 후속 계획 구현)
+Updated: 2026-07-04 (AI 미션 컨트롤 + run 기록)
+
+## Done (2026-07-04 AI 미션 컨트롤 + run 기록 — feat/ai-mission-control)
+
+- [x] Add run persistence: runId, settings snapshot, per-step status/artifact links, human decisions, `.bindery/runs/{runId}/run.json` + index, hydration on project open.
+- [x] Add the AI 미션 컨트롤 full-screen workspace with step graph, run history, large artifact/prompt/context/review viewers, and a settings/risk/decision inspector.
+- [x] Add hardness/sourceId/token-estimate metadata to draft guidance sections and surface them in the 컨텍스트 tab.
+- [x] Wire `aiDefaultCandidateCount` into draft generation with variation directives and 후보 A–D relabeling.
+
+## Next (아키텍처 리뷰 후속 — 장기 기억/스키마)
+
+- [ ] Introduce `DraftCandidateEnvelope`/`QAReportEnvelope` JSON schemas with repair-on-invalid loops.
+- [ ] Add `EpisodeBrief` and `ScenePlan` steps ahead of draft generation (plot board linked).
+- [ ] Add `MemoryWriteProposal` approval UI so AI-proposed canon changes require human confirmation.
+- [ ] Split project memory into semantic/episodic/procedural indexes (`.bindery/memory`) with retrieval-based context packs.
 
 ## Done (2026-07-03 리뷰 패치 반영 + 후속 계획 구현)
 

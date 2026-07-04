@@ -9,6 +9,7 @@
   import { runDraftAction } from '$lib/actions/pipeline';
   import { diffLines, applyHunk } from '$lib/domain/diff';
   import { styleStore } from '$lib/stores/styleStore';
+  import { recordHumanDecision } from '$lib/stores/runStore';
   import { scoreStyleMatch } from '$lib/domain/style';
 
   $: active = $candidateStore.candidates.find((c) => c.id === $candidateStore.activeId) || null;
@@ -34,6 +35,7 @@
     const allHunks = new Set(diff?.hunks.map((h) => h.id) ?? []);
     editorStore.update((s) => ({ ...s, content: active!.content, dirty: active!.content !== s.savedContent }));
     candidateStore.update((s) => ({ ...s, appliedHunks: allHunks }));
+    recordHumanDecision('apply-all', active.label);
     toasts.push('후보 전체 적용됨. 저장 전 검토', 'ok');
     uiStore.update((s) => ({ ...s, centerView: 'write' }));
   }
@@ -50,6 +52,7 @@
       applied.add(hunkId);
       return { ...s, appliedHunks: applied };
     });
+    recordHumanDecision('apply-hunk', `${active.label} · ${hunkId}`);
     toasts.push(`${hunkId} 적용됨`, 'ok');
   }
 
@@ -62,6 +65,7 @@
   }
 
   function discard() {
+    recordHumanDecision('discard-candidates', `${$candidateStore.candidates.length}개`);
     candidateStore.set({ candidates: [], activeId: null, generating: false, appliedHunks: new Set(), sessionSnapshotId: null });
   }
 </script>

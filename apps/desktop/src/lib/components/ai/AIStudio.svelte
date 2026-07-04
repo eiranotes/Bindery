@@ -3,7 +3,11 @@
   import QADashboard from '$lib/components/qa/QADashboard.svelte';
   import RevisionPanel from '$lib/components/revision/RevisionPanel.svelte';
   import RepetitionPanel from '$lib/components/analysis/RepetitionPanel.svelte';
+  import AIMissionControl from '$lib/components/ai/mission/AIMissionControl.svelte';
   import { pipelineStore, harnessStages, gotoStage, setStepStatus, resetPipeline } from '$lib/stores/pipelineStore';
+  import { ensureRun, startRun, recordRunStep, recordHumanDecision, finishRun } from '$lib/stores/runStore';
+  import type { PipelineRun } from '$lib/stores/runStore';
+  import { latestArtifact } from '$lib/stores/artifactStore';
   import type { HarnessStage } from '$lib/stores/pipelineStore';
   import { settingsStore } from '$lib/stores/settingsStore';
   import { projectStore } from '$lib/stores/projectStore';
@@ -174,19 +178,46 @@
     commit: runCommitAction
   };
 
+  // ---- run 기록 · 미션 컨트롤 -------------------------------------------
+  let missionOpen = false;
+
+  /** run.json에 남길 실행 시점 설정 스냅샷 */
+  function runSettingsSnapshot(): PipelineRun['settings'] {
+    return {
+      provider: $settingsStore.agentProvider,
+      mockMode: $settingsStore.mockMode,
+      draftKind,
+      lengthTarget: $draftParamsStore.lengthTarget,
+      creativity: $draftParamsStore.creativity,
+      styleStrictness: $styleStore.strictness,
+      candidateCount: $settingsStore.aiDefaultCandidateCount
+    };
+  }
+
   async function run(step: PipelineStep): Promise<boolean> {
     running = step;
     setStepStatus(step, 'running');
+    ensureRun(episode, runSettingsSnapshot());
+    recordRunStep(step, { status: 'running', startedAt: new Date().toISOString() });
     try {
       const ok = await runners[step]();
       if (ok === false) {
         setStepStatus(step, 'failed');
+        recordRunStep(step, { status: 'failed', finishedAt: new Date().toISOString(), error: 'step returned failure' });
         return false;
       }
       setStepStatus(step, 'done');
+      const artifact = latestArtifact(step, episode);
+      recordRunStep(step, {
+        status: 'done',
+        finishedAt: new Date().toISOString(),
+        artifactId: artifact?.id,
+        artifactTitle: artifact?.title
+      });
       return true;
     } catch {
       setStepStatus(step, 'failed');
+      recordRunStep(step, { status: 'failed', finishedAt: new Date().toISOString(), error: 'step threw' });
       return false;
     } finally {
       running = null;
@@ -194,15 +225,24 @@
   }
   async function runAll() {
     toasts.push(`전체 파이프라인 실행: ${steps.length}단계`, 'info');
+    startRun(episode, runSettingsSnapshot());
+    recordHumanDecision('run-all');
     for (const step of steps) {
       const ok = await run(step);
       if (!ok) {
         toasts.push(`${STEP_META[step].label} 단계에서 중단됨 · 산출물을 확인하세요`, 'bad');
+        finishRun('failed');
         gotoStage('review');
         return;
       }
     }
+    finishRun($candidateStore.candidates.length ? 'waiting_for_review' : 'done');
     gotoStage('review');
+  }
+  function resetRunState() {
+    recordHumanDecision('reset-pipeline');
+    finishRun('done');
+    resetPipeline();
   }
   function preview(step: PipelineStep) {
     previewStep = step;
@@ -233,7 +273,10 @@
       {/each}
     </nav>
 
-    <p class="rail-note">AI는 원고를 직접 수정하지 않습니다. 모든 출력은 후보와 보고서로 저장되고, 적용은 검토 단계에서 직접 선택합니다.</p>
+    <div class="rail-foot">
+      <button class="ghost mission-launch" on:click={() => (missionOpen = true)} title="파이프라인·산출물·프롬프트·컨텍스트를 전체 화면에서 검토">미션 컨트롤 열기</button>
+      <p class="rail-note">AI는 원고를 직접 수정하지 않습니다. 모든 출력은 후보와 보고서로 저장되고, 적용은 검토 단계에서 직접 선택합니다.</p>
+    </div>
   </aside>
 
   <section class="ai-stage">
@@ -397,7 +440,8 @@
 
           <div class="stage-actions">
             <button class="primary" on:click={runAll} disabled={running !== null}>전체 실행</button>
-            <button class="ghost" on:click={resetPipeline} disabled={running !== null}>상태 초기화</button>
+            <button class="ghost" on:click={() => (missionOpen = true)}>미션 컨트롤</button>
+            <button class="ghost" on:click={resetRunState} disabled={running !== null}>상태 초기화</button>
             <button class="ghost" on:click={() => gotoStage('review')}>다음: 검토 →</button>
           </div>
           {#if $candidateStore.candidates.length}
@@ -482,6 +526,10 @@
   </div>
 {/if}
 
+{#if missionOpen}
+  <AIMissionControl {episode} {running} runStep={run} runAllSteps={runAll} onClose={() => (missionOpen = false)} />
+{/if}
+
 <style>
   .ai-studio { min-height: 0; display: grid; grid-template-columns: 250px minmax(0, 1fr); }
   .ai-rail {
@@ -516,7 +564,9 @@
   .rs-copy { min-width: 0; display: grid; gap: 2px; }
   .rs-name { color: var(--text); font-weight: 650; font-size: 13.5px; }
   .rail-stage small { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .rail-note { margin: 0; color: var(--faint); font-size: 11.5px; line-height: 1.6; border-top: 1px solid var(--line); padding-top: 12px; }
+  .rail-foot { display: grid; gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .mission-launch { width: 100%; }
+  .rail-note { margin: 0; color: var(--faint); font-size: 11.5px; line-height: 1.6; }
 
   .ai-stage { min-height: 0; overflow: auto; padding: 22px 26px; }
   .stage-head { max-width: 720px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
