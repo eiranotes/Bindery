@@ -168,6 +168,12 @@ export async function openProject(path: string): Promise<ProjectInfo> {
   return { rootPath: path || 'sample-project', title: titleFromPath(path), hasNovelctlConfig: true, hasGeminiConfig: path === 'sample-project' };
 }
 
+export async function getStartupProjectPath(): Promise<string | null> {
+  const invoke = await getInvoke();
+  if (!invoke) return null;
+  return invoke<string | null>('startup_project_path');
+}
+
 export async function createProject(input: CreateProjectInput): Promise<ProjectInfo> {
   const invoke = await getInvoke();
   if (invoke) return invoke<ProjectInfo>('create_project', input);

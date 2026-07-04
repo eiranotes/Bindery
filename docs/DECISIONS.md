@@ -1,6 +1,12 @@
 # Decisions
 
-Updated: 2026-07-04 (AI 문맥 분해 + DOCX 통합 문서)
+Updated: 2026-07-04 (Standalone startup project + MEDALLION seed)
+
+## Standalone Startup Projects Use Explicit Env Or CLI Input
+
+Decision: Standalone/Tauri app startup can receive a real project folder through `BINDERY_START_PROJECT`, `--project <path>`, `--project=<path>`, or a bare path argument. This startup path takes priority over the localStorage-restored recent project for that launch.
+
+Reason: Packaged and standalone validation should prove the app can read a real author project folder directly, not only a browser preview or whatever localStorage happened to remember. Keeping the input explicit avoids baking personal sample paths into production defaults while still making reproducible local demo launches possible.
 
 ## Source Intake Agent Reads The Raw File Before Finalizing Harness Files
 

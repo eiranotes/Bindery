@@ -130,6 +130,45 @@ fn yaml_quote(value: &str) -> String {
     value.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
+fn normalized_startup_path(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let expanded = expand_home(trimmed);
+    Some(expanded.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn startup_project_path() -> Option<String> {
+    if let Ok(path) = env::var("BINDERY_START_PROJECT") {
+        if let Some(normalized) = normalized_startup_path(&path) {
+            return Some(normalized);
+        }
+    }
+
+    let mut args = env::args().skip(1);
+    while let Some(arg) = args.next() {
+        if let Some(path) = arg.strip_prefix("--project=") {
+            if let Some(normalized) = normalized_startup_path(path) {
+                return Some(normalized);
+            }
+        } else if arg == "--project" {
+            if let Some(path) = args.next() {
+                if let Some(normalized) = normalized_startup_path(&path) {
+                    return Some(normalized);
+                }
+            }
+        } else if !arg.starts_with('-') {
+            if let Some(normalized) = normalized_startup_path(&arg) {
+                return Some(normalized);
+            }
+        }
+    }
+
+    None
+}
+
 #[tauri::command]
 pub fn open_project(app: AppHandle, path: String) -> AppResult<ProjectInfo> {
     let trimmed = path.trim();

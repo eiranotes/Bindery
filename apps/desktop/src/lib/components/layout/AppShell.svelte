@@ -14,16 +14,26 @@
   import { projectStore } from '$lib/stores/projectStore';
   import { fileTreeStore } from '$lib/stores/fileTreeStore';
   import { openProjectIntoWorkspace } from '$lib/actions/project';
+  import { getStartupProjectPath } from '$lib/api/commands';
 
-  // 새로고침 뒤에도 열려 있던 작품을 복원한다. 프로젝트는 localStorage에
-  // 남지만 파일 트리와 원고 버퍼는 메모리에만 있으므로 다시 불러온다.
+  // 실행 인자로 지정된 작품이 있으면 먼저 연다. 없으면 새로고침 뒤에도
+  // 열려 있던 작품을 복원한다. 파일 트리와 원고 버퍼는 메모리에만 있다.
   onMount(() => {
-    const current = get(projectStore).current;
-    if (current && get(fileTreeStore).nodes.length === 0) {
-      openProjectIntoWorkspace(current.rootPath).catch(() => {
-        projectStore.update((s) => ({ ...s, current: null }));
-      });
-    }
+    void (async () => {
+      const startupPath = await getStartupProjectPath().catch(() => null);
+      const current = get(projectStore).current;
+
+      if (startupPath && current?.rootPath !== startupPath) {
+        await openProjectIntoWorkspace(startupPath);
+        return;
+      }
+
+      if (current && get(fileTreeStore).nodes.length === 0) {
+        await openProjectIntoWorkspace(current.rootPath);
+      }
+    })().catch(() => {
+      projectStore.update((s) => ({ ...s, current: null }));
+    });
   });
 
   // 왼쪽 챕터 네비게이터는 집필할 때만 쓰인다. AI 작업·문체·자료·내보내기 화면은

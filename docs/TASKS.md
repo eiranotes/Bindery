@@ -1,6 +1,12 @@
 # Tasks
 
-Updated: 2026-07-04 (AI 문맥 분해 + DOCX 통합 문서)
+Updated: 2026-07-04 (Standalone startup project + MEDALLION seed)
+
+## Done (2026-07-04 Standalone startup project + MEDALLION seed — feat/ai-mission-control)
+
+- [x] Add a startup project bootstrap so standalone/Tauri launches can open a real project folder from `BINDERY_START_PROJECT` or `--project`.
+- [x] Create `/Users/tofu/Downloads/MEDALLION.bindery` beside `medallion bible.docx` from the preserved AI-refined source-intake result without rerunning AI.
+- [x] Rebuild and launch the standalone app against `/Users/tofu/Downloads/MEDALLION.bindery`, then preserve visual/runtime evidence for review.
 
 ## Done (2026-07-04 AI 문맥 분해 + DOCX 통합 문서 — feat/ai-mission-control)
 

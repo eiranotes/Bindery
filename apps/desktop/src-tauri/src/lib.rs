@@ -11,6 +11,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
             open_project,
+            startup_project_path,
             create_project,
             list_tree,
             read_file,

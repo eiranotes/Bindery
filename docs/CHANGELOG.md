@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-07-04 (Standalone startup project + MEDALLION seed)
+
+- Added standalone/Tauri startup project input through `BINDERY_START_PROJECT` and `--project`, letting a rebuilt app open a real project folder before localStorage restoration.
+- Created `/Users/tofu/Downloads/MEDALLION.bindery` beside the source DOCX by copying the preserved MEDALLION AI-refined source-intake output and adding project metadata plus a run note, with no new AI execution.
+
 ## 2026-07-04 (AI 문맥 분해 + DOCX 통합 문서)
 
 - Added optional `AI 문맥 분해` to the `통합 문서` start path. Bindery preserves the raw source, asks the configured agent to read it, validates semantic `SourceIntake` JSON, and falls back to the local split if needed.
