@@ -1,10 +1,20 @@
 # Project Status
 
-Updated: 2026-07-04 (Standalone startup project + MEDALLION seed)
+Updated: 2026-07-04 (Pipeline source clarity + workspace UI fixes)
 
 ## Current State
 
 Bindery is a writing-first macOS/Svelte/Tauri app covering the full local novel workflow: first-run project creation from a blank template or from a rough integrated idea/bible source (paste, Markdown/TXT, or DOCX), episode management (create/switch/status), writing with scene jump and daily stats, materials (editable plot board, codex item creation), style replication with adjustable enforcement strength, a 9-step AI harness (`회차 브리프 -> 장면 계획 -> 컨텍스트 -> 초안 후보 -> 표현 분석 -> QA -> 수정 계획 -> 요약 -> 기록`) whose every step leaves file-synced artifacts that feed drafting (with author-tunable length/creativity/instructions), schema-validated draft/QA agent outputs with one repair retry before fallback, agent-based QA with style-compliance and continuity gates, snapshot compare/restore, project-wide search, and real TXT/HTML/EPUB export. Rough source intake is local-first but can now ask the configured AI runner to read the preserved `notes/source-raw.md` and return a validated semantic split before harness files are finalized. Standalone/Tauri launches can be pointed at a real project folder with `BINDERY_START_PROJECT` or `--project`, so validation builds can open a seeded author project without relying on browser preview or stale localStorage. The shell keeps the collapsible binder navigator on the writing screen and gives AI/materials/export surfaces a single focused work area; top navigation and analysis rows remain resilient so dense Korean labels truncate or scroll instead of stacking into vertical text. The style analyzer follows the v3 MVP procedure locally first: normalize input, group scene candidates, code local features, generate evidence, apply globality decisions, build a surface profile, then hand semantic interpretation to the configured AI runner only where local regex analysis is insufficient. The structured style runtime now includes repository sync, deterministic SceneClassification, StyleRouter, StyleStack merge, PromptCapsule, feature-based StyleMatchScore, Korean surface analysis, structured-output guards, and validated SkillPack export paths in TypeScript and Python. Storage is local-only by design; `styles/` JSON is the editable source and SQLite is the query/index cache.
+
+## Completed (2026-07-04, Pipeline source clarity + workspace UI fixes)
+
+- Fixed the writing view so switching back to `본문` keeps the CodeMirror editor mounted and visible instead of requiring `미리보기`.
+- Reworked plot-board beat display so long Korean descriptions wrap inside table cells instead of being clipped inside pill-like labels; editing beat text now uses a two-line field.
+- Changed Codex `링크 스캔` output into a collapsed result summary with explicit `결과 보기` and `닫기`, preventing confidence chips such as `100%` from permanently covering panel space.
+- Added a first-run `통합 문서` destination map showing exactly where rough source material is written: `notes/source-raw.md`, `notes/source-intake.md`, `canon/setting-bible.md`, `characters/`, `world/organizations.md`, `plot/plot-board.json`, and `plot/open-threads.md`.
+- Fixed the preferences modal frame height so section changes scroll inside a stable dialog instead of resizing the outer window.
+- Added pipeline input-basis visibility in AI 작업 and Mission Control, and made Mission Control show the episode artifact list plus per-step artifact counts.
+- Expanded EpisodeBrief and ScenePlan planning input so agent prompts include source-intake output, setting bible, character inbox, organizations, open threads, and Codex item summaries in addition to plot board rows, previous summary, and manuscript excerpts.
 
 ## Completed (2026-07-04, Standalone startup project + MEDALLION seed)
 

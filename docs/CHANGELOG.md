@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-07-04 (Pipeline source clarity + workspace UI fixes)
+
+- Fixed writing mode switching so the `본문` editor remains visible after using preview.
+- Improved plot-board readability by wrapping long beat descriptions and replacing clipped pill output with multi-line table text.
+- Made Codex link-scan results collapsed and dismissible so confidence chips no longer keep covering panel space.
+- Added a `통합 문서` destination map on the start screen, showing the exact generated project files and folders.
+- Stabilized the preferences modal size with internal scrolling.
+- Added AI pipeline input-basis summaries and richer Mission Control artifact visibility.
+- Expanded EpisodeBrief and ScenePlan prompts to include source-intake, setting bible, cast inbox, organizations, open threads, and Codex summaries.
+
 ## 2026-07-04 (Standalone startup project + MEDALLION seed)
 
 - Added standalone/Tauri startup project input through `BINDERY_START_PROJECT` and `--project`, letting a rebuilt app open a real project folder before localStorage restoration.

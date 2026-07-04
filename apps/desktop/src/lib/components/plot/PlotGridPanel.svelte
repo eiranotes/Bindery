@@ -22,6 +22,10 @@
   function setTitle(i: number, title: string) { mutate((rows) => { rows[i].title = title; return rows; }); }
   function setTension(i: number, t: Tension) { mutate((rows) => { rows[i].tension = t; return rows; }); }
   function setBeat(i: number, plotline: string, value: string) { mutate((rows) => { rows[i].beats[plotline] = value; return rows; }); }
+  function splitBeat(value: string): string[] {
+    const parts = value.split(/\s*(?:\/|;|；|·)\s*/).map((part) => part.trim()).filter(Boolean);
+    return parts.length > 1 ? parts : [value];
+  }
   function removeRow(i: number) { mutate((rows) => rows.filter((_, idx) => idx !== i)); }
   function moveRow(from: number, to: number) {
     if (from === to || from < 0 || to < 0) return;
@@ -134,9 +138,13 @@
               {#each filtered as p}
                 <td class="beat" class:empty-beat={!row.beats[p.id]}>
                   {#if editing}
-                    <input class="cell-input beat-input" placeholder="비움" value={row.beats[p.id] ?? ''} on:change={(e) => setBeat(i, p.id, e.currentTarget.value)} />
+                    <textarea class="cell-input beat-input" rows="2" placeholder="비움" value={row.beats[p.id] ?? ''} on:change={(e) => setBeat(i, p.id, e.currentTarget.value)}></textarea>
                   {:else if row.beats[p.id]}
-                    <span class="beat-label" style={`border-color:${p.color}44`}>{row.beats[p.id]}</span>
+                    <span class="beat-label" style={`box-shadow: inset 2px 0 0 ${p.color}`} title={row.beats[p.id]}>
+                      {#each splitBeat(row.beats[p.id]) as line}
+                        <span>{line}</span>
+                      {/each}
+                    </span>
                   {/if}
                 </td>
               {/each}
@@ -164,23 +172,34 @@
   .filter { max-width: 190px; background: var(--chip); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; font-size: 11.5px; }
   .tiny { padding: 5px 9px; font-size: 11.5px; }
   .empty { color: var(--muted); padding: 16px 4px; font-size: 13px; }
-  .grid-scroll { overflow: auto; max-width: 100%; border: 1px solid var(--line); border-radius: 14px; background: var(--bg-2); min-height: 0; }
+  .grid-scroll { overflow: auto; max-width: 100%; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-2); min-height: 0; }
   table { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; font-size: 11.5px; }
-  th, td { border-bottom: 1px solid var(--line); border-right: 1px solid var(--chip); padding: 7px 8px; text-align: left; vertical-align: middle; white-space: nowrap; }
+  th, td { border-bottom: 1px solid var(--line); border-right: 1px solid var(--chip); padding: 7px 8px; text-align: left; vertical-align: top; white-space: normal; }
   th { position: sticky; top: 0; background: var(--pop); font-size: 10.5px; font-weight: 750; z-index: 2; }
   tr.dragging { opacity: .45; }
   tr.drag-over td { border-top: 2px solid var(--accent); }
   .corner, .scene { position: sticky; left: 0; z-index: 3; background: var(--pop); box-shadow: 1px 0 0 var(--line); }
   .scene { z-index: 1; background: var(--bg-2); }
   .corner { min-width: 148px; }
-  .tcol { width: 40px; text-align: center; }
-  .tcell { text-align: center; }
-  .scene-title { max-width: 138px; overflow: hidden; text-overflow: ellipsis; font-weight: 650; }
+  .tcol { width: 40px; text-align: center; white-space: nowrap; }
+  .tcell { text-align: center; white-space: nowrap; vertical-align: middle; }
+  .scene-title { max-width: 168px; overflow-wrap: anywhere; font-weight: 650; line-height: 1.35; }
   .scene-meta { font-size: 9.5px; color: var(--faint); font-family: ui-monospace, monospace; margin-top: 2px; }
   .tension-bars { display: inline-flex; gap: 2px; }
   .tbar { width: 5px; height: 14px; border-radius: 2px; background: var(--line); }
-  .beat { min-width: 118px; max-width: 164px; }
-  .beat-label { display: inline-block; max-width: 148px; overflow: hidden; text-overflow: ellipsis; font-size: 10.8px; padding: 2px 8px; border-radius: 999px; border: 1px solid; background: var(--hover); }
+  .beat { min-width: 156px; max-width: 240px; }
+  .beat-label {
+    display: grid;
+    gap: 3px;
+    max-width: 220px;
+    overflow: visible;
+    font-size: 11px;
+    line-height: 1.45;
+    padding: 2px 0 2px 8px;
+    background: transparent;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
   .empty-beat { background: var(--bg); }
   .warnings { margin-top: 12px; }
   .w-head { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); margin-bottom: 6px; }
@@ -189,7 +208,8 @@
   .w-item.warn .dot { background: var(--warn); }
   .w-item.info .dot { background: var(--accent-2); }
   .cell-input { width: 100%; min-width: 90px; font-size: 11.5px; padding: 4px 6px; }
-  .beat-input { min-width: 104px; }
+  textarea.cell-input { resize: vertical; line-height: 1.4; }
+  .beat-input { min-width: 156px; }
   .cell-select { font-size: 11px; padding: 3px 4px; }
   .scene-edit { display: flex; gap: 4px; align-items: center; }
   .drag-handle { border: 0; padding: 2px 4px; color: var(--faint); cursor: grab; }

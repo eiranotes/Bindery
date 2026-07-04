@@ -53,6 +53,8 @@ type PlanningInput = {
   openThreads: string;
   previousSummary?: string;
   lengthTarget?: number;
+  sourceContext?: string;
+  codexContext?: string;
 };
 
 function bodyText(manuscript: string): string {
@@ -64,6 +66,14 @@ function metadataCharacters(manuscript: string): string[] {
   const fm = parseFrontmatter(manuscript);
   const chars = fm.data.characters;
   return Array.isArray(chars) ? chars.map(String).filter(Boolean) : [];
+}
+
+function codexNames(codexContext = ''): string[] {
+  return codexContext
+    .split(/\r?\n/)
+    .map((line) => /^-\s*([^(:：]+)[(:：]/.exec(line)?.[1]?.trim() ?? '')
+    .filter(Boolean)
+    .slice(0, 8);
 }
 
 function clampLine(text: string, max = 180): string {
@@ -135,10 +145,13 @@ export function buildLocalEpisodeBrief(input: PlanningInput): EpisodeBrief {
   const threads = openThreadLines(input.openThreads);
   const characters = metadataCharacters(input.manuscript);
   const lead = firstParagraphs(input.manuscript, 1)[0];
+  const sourceDigest = clampLine(input.sourceContext || input.codexContext || '', 220);
   const hitBeats = plotBeats.length
     ? plotBeats
     : lead
       ? [`현재 원고의 핵심 상황을 다음 결정으로 전진시킨다: ${lead}`]
+      : sourceDigest
+        ? [`원천 자료의 중심 갈등을 이번 회차의 선택과 훅으로 구체화한다: ${sourceDigest}`]
       : ['이번 회차의 중심 갈등, 선택, 다음 훅을 명확히 만든다.'];
 
   return {
@@ -149,8 +162,12 @@ export function buildLocalEpisodeBrief(input: PlanningInput): EpisodeBrief {
       : `${input.episode}은 현재 원고 상태를 기준으로 중심 갈등을 정리하고 다음 장면의 목표를 고정한다.`,
     must_hit_beats: hitBeats,
     must_not_happen: ['확정되지 않은 설정 변경을 원고에 단정하지 않는다.', '장기 영향 사건은 brief/scene plan에 없는 경우 새로 확정하지 않는다.'],
-    reader_knowledge_target: threads.length ? threads.slice(0, 3) : ['독자가 이번 회차의 선택 비용과 다음 질문을 이해한다.'],
-    character_state_targets: characters.slice(0, 4).map((character) => ({
+    reader_knowledge_target: threads.length
+      ? threads.slice(0, 3)
+      : sourceDigest
+        ? ['독자가 원천 자료에서 확정된 핵심 정보와 아직 숨겨야 할 질문을 구분한다.']
+        : ['독자가 이번 회차의 선택 비용과 다음 질문을 이해한다.'],
+    character_state_targets: [...new Set([...characters, ...codexNames(input.codexContext)])].slice(0, 4).map((character) => ({
       character,
       from: '현재 원고 상태',
       to: '이번 회차의 선택과 반응이 한 단계 더 구체화됨'
@@ -159,7 +176,8 @@ export function buildLocalEpisodeBrief(input: PlanningInput): EpisodeBrief {
     open_threads_to_avoid: [],
     plot_rows: rowLabels,
     risks: [
-      '로컬 브리프는 플롯 보드와 원고 표면 정보만 사용한다.',
+      rows.length ? '로컬 브리프는 현재 회차 플롯 보드 row를 우선 기준으로 삼는다.' : '현재 회차 plot board row가 없어 원고/원천 자료 기준으로 최소 브리프를 만들었다.',
+      input.sourceContext?.trim() || input.codexContext?.trim() ? '원천 문서와 설정 항목 요약을 함께 참고했다.' : '원천 문서나 설정 항목이 부족해 계획의 구체성이 낮을 수 있다.',
       '인물 상태 변화와 숨길 정보는 사용자가 산출물을 검토해 확정해야 한다.'
     ],
     source: 'local'
@@ -168,7 +186,7 @@ export function buildLocalEpisodeBrief(input: PlanningInput): EpisodeBrief {
 
 export function buildLocalScenePlan(input: PlanningInput, brief: EpisodeBrief): ScenePlan {
   const rows = rowsForEpisode(input.plotGrid, input.episode);
-  const characters = metadataCharacters(input.manuscript);
+  const characters = [...new Set([...metadataCharacters(input.manuscript), ...codexNames(input.codexContext)])];
   const fallbackParas = firstParagraphs(input.manuscript, 3);
   const fallbackSeeds = fallbackParas.length ? fallbackParas : brief.must_hit_beats.slice(0, 3);
   const sceneRows =
@@ -215,7 +233,11 @@ export function buildLocalScenePlan(input: PlanningInput, brief: EpisodeBrief): 
     episode: input.episode,
     scenes,
     source: 'local',
-    warnings: scenes.length ? [] : ['원고와 플롯 보드에서 장면 후보를 찾지 못했습니다.']
+    warnings: [
+      ...(rows.length ? [] : ['현재 회차 plot board row가 없어 원고/브리프에서 장면 씨앗을 만들었습니다.']),
+      ...(input.sourceContext?.trim() || input.codexContext?.trim() ? [] : ['설정 문서와 설정 항목이 부족해 장면의 고유 명사가 약할 수 있습니다.']),
+      ...(scenes.length ? [] : ['원고와 플롯 보드에서 장면 후보를 찾지 못했습니다.'])
+    ]
   };
 }
 
@@ -420,6 +442,12 @@ export function episodeBriefPrompt(input: PlanningInput): string {
     '## Plot Board Rows',
     plotLines,
     '',
+    '## Project Source Documents',
+    input.sourceContext?.trim() || '(notes/source-intake.md, canon/setting-bible.md, characters/cast-inbox.md 등에서 읽을 내용 없음)',
+    '',
+    '## Codex Items',
+    input.codexContext?.trim() || '(설정 항목 없음)',
+    '',
     '## Open Threads',
     input.openThreads.trim() || '(없음)',
     '',
@@ -451,6 +479,12 @@ export function scenePlanPrompt(input: PlanningInput, brief: EpisodeBrief): stri
     '',
     '## Plot Board Rows',
     plotLines,
+    '',
+    '## Project Source Documents',
+    input.sourceContext?.trim() || '(notes/source-intake.md, canon/setting-bible.md, characters/cast-inbox.md 등에서 읽을 내용 없음)',
+    '',
+    '## Codex Items',
+    input.codexContext?.trim() || '(설정 항목 없음)',
     '',
     '## Current Manuscript Excerpt',
     bodyText(input.manuscript).slice(0, 9000) || '(빈 원고)'

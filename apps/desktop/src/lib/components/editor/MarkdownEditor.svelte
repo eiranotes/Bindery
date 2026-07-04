@@ -189,12 +189,14 @@
 <div class="editor-root">
   <EditorToolbar {stats} on:save={saveNow} />
   <div class:source={$editorStore.mode === 'source'} class:preview={$editorStore.mode === 'preview'} class="editor-grid">
-    {#if $editorStore.mode !== 'preview'}<div class="cm-wrap" bind:this={host}></div>{/if}
+    <div class="cm-wrap" class:hidden={$editorStore.mode === 'preview'} bind:this={host}></div>
     {#if $editorStore.mode !== 'source'}<MarkdownPreview content={$editorStore.content} />{/if}
   </div>
 </div>
 
 <style>
-  .editor-root { min-height: 0; display: grid; grid-template-rows: auto 1fr; }
+  .editor-root { min-height: 0; height: 100%; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+  .editor-grid { min-height: 0; height: 100%; }
+  .cm-wrap.hidden { display: none; }
   .cm-wrap :global(.cm-editor) { height: 100%; }
 </style>

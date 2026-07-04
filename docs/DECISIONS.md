@@ -1,6 +1,18 @@
 # Decisions
 
-Updated: 2026-07-04 (Standalone startup project + MEDALLION seed)
+Updated: 2026-07-04 (Pipeline source clarity + workspace UI fixes)
+
+## Planning Steps Must Show And Use Their Source Basis
+
+Decision: EpisodeBrief and ScenePlan generation must expose their input basis in AI 작업 and Mission Control, and their prompts must include source-intake output, setting bible, character inbox, organizations, open threads, Codex summaries, previous summaries, plot board rows, and current manuscript excerpts when available.
+
+Reason: A simple runner setting is not enough to create a useful episode brief. The author needs to know which documents feed the planning step, and the agent must receive the same concrete local project sources that the UI claims are being used.
+
+## Transient Scan Results Should Not Occupy Persistent Workspace Space
+
+Decision: Codex link-scan results are a collapsed, dismissible scan summary by default. Detailed mention chips are shown only when the author opens the result list.
+
+Reason: Scan confidence chips are useful for review but should not keep taking vertical panel space after the scan is complete or cover adjacent work surfaces.
 
 ## Standalone Startup Projects Use Explicit Env Or CLI Input
 

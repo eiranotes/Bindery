@@ -372,7 +372,7 @@
   .pref {
     position: relative;
     width: min(900px, 96vw);
-    max-height: min(760px, 92vh);
+    height: min(760px, 92vh);
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
     overflow: hidden;
@@ -417,7 +417,7 @@
   .pref-nav b { font-size: 12.5px; }
   .pref-nav span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--faint); font-size: 11px; }
   .pref-panel { min-height: 0; overflow: auto; padding: 16px 18px 22px; }
-  .setting-group { display: grid; gap: 0; max-width: 680px; }
+  .setting-group { display: grid; gap: 0; max-width: 680px; min-height: 100%; align-content: start; }
   .setting-group h3 { margin: 0 0 8px; font-size: 15px; line-height: 1.25; }
   .setting-group p { margin: 0 0 12px; color: var(--muted); line-height: 1.6; }
   .pref-row {
@@ -467,7 +467,7 @@
   .path-note { margin: 8px 0 0; color: var(--faint); font-size: 12px; line-height: 1.6; }
   .path-note code { color: var(--muted); }
   @media (max-width: 760px) {
-    .pref { max-height: 94vh; }
+    .pref { width: min(900px, 96vw); height: min(720px, 94vh); }
     .pref-layout { grid-template-columns: 1fr; }
     .pref-nav {
       display: flex;

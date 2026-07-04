@@ -106,6 +106,39 @@ async function loadPlotGridSnapshot(): Promise<PlotGrid | null> {
   }
 }
 
+const PLANNING_SOURCE_PATHS = [
+  'notes/source-intake.md',
+  'canon/setting-bible.md',
+  'characters/cast-inbox.md',
+  'world/organizations.md',
+  'plot/open-threads.md'
+];
+
+function clipPlanningSource(text: string, max: number): string {
+  const trimmed = text.trim();
+  return trimmed.length > max ? `${trimmed.slice(0, max)}\n...(truncated)` : trimmed;
+}
+
+async function readPlanningSourceContext(): Promise<string> {
+  const chunks: string[] = [];
+  for (const path of PLANNING_SOURCE_PATHS) {
+    try {
+      const text = await readFile(projectRoot(), path);
+      if (text.trim()) chunks.push(`### ${path}\n${clipPlanningSource(text, 3200)}`);
+    } catch {
+      /* source file is optional */
+    }
+  }
+  return clipPlanningSource(chunks.join('\n\n'), 14000);
+}
+
+function codexPlanningContext(): string {
+  return get(codexStore).items
+    .slice(0, 40)
+    .map((item) => `- ${item.name} (${item.type}): ${item.summary ?? '(요약 없음)'}`)
+    .join('\n');
+}
+
 function previousSummaryFor(ep: string): string {
   const prev = prevEpisode(ep);
   const prevSummary = prev ? latestArtifact('summarize', prev) : null;
@@ -119,7 +152,9 @@ async function planningInputFor(ep: string) {
     plotGrid: await loadPlotGridSnapshot(),
     openThreads: await readOpenThreads(),
     previousSummary: previousSummaryFor(ep),
-    lengthTarget: get(draftParamsStore).lengthTarget
+    lengthTarget: get(draftParamsStore).lengthTarget,
+    sourceContext: await readPlanningSourceContext(),
+    codexContext: codexPlanningContext()
   };
 }
 

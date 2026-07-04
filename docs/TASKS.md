@@ -1,6 +1,16 @@
 # Tasks
 
-Updated: 2026-07-04 (Standalone startup project + MEDALLION seed)
+Updated: 2026-07-04 (Pipeline source clarity + workspace UI fixes)
+
+## Done (2026-07-04 Pipeline source clarity + workspace UI fixes)
+
+- [x] Keep the writing editor visible when returning to `본문` from preview by preserving the CodeMirror host across mode changes.
+- [x] Let plot-board beat descriptions wrap cleanly and use a multi-line beat editor.
+- [x] Collapse Codex link-scan results by default and provide an explicit close action for the scan panel.
+- [x] Show first-run `통합 문서` output destinations before project creation.
+- [x] Fix preferences modal size so internal sections scroll without changing the outer dialog frame.
+- [x] Show AI pipeline input basis and artifact availability in the run screen and Mission Control.
+- [x] Include source-intake, setting bible, cast inbox, organizations, open threads, and Codex summaries in EpisodeBrief/ScenePlan planning prompts.
 
 ## Done (2026-07-04 Standalone startup project + MEDALLION seed — feat/ai-mission-control)
 

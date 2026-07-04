@@ -26,6 +26,15 @@
   };
   const outputLabel: Record<string, string> = { stdout: '터미널 출력', file: '파일 출력' };
   const defaultCommandProviders = new Set(['codex', 'antigravity', 'gemini']);
+  const intakeOutputs = [
+    ['원문 보관', 'notes/source-raw.md'],
+    ['분해 보고서', 'notes/source-intake.md'],
+    ['설정집', 'canon/setting-bible.md'],
+    ['인물', 'characters/'],
+    ['조직/세계', 'world/organizations.md'],
+    ['플롯', 'plot/plot-board.json'],
+    ['열린 떡밥', 'plot/open-threads.md']
+  ];
 
   $: agentName = providerLabel[$settingsStore.agentProvider] ?? $settingsStore.agentProvider;
   $: agentReady =
@@ -178,6 +187,14 @@
             <span>원천 통합 문서</span>
             <textarea bind:value={sourceText} rows="12" placeholder="아이디어, 시놉시스, 세계관 바이블, 인물 메모를 한 번에 붙여넣으세요."></textarea>
           </label>
+          <div class="intake-map" aria-label="통합 문서 생성 위치">
+            <b>분해 후 들어가는 위치</b>
+            <div>
+              {#each intakeOutputs as [label, path]}
+                <span><strong>{label}</strong><code>{path}</code></span>
+              {/each}
+            </div>
+          </div>
           <div class="intake-toolbar">
             <label class="file-pick">
               <input type="file" accept=".md,.markdown,.txt,.text,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" on:change={importSourceFile} />

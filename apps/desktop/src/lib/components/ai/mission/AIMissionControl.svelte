@@ -16,10 +16,13 @@
   import { styleStore, STRICTNESS_LABEL } from '$lib/stores/styleStore';
   import { editorStore } from '$lib/stores/editorStore';
   import { codexStore } from '$lib/stores/codexStore';
+  import { plotStore } from '$lib/stores/plotStore';
+  import { fileTreeStore } from '$lib/stores/fileTreeStore';
   import { collectGuidance, buildGuidanceText } from '$lib/domain/guidance';
   import type { GuidanceHardness } from '$lib/domain/guidance';
   import { assemblePrompt, STEP_META } from '$lib/domain/prompt';
   import type { PipelineStep } from '$lib/domain/prompt';
+  import type { FileNode } from '$lib/types';
 
   export let episode: string;
   export let running: PipelineStep | null = null;
@@ -44,9 +47,16 @@
   type CenterTab = 'artifact' | 'prompt' | 'context' | 'review';
   let tab: CenterTab = 'artifact';
   let selectedStep: PipelineStep = 'draft';
+  let selectedArtifactId = '';
 
   $: episodeArtifacts = artifactsForEpisode($artifactStore, episode);
-  $: selectedArtifact = episodeArtifacts.find((a) => a.step === selectedStep) ?? null;
+  $: allEpisodeArtifacts = $artifactStore
+    .filter((a) => a.episode === episode)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  $: selectedArtifact =
+    (selectedArtifactId ? allEpisodeArtifacts.find((a) => a.id === selectedArtifactId) : null) ??
+    episodeArtifacts.find((a) => a.step === selectedStep) ??
+    null;
   // 프롬프트/컨텍스트는 열람 시점 기준으로 조립 — 실행 전 확인 용도
   $: promptText =
     tab === 'prompt'
@@ -65,10 +75,36 @@
   $: qaFailCount = qaIssues.filter((i) => i.severity === 'fail').length;
   $: qaWarnCount = qaIssues.filter((i) => i.severity === 'warn').length;
   $: decisions = (activeRun?.humanDecisions ?? []).slice(-8).reverse();
+  $: episodePlotRows = $plotStore.grid?.rows.filter((row) => row.episode === episode) ?? [];
+  $: manuscriptChars = $editorStore.content.replace(/\s/g, '').length;
+  $: bibleFileCount = countBibleFiles($fileTreeStore.nodes);
 
   function selectStep(step: PipelineStep) {
     selectedStep = step;
+    selectedArtifactId = '';
     if (tab === 'review') tab = 'artifact';
+  }
+
+  function selectArtifact(id: string, step: PipelineStep) {
+    selectedArtifactId = id;
+    selectedStep = step;
+    tab = 'artifact';
+  }
+
+  function artifactCount(step: PipelineStep): number {
+    return allEpisodeArtifacts.filter((a) => a.step === step).length;
+  }
+
+  function countBibleFiles(nodes: FileNode[]): number {
+    let count = 0;
+    const walk = (list: FileNode[]) => {
+      for (const node of list) {
+        if (node.kind === 'file' && /(bible|canon|설정)/i.test(node.path) && node.path.endsWith('.md')) count += 1;
+        if (node.children) walk(node.children);
+      }
+    };
+    walk(nodes);
+    return count;
   }
 
   function shortRunId(id: string): string {
@@ -108,12 +144,13 @@
         <ol class="mc-steps">
           {#each steps as step, i}
             {@const st = $pipelineStore.stepStatus[step]}
+            {@const count = artifactCount(step)}
             <li class="mc-step" class:on={selectedStep === step} class:done={st === 'done'} class:failed={st === 'failed'} class:running={running === step}>
               <button class="mc-step-select" on:click={() => selectStep(step)} title="{STEP_META[step].label} 산출물 보기">
                 <b>{i + 1}</b>
                 <span class="mc-step-copy">
                   <span>{STEP_META[step].label}</span>
-                  <small>{running === step ? '실행 중' : statusLabel[st]}</small>
+                  <small>{running === step ? '실행 중' : statusLabel[st]}{count ? ` · 산출물 ${count}` : ''}</small>
                 </span>
               </button>
               <button
@@ -152,6 +189,22 @@
 
         <div class="mc-viewer">
           {#if tab === 'artifact'}
+            <div class="mc-artifact-overview">
+              <div class="mc-context-head">
+                <b>{episode} 산출물 목록</b>
+                <span>{allEpisodeArtifacts.length}개 기록</span>
+              </div>
+              {#if allEpisodeArtifacts.length}
+                <div class="mc-artifact-strip">
+                  {#each allEpisodeArtifacts.slice(0, 18) as artifact}
+                    <button class:on={selectedArtifact?.id === artifact.id} on:click={() => selectArtifact(artifact.id, artifact.step)} title={artifact.latestPath ?? artifact.contentPath ?? artifact.title}>
+                      <b>{STEP_META[artifact.step].label}</b>
+                      <span>{artifact.title} · {new Date(artifact.createdAt).toLocaleTimeString()}</span>
+                    </button>
+                  {/each}
+                </div>
+              {/if}
+            </div>
             {#if selectedArtifact}
               <div class="mc-artifact-head">
                 <b>{selectedArtifact.title}</b>
@@ -160,7 +213,7 @@
               </div>
               <div class="mc-reading"><MarkdownPreview content={selectedArtifact.content} /></div>
             {:else}
-              <p class="mc-empty big">「{STEP_META[selectedStep].label}」 산출물이 아직 없습니다. 왼쪽에서 단계를 실행하세요.</p>
+              <p class="mc-empty big">아직 표시할 산출물이 없습니다. 왼쪽에서 단계를 실행하면 이 목록과 뷰어에 바로 남습니다.</p>
             {/if}
           {:else if tab === 'prompt'}
             <pre class="mc-pre">{promptText}</pre>
@@ -200,6 +253,14 @@
       </section>
 
       <aside class="mc-right" aria-label="실행 정보">
+        <span class="line-label">입력 기준</span>
+        <dl class="mc-kv">
+          <div><dt>회차 플롯</dt><dd class:warn={episodePlotRows.length === 0}>{episodePlotRows.length ? `${episodePlotRows.length}개 장면` : 'row 없음'}</dd></div>
+          <div><dt>설정 자료</dt><dd>{bibleFileCount}개 문서 · {$codexStore.items.length}개 항목</dd></div>
+          <div><dt>현재 원고</dt><dd>{manuscriptChars.toLocaleString()}자</dd></div>
+          <div><dt>산출물</dt><dd>{allEpisodeArtifacts.length}개</dd></div>
+        </dl>
+
         <span class="line-label">실행 설정</span>
         <dl class="mc-kv">
           <div><dt>실행기</dt><dd>{$settingsStore.agentProvider}{$settingsStore.mockMode ? ' · 데모' : ''}</dd></div>
@@ -356,6 +417,25 @@
   .mc-artifact-head code { width: fit-content; color: var(--faint); background: var(--accent-soft); border-radius: 4px; padding: 1px 6px; font-family: ui-monospace, monospace; font-size: 10.5px; }
   .mc-reading { max-width: 860px; }
   .mc-reading :global(.preview) { border-left: 0; padding: 6px 0 24px; font-size: 14.5px; line-height: 1.95; background: transparent; }
+  .mc-artifact-overview { display: grid; gap: 8px; padding-bottom: 6px; }
+  .mc-artifact-strip {
+    display: grid;
+    border-top: 1px solid var(--line);
+  }
+  .mc-artifact-strip button {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: 126px minmax(0, 1fr);
+    gap: 10px;
+    text-align: left;
+    border: 0;
+    border-radius: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 8px 2px;
+  }
+  .mc-artifact-strip button.on { background: var(--accent-soft); }
+  .mc-artifact-strip b { color: var(--text); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mc-artifact-strip span { color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .mc-pre {
     margin: 0;

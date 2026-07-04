@@ -362,6 +362,36 @@ textarea { resize: vertical; line-height: 1.6; }
 .start-form .wide { grid-column: 1 / -1; }
 .intake-form { max-width: 860px; }
 .source-box textarea { display: block; }
+.intake-map {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.intake-map > b { color: var(--text); font-size: 12.5px; }
+.intake-map > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2) var(--space-3);
+}
+.intake-map span {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: baseline;
+  color: var(--muted);
+}
+.intake-map strong { color: var(--faint); font-size: 11px; font-weight: 760; }
+.intake-map code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--text);
+}
 .intake-toolbar {
   grid-column: 1 / -1;
   display: flex;
@@ -751,6 +781,7 @@ textarea { resize: vertical; line-height: 1.6; }
 	  .start-layout { grid-template-columns: 1fr; }
 	  .start-primary, .start-guide { padding: 14px; }
 	  .start-form { grid-template-columns: 1fr; }
+	  .intake-map > div { grid-template-columns: 1fr; }
 	  .intake-toolbar { align-items: flex-start; flex-direction: column; }
 	  .start-command, .sample-line { align-items: flex-start; flex-direction: column; }
 	  .recent-lines button { grid-template-columns: 1fr; }

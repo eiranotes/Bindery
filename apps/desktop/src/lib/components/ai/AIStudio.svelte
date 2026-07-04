@@ -17,6 +17,7 @@
   import { codexStore } from '$lib/stores/codexStore';
   import { candidateStore } from '$lib/stores/candidateStore';
   import { qaStore } from '$lib/stores/qaStore';
+  import { plotStore } from '$lib/stores/plotStore';
   import { artifactStore, artifactsForEpisode } from '$lib/stores/artifactStore';
   import type { Artifact } from '$lib/stores/artifactStore';
   import { aiCommandContextStore } from '$lib/stores/aiCommandContextStore';
@@ -77,6 +78,10 @@
   $: episode = currentEpisode();
   $: fileName = $editorStore.path?.split('/').pop() ?? '원고 미선택';
   $: episodeArtifacts = artifactsForEpisode($artifactStore, episode);
+  $: episodePlotRows = $plotStore.grid?.rows.filter((row) => row.episode === episode) ?? [];
+  $: manuscriptChars = $editorStore.content.replace(/\s/g, '').length;
+  $: previousEp = previousEpisode(episode);
+  $: previousSummary = previousEp ? $artifactStore.find((a) => a.step === 'summarize' && a.episode === previousEp) ?? null : null;
   // 집필(초안/수정) 프롬프트에 자동 포함되는 산출물 종류
   const guidanceSteps = new Set<PipelineStep>(['episode-brief', 'scene-plan', 'context', 'summarize', 'qa', 'revise', 'analyze']);
   let viewArtifact: Artifact | null = null;
@@ -176,6 +181,10 @@
     const path = $editorStore.path || '';
     const m = /story\/chapters\/(ep\d+)/.exec(path);
     return m?.[1] || $episodeStore.currentEpisode || 'ep001';
+  }
+  function previousEpisode(ep: string): string | null {
+    const n = parseInt(ep.replace(/\D/g, ''), 10);
+    return Number.isFinite(n) && n > 1 ? `ep${String(n - 1).padStart(3, '0')}` : null;
   }
 
   const runners: Record<PipelineStep, () => void | boolean | Promise<void | boolean>> = {
@@ -379,6 +388,31 @@
         <h1>파이프라인 실행</h1>
         <p>위에서 아래 순서로 진행됩니다. 단계별로 따로 실행하거나 전체를 이어서 실행할 수 있고, 프롬프트는 실행 전에 그대로 확인할 수 있습니다.</p>
       </header>
+
+      <div class="input-basis" aria-label="파이프라인 입력 기준">
+        <div class="basis-copy">
+          <span class="line-label">입력 기준</span>
+          <p>회차 브리프와 장면 계획은 플롯 보드, 열린 떡밥, 설정 문서/항목, 이전 요약, 현재 원고 발췌를 기준으로 만듭니다. 부족한 항목은 산출물에 위험으로 표시됩니다.</p>
+        </div>
+        <dl class="basis-grid">
+          <div class:warn={episodePlotRows.length === 0}>
+            <dt>회차 플롯</dt>
+            <dd>{episodePlotRows.length ? `${episodePlotRows.length}개 장면` : '현재 회차 row 없음'}</dd>
+          </div>
+          <div class:warn={!hasBible && !$pipelineStore.bibleSkipped}>
+            <dt>설정 자료</dt>
+            <dd>{bibleFiles.length}개 문서 · {$codexStore.items.length}개 항목</dd>
+          </div>
+          <div class:warn={manuscriptChars === 0}>
+            <dt>현재 원고</dt>
+            <dd>{manuscriptChars.toLocaleString()}자</dd>
+          </div>
+          <div>
+            <dt>이전 요약</dt>
+            <dd>{previousEp ? (previousSummary ? '있음' : `${previousEp} 요약 없음`) : '첫 회차'}</dd>
+          </div>
+        </dl>
+      </div>
 
       <div class="run-layout">
         <div class="stage-body">
@@ -635,6 +669,30 @@
   .bible-missing p { margin: 0; color: var(--muted); line-height: 1.6; }
   .bible-missing b { color: var(--text); }
 
+  .input-basis {
+    max-width: 1050px;
+    margin-top: 16px;
+    display: grid;
+    grid-template-columns: minmax(260px, .9fr) minmax(0, 1.1fr);
+    gap: 18px;
+    padding: 12px 0;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .basis-copy { min-width: 0; display: grid; gap: 4px; align-content: start; }
+  .basis-copy p { margin: 0; color: var(--muted); line-height: 1.55; }
+  .basis-grid {
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
+    border-top: 1px solid var(--line);
+  }
+  .basis-grid div { min-width: 0; display: grid; gap: 2px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .basis-grid dt { color: var(--faint); font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+  .basis-grid dd { margin: 0; color: var(--text); font-size: 12.5px; overflow-wrap: anywhere; }
+  .basis-grid div.warn dd { color: var(--warn); }
+
   .pipe-list { list-style: none; margin: 0; padding: 0; display: grid; border-top: 1px solid var(--line); max-width: 760px; }
   .pipe-step {
     display: flex;
@@ -752,10 +810,12 @@
     .rail-stage.on { background: var(--accent-soft); }
     .review-layout { grid-template-columns: 1fr; }
     .run-layout { grid-template-columns: 1fr; }
+    .input-basis { grid-template-columns: 1fr; }
     .artifact-rail { border-left: 0; padding-left: 0; border-top: 1px solid var(--line); }
   }
   @media (max-width: 700px) {
     .ai-stage { padding: 16px; }
+    .basis-grid { grid-template-columns: 1fr; }
     .pipe-step { flex-wrap: wrap; }
     .pipe-step::after { display: none; }
     .pipe-copy { flex: 1 1 100%; order: -1; margin-left: 46px; }

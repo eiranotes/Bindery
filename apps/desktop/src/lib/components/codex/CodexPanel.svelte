@@ -38,6 +38,7 @@
   const TYPE_DIR: Partial<Record<CodexType, string>> = { character: 'characters', location: 'world', term: 'canon', event: 'lore' };
   const typeOptions = Object.keys(TYPE_LABEL) as CodexType[];
   let addOpen = false;
+  let scanOpen = false;
   let newName = '';
   let newType: CodexType = 'character';
   let newSummary = '';
@@ -73,6 +74,16 @@
     }
   }
 
+  async function runScan() {
+    await scanCodexAction();
+    scanOpen = false;
+  }
+
+  function clearScan() {
+    scanOpen = false;
+    codexStore.update((s) => ({ ...s, mentionReport: null }));
+  }
+
   $: report = $codexStore.mentionReport;
   $: mentionCountByItem = (() => {
     const m = new Map<string, number>();
@@ -87,7 +98,7 @@
     <div class="ct-right">
       <button class="ghost tiny" on:click={() => (addOpen = !addOpen)}>{addOpen ? '닫기' : '+ 새 항목'}</button>
       <button class="ghost tiny" on:click={loadCodexAction}>새로고침</button>
-      <button class="tiny" on:click={scanCodexAction} disabled={$codexStore.loading}>{$codexStore.loading ? '…' : '링크 스캔'}</button>
+      <button class="tiny" on:click={runScan} disabled={$codexStore.loading}>{$codexStore.loading ? '…' : '링크 스캔'}</button>
     </div>
   </div>
 
@@ -140,23 +151,31 @@
 
     {#if report}
       <div class="scan">
-        <div class="scan-head">본문 링크 {report.mentions.length}건</div>
-        {#if report.missing.length}
-          <div class="missing">미등장: {report.missing.join(', ')}</div>
-        {/if}
-        <div class="mentions">
-          {#each report.mentions.slice(0, 30) as m}
-            <span class="mention">
-              <button class="m-jump" title="본문으로 이동" on:click={() => jumpToOffset(m.from)}>
-                <span class="m-surface">{m.surface}</span>
-                <span class="m-conf" class:low={m.confidence < 0.7}>{(m.confidence * 100) | 0}%</span>
-              </button>
-              {#if !m.alreadyLinked}
-                <button class="m-link" title="[[링크]] 삽입" on:click={() => insertLink(m.from, m.to)}>⊕</button>
-              {/if}
-            </span>
-          {/each}
+        <div class="scan-head">
+          <span>본문 링크 {report.mentions.length}건</span>
+          <div class="scan-actions">
+            <button class="ghost tiny" on:click={() => (scanOpen = !scanOpen)}>{scanOpen ? '접기' : '결과 보기'}</button>
+            <button class="ghost tiny" on:click={clearScan}>닫기</button>
+          </div>
         </div>
+        {#if scanOpen}
+          {#if report.missing.length}
+            <div class="missing">미등장: {report.missing.join(', ')}</div>
+          {/if}
+          <div class="mentions">
+            {#each report.mentions.slice(0, 30) as m}
+              <span class="mention">
+                <button class="m-jump" title={`본문으로 이동 · 신뢰도 ${Math.round(m.confidence * 100)}%`} on:click={() => jumpToOffset(m.from)}>
+                  <span class="m-surface">{m.surface}</span>
+                  <span class="m-conf" class:low={m.confidence < 0.7}>{Math.round(m.confidence * 100)}%</span>
+                </button>
+                {#if !m.alreadyLinked}
+                  <button class="m-link" title="[[링크]] 삽입" on:click={() => insertLink(m.from, m.to)}>⊕</button>
+                {/if}
+              </span>
+            {/each}
+          </div>
+        {/if}
       </div>
     {/if}
   {/if}
@@ -192,7 +211,8 @@
   .alias { font-size: 10.5px; padding: 2px 7px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); }
   .alias.off { background: var(--chip); color: var(--faint); text-decoration: line-through; }
   .scan { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
-  .scan-head { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); }
+  .scan-head { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); }
+  .scan-actions { display: flex; gap: var(--space-1); flex-shrink: 0; letter-spacing: 0; text-transform: none; }
   .missing { font-size: 11.5px; color: var(--warn); margin-top: 6px; }
   .mentions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
   .mention { display: inline-flex; align-items: stretch; border-radius: 8px; background: var(--hover); border: 1px solid var(--line); font-size: 11.5px; overflow: hidden; }
