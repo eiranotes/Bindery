@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "DraftCandidateEnvelope.v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "candidate_id",
+    "episode",
+    "lineage",
+    "base_hash",
+    "content_markdown",
+    "new_entities",
+    "canon_risk_flags"
+  ],
+  "properties": {
+    "schema": {
+      "const": "DraftCandidateEnvelope.v1"
+    },
+    "candidate_id": {
+      "type": "string"
+    },
+    "episode": {
+      "type": "string"
+    },
+    "lineage": {
+      "type": "string"
+    },
+    "base_hash": {
+      "type": "string"
+    },
+    "content_markdown": {
+      "type": "string"
+    },
+    "new_entities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "kind",
+          "status"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "character",
+              "location",
+              "institution",
+              "system",
+              "term",
+              "relationship",
+              "event"
+            ]
+          },
+          "status": {
+            "enum": [
+              "existing",
+              "new_unapproved",
+              "ambiguous"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "canon_risk_flags": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "severity",
+          "message"
+        ],
+        "properties": {
+          "severity": {
+            "enum": [
+              "block",
+              "warn",
+              "info"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "source_path": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

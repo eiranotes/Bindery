@@ -1,5 +1,11 @@
 # Bindery 현재 구조 감사 (2026-07-05)
 
+> **적용 노트 (2026-07-05)**: 이 감사는 레거시 저장소(~/HermesWorkspace/project/Bindery)를 대상으로 한다.
+> 감사 후 사용자 결정에 따라 제품은 /Users/tofu/Bindery에 **신규 구축**되었고, 레거시는 수정 없이
+> 패턴 흡수원으로만 쓰였다. §5의 유지/재배치/추상화/신규 구분은 신규 구축의 설계 입력이 되었다
+> (구현 결과: docs/implementation/decisions.md D1~D12).
+
+
 AI 장기 소설 집필 하네스 심화 작업 전에 저장소 전체(코드·문서·파이프라인·UI)를 감사한 결과다.
 기준 커밋: `36e3b4e feat(pipeline): foreground AI pipeline as top-level workbench` (branch `feat/ai-mission-control`).
 작업 트리에는 이전 세션의 설정 서피스 개편(`SettingsSurface.svelte` 등) 미커밋 변경이 있다.

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bindery.revision_plan.v1",
+  "type": "object",
+  "required": ["schema_version", "episode", "items"],
+  "properties": {
+    "schema_version": { "const": "bindery.revision_plan.v1" },
+    "episode": { "type": "string", "pattern": "^ep\\d{3}$" },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "required": ["id", "severity", "instruction"],
+        "properties": {
+          "id": { "type": "string" },
+          "severity": { "enum": ["fail", "warn", "info"] },
+          "instruction": { "type": "string" },
+          "target": { "type": "string" },
+          "source_gate": { "type": "string" }
+        }
+      }
+    },
+    "note": { "type": "string" }
+  }
+}

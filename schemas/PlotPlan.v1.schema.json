@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bindery.plot_plan.v1",
+  "type": "object",
+  "required": ["schema_version", "episodes"],
+  "properties": {
+    "schema_version": { "const": "bindery.plot_plan.v1" },
+    "arcs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label"],
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" },
+          "goal": { "type": "string" },
+          "episodes": { "type": "string" }
+        }
+      }
+    },
+    "episodes": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["episode", "goal"],
+        "properties": {
+          "episode": { "type": "string", "pattern": "^ep\\d{3}$" },
+          "arc": { "type": "string" },
+          "title": { "type": "string" },
+          "goal": { "type": "string" },
+          "beats": { "type": "array", "items": { "type": "string" } },
+          "threads_open": { "type": "array", "items": { "type": "string" } },
+          "threads_close": { "type": "array", "items": { "type": "string" } },
+          "hook": { "type": "string" },
+          "risk": { "type": "string" }
+        }
+      }
+    }
+  }
+}

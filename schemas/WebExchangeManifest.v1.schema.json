@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "WebExchangeManifest.v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "exchange_id",
+    "stage",
+    "expected_outputs",
+    "included_files"
+  ],
+  "properties": {
+    "schema": {
+      "const": "WebExchangeManifest.v1"
+    },
+    "exchange_id": {
+      "type": "string"
+    },
+    "stage": {
+      "type": "string"
+    },
+    "expected_outputs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "included_files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "role",
+          "authority"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "authority": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

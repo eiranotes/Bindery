@@ -1,14 +1,25 @@
 <script lang="ts">
   // 세계관 화면 — 채택 소재 → 확장 proposal 생성 → (승인은 제안·정사 화면) → 자산 목록 → 바이블 조립.
   import { onMount } from 'svelte';
-  import { ctx, ideas, tree, project, withBusy, toast, mode } from '$lib/stores/app';
-  import { expandWorld } from '$lib/harness/world';
+  import { ctx, ideas, tree, project, withBusy, toast, mode, proposals } from '$lib/stores/app';
+  import { expandWorld, renderWorldProposalArtifact } from '$lib/harness/world';
   import { assembleBible, applyBibleCandidate } from '$lib/harness/bible';
   import { readOptional } from '$lib/harness/project';
+  import { exportPacket, recordImport } from '$lib/harness/exchange';
+  import { previewPrompt } from '$lib/harness/runner';
+  import { writeArtifact } from '$lib/harness/artifacts';
+  import { BLUEPRINTS } from '$lib/prompts';
+  import { parseWorldExpansionProposal } from '$lib/schemas/contracts';
+  import { registerWorldExpansion, saveProposal } from '$lib/harness/proposals';
+  import { clip } from '$lib/core/text';
   import { LAYOUT } from '$lib/core/layout';
   import type { FileNode } from '$lib/bridge';
 
   let notes = $state('');
+  let showExchange = $state(false);
+  let exchangeId = $state('');
+  let exchangePacket = $state('');
+  let importText = $state('');
   let bible = $state('');
   let bibleCandidate = $state('');
   let bibleCandidatePath = $state('');
@@ -74,6 +85,52 @@
   async function view(path: string) {
     viewing = { path, content: await ctx().bridge.readFile(ctx().root, path) };
   }
+
+  async function expansionVars() {
+    const c = ctx();
+    return {
+      selectedSeeds: selected.map((i) => `### ${i.seed.title}\n- 훅: ${i.seed.hook}\n- 감정 엔진: ${i.seed.emotional_engine}\n- 독자 약속: ${i.seed.reader_promise}`).join('\n\n') || '(채택 소재 없음)',
+      canonContext: clip(await readOptional(c, LAYOUT.canon.bible), 4000) || '(기존 확정 설정 없음)',
+      notes: notes || '(없음)',
+      assetCount: '8'
+    };
+  }
+
+  async function makePacket() {
+    const prompt = previewPrompt({ blueprint: BLUEPRINTS.worldExpansion, vars: await expansionVars() });
+    const packet = await withBusy('packet 내보내기', () => exportPacket(ctx(), 'world-expansion', prompt), false);
+    if (packet) {
+      exchangeId = packet.exchangeId;
+      exchangePacket = packet.packet;
+      showExchange = true;
+      toast(`packet 저장됨: ${packet.packetPath}`, 'ok');
+    }
+  }
+
+  async function copyPacket() {
+    await navigator.clipboard.writeText(exchangePacket);
+    toast('packet이 클립보드에 복사됨 — 웹 AI에 붙여넣으세요', 'ok');
+  }
+
+  async function importResult() {
+    const parsed = parseWorldExpansionProposal(importText);
+    if (!parsed) {
+      if (exchangeId) await recordImport(ctx(), exchangeId, importText, false, 'schema validation failed');
+      toast('가져오기 실패: bindery.world_expansion_proposal.v1 JSON이 아닙니다', 'bad');
+      return;
+    }
+    await withBusy('웹 AI 결과 가져오기', async () => {
+      const c = ctx();
+      const proposal = registerWorldExpansion(parsed, 'web-import');
+      await saveProposal(c, proposal);
+      await writeArtifact(c, 'work', 'world-expansion', `세계관 확장 proposal (웹 교환) · 자산 ${parsed.assets.length}건`, renderWorldProposalArtifact(parsed), 'web-import');
+      if (exchangeId) await recordImport(c, exchangeId, importText, true);
+      toast(`웹 AI 제안 등록됨 (자산 ${parsed.assets.length}건) — 제안·정사 화면에서 승인하세요`, 'ok');
+      importText = '';
+      showExchange = false;
+    });
+    mode.set('canon');
+  }
 </script>
 
 <div class="surface">
@@ -92,7 +149,18 @@
     <div class="row">
       <input bind:value={notes} placeholder="확장 방향 지시 (선택)" />
       <button class="primary" onclick={expand} disabled={selected.length === 0}>확장 proposal 생성</button>
+      <button onclick={makePacket} disabled={selected.length === 0}>웹 AI packet</button>
+      <button class="quiet" onclick={() => (showExchange = !showExchange)}>{showExchange ? '교환 닫기' : '웹 AI 결과 가져오기'}</button>
     </div>
+    {#if showExchange}
+      <div class="exchange">
+        {#if exchangePacket}
+          <div class="row"><button onclick={copyPacket}>packet 복사</button><span class="dim">.bindery/exchange/{exchangeId}/packet.md 에도 저장됨</span></div>
+        {/if}
+        <textarea rows="6" bind:value={importText} placeholder="웹 AI가 돌려준 world_expansion_proposal JSON을 붙여넣으세요"></textarea>
+        <div class="row"><button class="primary" onclick={importResult} disabled={!importText.trim()}>검증 후 proposal로 등록</button></div>
+      </div>
+    {/if}
   </section>
 
   <section>
@@ -146,6 +214,7 @@
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .row input { flex: 1; min-width: 200px; }
   .seedline { list-style: none; margin: 0; padding: 0; display: flex; gap: 6px; flex-wrap: wrap; }
+  .exchange { display: grid; gap: 6px; border: 1px dashed var(--line-strong); border-radius: 4px; padding: 10px; }
   .seedline li { font-size: 12px; color: var(--accent); background: var(--accent-soft); border-radius: 3px; padding: 2px 8px; }
   .split { display: grid; grid-template-columns: minmax(220px, 320px) minmax(0, 1fr); gap: 18px; align-items: start; }
   .files { list-style: none; margin: 0; padding: 0; max-height: 300px; overflow: auto; }
