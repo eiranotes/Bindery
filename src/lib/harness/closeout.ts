@@ -8,7 +8,7 @@ import { snapshotFile } from './snapshots';
 import { LAYOUT, episodePaths, summaryPath } from '$lib/core/layout';
 import { clip, excerptWindow, nowIso, parseFrontmatter } from '$lib/core/text';
 import { parseCanonDeltaProposal, type CanonDeltaProposal } from '$lib/schemas/contracts';
-import { registerCanonDelta, saveProposal, loadProposals, type Proposal } from './proposals';
+import { registerCanonDelta, saveProposal, loadProposals, type CanonDeltaRecord } from './proposals';
 import { nextEpisode, type CandidateFile } from './episode';
 import type { Ctx, StageOutcome } from './types';
 
@@ -63,7 +63,7 @@ export async function proposeCanonDelta(
   ctx: Ctx,
   episode: string,
   deltaCandidates: CandidateFile['deltaCandidates']
-): Promise<{ proposal: Proposal | null; outcome: StageOutcome<CanonDeltaProposal | null> }> {
+): Promise<{ proposal: CanonDeltaRecord | null; outcome: StageOutcome<CanonDeltaProposal | null> }> {
   const summary = await readOptional(ctx, summaryPath(episode));
   const canonFiles = [
     `### ${LAYOUT.canon.bible}\n${clip(await readOptional(ctx, LAYOUT.canon.bible), 3500)}`,

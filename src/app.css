@@ -1,0 +1,131 @@
+/* Bindery 디자인 토큰 — warm paper + teal (레거시 DESIGN.md 토큰 계약 흡수).
+   규칙: 새 색/간격/서체 값은 여기 먼저 추가한다. 카드 중첩 대신 표·레일·hairline. */
+:root {
+  --bg: #f4f2ee;
+  --bg-1: #fbf9f5;
+  --bg-2: #fffefc;
+  --bg-desk: #fffdf9;
+  --bg-rail: #efebe4;
+  --text: #2f2b26;
+  --muted: #6f6a61;
+  --faint: #a09a8e;
+  --on-accent: #fffdf9;
+  --line: rgba(72, 66, 56, 0.13);
+  --line-strong: rgba(72, 66, 56, 0.24);
+  --accent: #315e63;
+  --accent-soft: rgba(49, 94, 99, 0.12);
+  --accent-2: #8b6f3d;
+  --ok: #1f9d6b;
+  --ok-soft: rgba(31, 157, 107, 0.12);
+  --warn: #b07c10;
+  --warn-soft: rgba(176, 124, 16, 0.12);
+  --bad: #cf4e63;
+  --bad-soft: rgba(207, 78, 99, 0.12);
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --serif: 'Noto Serif KR', 'KoPub Batang', ui-serif, Georgia, serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b0d12;
+    --bg-1: #10131c;
+    --bg-2: #161a26;
+    --bg-desk: #12141b;
+    --bg-rail: #0f1219;
+    --text: #e7ecf5;
+    --muted: #94a3b8;
+    --faint: #5c687c;
+    --on-accent: #0b0d12;
+    --line: rgba(148, 163, 184, 0.14);
+    --line-strong: rgba(148, 163, 184, 0.28);
+    --accent: #7fa3a8;
+    --accent-soft: rgba(127, 163, 168, 0.16);
+    --accent-2: #d8b46a;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body, #app { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 13.5px/1.5 Pretendard, 'Pretendard Variable', -apple-system, 'Apple SD Gothic Neo', 'Noto Sans KR', system-ui, sans-serif;
+}
+
+button {
+  font: inherit;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+button:hover:not(:disabled) { color: var(--text); border-color: var(--line-strong); background: var(--bg-2); }
+button:disabled { opacity: 0.4; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 650; }
+button.primary:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); filter: brightness(1.06); }
+button.quiet { border: 0; padding: 3px 7px; }
+button.danger { color: var(--bad); border-color: var(--bad-soft); }
+button.on { background: var(--accent-soft); color: var(--text); border-color: var(--accent); }
+
+input, textarea, select {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 5px 8px;
+}
+input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+textarea { line-height: 1.7; resize: vertical; }
+
+.label {
+  color: var(--faint);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.mono { font-family: var(--mono); }
+.dim { color: var(--faint); font-size: 11.5px; }
+.chip {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 3px;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.chip.ok { color: var(--ok); background: var(--ok-soft); }
+.chip.warn { color: var(--warn); background: var(--warn-soft); }
+.chip.bad { color: var(--bad); background: var(--bad-soft); }
+.chip.info { color: var(--accent); background: var(--accent-soft); }
+.chip.muted { color: var(--muted); background: var(--bg-rail); }
+
+table.grid { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+table.grid th {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line-strong);
+  color: var(--faint);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+table.grid td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+
+.empty { color: var(--faint); font-size: 12.5px; padding: 18px 0; line-height: 1.7; }
+.pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text);
+}
+.reading { font-family: var(--serif); font-size: 15px; line-height: 2; max-width: 760px; white-space: pre-wrap; }
+
+a { color: var(--accent); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 6px; }
+::-webkit-scrollbar-track { background: transparent; }

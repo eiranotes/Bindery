@@ -10,30 +10,32 @@ import type { WorldExpansionProposal, WorldAsset, CanonDeltaProposal, CanonChang
 export type ProposalStatus = 'pending' | 'applied' | 'partial' | 'rejected';
 export type ItemDecision = 'pending' | 'approved' | 'rejected';
 
-export type Proposal =
-  | {
-      id: string;
-      type: 'world-expansion';
-      status: ProposalStatus;
-      createdAt: string;
-      decidedAt?: string;
-      source: string;
-      payload: WorldExpansionProposal;
-      decisions: ItemDecision[];
-      appliedPaths: string[];
-    }
-  | {
-      id: string;
-      type: 'canon-delta';
-      episode: string;
-      status: ProposalStatus;
-      createdAt: string;
-      decidedAt?: string;
-      source: string;
-      payload: CanonDeltaProposal;
-      decisions: ItemDecision[];
-      appliedPaths: string[];
-    };
+export type WorldExpansionRecord = {
+  id: string;
+  type: 'world-expansion';
+  status: ProposalStatus;
+  createdAt: string;
+  decidedAt?: string;
+  source: string;
+  payload: WorldExpansionProposal;
+  decisions: ItemDecision[];
+  appliedPaths: string[];
+};
+
+export type CanonDeltaRecord = {
+  id: string;
+  type: 'canon-delta';
+  episode: string;
+  status: ProposalStatus;
+  createdAt: string;
+  decidedAt?: string;
+  source: string;
+  payload: CanonDeltaProposal;
+  decisions: ItemDecision[];
+  appliedPaths: string[];
+};
+
+export type Proposal = WorldExpansionRecord | CanonDeltaRecord;
 
 export type ProposalIndexEntry = {
   id: string;
@@ -92,7 +94,7 @@ export async function loadProposals(ctx: Ctx): Promise<Proposal[]> {
   return out;
 }
 
-export function registerWorldExpansion(payload: WorldExpansionProposal, source: string): Proposal {
+export function registerWorldExpansion(payload: WorldExpansionProposal, source: string): WorldExpansionRecord {
   return {
     id: `wx-${stamp()}`,
     type: 'world-expansion',
@@ -105,7 +107,7 @@ export function registerWorldExpansion(payload: WorldExpansionProposal, source: 
   };
 }
 
-export function registerCanonDelta(payload: CanonDeltaProposal, source: string): Proposal {
+export function registerCanonDelta(payload: CanonDeltaProposal, source: string): CanonDeltaRecord {
   return {
     id: `cd-${stamp()}`,
     type: 'canon-delta',
@@ -119,10 +121,10 @@ export function registerCanonDelta(payload: CanonDeltaProposal, source: string):
   };
 }
 
-export function decideItem(proposal: Proposal, index: number, decision: ItemDecision): Proposal {
+export function decideItem<T extends Proposal>(proposal: T, index: number, decision: ItemDecision): T {
   const decisions = [...proposal.decisions];
   decisions[index] = decision;
-  return { ...proposal, decisions } as Proposal;
+  return { ...proposal, decisions };
 }
 
 // ---------------------------------------------------------------------------

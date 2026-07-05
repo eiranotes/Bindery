@@ -6,7 +6,7 @@ import { readOptional } from './project';
 import { LAYOUT } from '$lib/core/layout';
 import { clip } from '$lib/core/text';
 import { parseWorldExpansionProposal, type WorldExpansionProposal } from '$lib/schemas/contracts';
-import { registerWorldExpansion, saveProposal, type Proposal } from './proposals';
+import { registerWorldExpansion, saveProposal, type WorldExpansionRecord } from './proposals';
 import type { IdeaFile } from './ideas';
 import type { Ctx, StageOutcome } from './types';
 
@@ -45,7 +45,7 @@ export function renderWorldProposalArtifact(p: WorldExpansionProposal): string {
 }
 
 /** 세계관 확장 proposal 생성 + 레지스트리 등록. 파일 반영은 승인(applyProposal) 이후. */
-export async function expandWorld(ctx: Ctx, selectedIdeas: IdeaFile[], notes: string): Promise<{ proposal: Proposal; outcome: StageOutcome<WorldExpansionProposal> }> {
+export async function expandWorld(ctx: Ctx, selectedIdeas: IdeaFile[], notes: string): Promise<{ proposal: WorldExpansionRecord; outcome: StageOutcome<WorldExpansionProposal> }> {
   const selectedSeeds = selectedIdeas
     .map((i) => `### ${i.seed.title}\n- 훅: ${i.seed.hook}\n- 감정 엔진: ${i.seed.emotional_engine}\n- 독자 약속: ${i.seed.reader_promise}\n- 장기 잠재력: ${i.seed.longform_potential}`)
     .join('\n\n');
