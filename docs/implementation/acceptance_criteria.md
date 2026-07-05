@@ -33,6 +33,18 @@
 | claude CLI 연결 테스트 | OK (BINDERY-OK, exit 0, 10.8s) |
 | 실제 소재 발굴 1회 | OK — idea_discovery blueprint → 스키마 준수 JSON 후보 2건 (65.4s) |
 
+## 브라우저 클릭스루 (Chrome, dev 서버)
+
+| 항목 | 결과 |
+|---|---|
+| 시작 화면 렌더 (다크 테마) | OK |
+| 프로젝트 열기 → 셸(탭/탐색/인스펙터) 렌더 | OK |
+| 설정: Claude 프리셋 선택·저장 (.bindery/settings.json) | OK |
+| 소재 발굴 인앱 실 AI 실행 | OK — 후보 2건 생성 (51.6s), busy 칩·AI 배지·인스펙터 trace 경로 표시 |
+| 소재 채택 클릭 → 디스크 폴더 이동 | OK — ideas/inbox → ideas/selected 실파일 이동, 사이드바 카운트 갱신 |
+| run 기록 파일 | OK — .bindery/runs/{runId}.json + index.json |
+| 콘솔 오류 | 0건 |
+
 ## 빌드·정적 검증
 
 - `npm test` — 12/12 통과 (코어 단위 + 시나리오 E2E)
