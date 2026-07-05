@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "QAReportEnvelope.v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "episode",
+    "qa_type",
+    "verdict",
+    "issues"
+  ],
+  "properties": {
+    "schema": {
+      "const": "QAReportEnvelope.v1"
+    },
+    "episode": {
+      "type": "string"
+    },
+    "qa_type": {
+      "enum": [
+        "prose",
+        "fiction",
+        "governance"
+      ]
+    },
+    "verdict": {
+      "enum": [
+        "pass",
+        "warn",
+        "block"
+      ]
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "severity",
+          "gate",
+          "title",
+          "evidence"
+        ],
+        "properties": {
+          "severity": {
+            "enum": [
+              "block",
+              "warn",
+              "info"
+            ]
+          },
+          "gate": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "source_path",
+                "quote_or_locator"
+              ],
+              "properties": {
+                "source_path": {
+                  "type": "string"
+                },
+                "quote_or_locator": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "suggested_action": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

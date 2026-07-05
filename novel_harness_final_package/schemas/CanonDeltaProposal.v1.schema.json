@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "CanonDeltaProposal.v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "proposal_id",
+    "episode",
+    "requires_human_approval",
+    "changes"
+  ],
+  "properties": {
+    "schema": {
+      "const": "CanonDeltaProposal.v1"
+    },
+    "proposal_id": {
+      "type": "string"
+    },
+    "episode": {
+      "type": "string"
+    },
+    "requires_human_approval": {
+      "const": true
+    },
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "target_path",
+          "change_type",
+          "summary",
+          "patch",
+          "risk"
+        ],
+        "properties": {
+          "target_path": {
+            "type": "string"
+          },
+          "change_type": {
+            "enum": [
+              "create",
+              "update",
+              "close_thread",
+              "add_fact",
+              "change_status"
+            ]
+          },
+          "summary": {
+            "type": "string"
+          },
+          "patch": {
+            "type": "string"
+          },
+          "risk": {
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

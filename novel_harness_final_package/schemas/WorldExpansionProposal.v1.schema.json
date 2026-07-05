@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "WorldExpansionProposal.v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "proposal_id",
+    "premise_id",
+    "assets",
+    "story_license_notes"
+  ],
+  "properties": {
+    "schema": {
+      "const": "WorldExpansionProposal.v1"
+    },
+    "proposal_id": {
+      "type": "string"
+    },
+    "premise_id": {
+      "type": "string"
+    },
+    "story_license_notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "status",
+          "one_line_function",
+          "needed_by_episode"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "character",
+              "location",
+              "institution",
+              "system",
+              "history",
+              "culture",
+              "relationship",
+              "conflict"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "draft",
+              "proposed",
+              "canon"
+            ]
+          },
+          "one_line_function": {
+            "type": "string"
+          },
+          "needed_by_episode": {
+            "type": "string"
+          },
+          "risks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

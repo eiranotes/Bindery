@@ -1,0 +1,15 @@
+version: 1
+default_profile: local_cli_default
+profiles:
+  local_cli_default:
+    kind: cli
+    command: ai
+    prompt_arg: "-p"
+    model_arg: "--model"
+    default_model: ""
+    output_mode: stdout
+    extra_args: []
+    timeout_sec: 240
+  web_exchange:
+    kind: web_exchange
+    export_dir: .harness/exchanges

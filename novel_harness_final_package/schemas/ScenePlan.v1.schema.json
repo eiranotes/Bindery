@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ScenePlan.v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "episode",
+    "scenes"
+  ],
+  "properties": {
+    "schema": {
+      "const": "ScenePlan.v1"
+    },
+    "episode": {
+      "type": "string"
+    },
+    "scenes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "scene_id",
+          "purpose",
+          "location",
+          "pov",
+          "characters",
+          "required_beats",
+          "blocked_reveals",
+          "target_chars",
+          "entry_image",
+          "exit_state"
+        ],
+        "properties": {
+          "scene_id": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "pov": {
+            "type": "string"
+          },
+          "characters": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "required_beats": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "blocked_reveals": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "target_chars": {
+            "type": "integer"
+          },
+          "entry_image": {
+            "type": "string"
+          },
+          "exit_state": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

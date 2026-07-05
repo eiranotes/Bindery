@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "IdeaSeed.v1",
+  "type": "object",
+  "required": [
+    "schema",
+    "id",
+    "title",
+    "hook",
+    "emotional_engine",
+    "reader_promise",
+    "longform_potential",
+    "risks"
+  ],
+  "properties": {
+    "schema": {
+      "const": "IdeaSeed.v1"
+    },
+    "id": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string"
+    },
+    "hook": {
+      "type": "string"
+    },
+    "emotional_engine": {
+      "type": "string"
+    },
+    "reader_promise": {
+      "type": "string"
+    },
+    "genre_tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "longform_potential": {
+      "type": "string"
+    },
+    "first_scene_image": {
+      "type": "string"
+    },
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}

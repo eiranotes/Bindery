@@ -1,0 +1,17 @@
+project_id: novel_demo_001
+title: "새 장편 프로젝트"
+language: ko-KR
+current_lineage: main
+current_episode: ep001
+source_of_truth:
+  canon_state: status/canon-state.md
+  story_license: status/story-license.md
+  story_envelope: plot/story-envelope.md
+  asset_registry: manifest/asset-registry.md
+ai_policy:
+  direct_write: false
+  require_human_approval_for:
+    - canon_delta
+    - asset_promotion
+    - summary_acceptance
+    - branch_merge
