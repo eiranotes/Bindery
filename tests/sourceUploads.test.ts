@@ -123,6 +123,38 @@ describe('source uploads', () => {
     expect(result.skipped.some((skip) => skip.name === 'art/cover.png')).toBe(true);
   });
 
+  it('expands deflated zip entries without DecompressionStream', async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'DecompressionStream');
+    const zip = await makeZip([
+      { name: 'planning/idea.md', content: '# 아이디어\nWebView fallback', method: 'deflated' },
+      { name: 'planning/notes.md', content: '압축 해제 API 없이도 읽는다', method: 'deflated' }
+    ]);
+
+    Object.defineProperty(globalThis, 'DecompressionStream', {
+      configurable: true,
+      value: undefined
+    });
+    try {
+      const result = await readSourceUploads([
+        new File([toArrayBuffer(zip)], 'webview.zip', { type: 'application/zip' })
+      ]);
+
+      expect(result.zipEntries).toBe(2);
+      expect(result.skipped).toHaveLength(0);
+      expect(result.uploads.map((file) => file.name)).toEqual([
+        'webview.zip/planning/idea.md',
+        'webview.zip/planning/notes.md'
+      ]);
+      expect(result.uploads[1].content).toContain('API 없이도');
+    } finally {
+      if (descriptor) {
+        Object.defineProperty(globalThis, 'DecompressionStream', descriptor);
+      } else {
+        delete (globalThis as { DecompressionStream?: typeof DecompressionStream }).DecompressionStream;
+      }
+    }
+  });
+
   it('skips unsafe and metadata zip paths', async () => {
     const zip = await makeZip([
       { name: '../escape.md', content: 'bad', method: 'stored' },

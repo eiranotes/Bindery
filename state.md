@@ -1,5 +1,16 @@
 # state.md — 현재 인수인계 상태
 
+## 2026-07-06 zip 압축 해제 WebView fallback
+
+- macOS 앱 WebView에서 `DecompressionStream('deflate-raw')` 지원이 없거나 불완전하면 deflated zip
+  엔트리가 `zip-error`로 건너뛰어지는 문제를 막기 위해 `sourceUploads.ts`에 순수 JS raw deflate
+  fallback을 추가했다.
+- zip 중앙 디렉터리/경로 정규화/텍스트 엔트리 선별 계약은 유지하고, 압축 해제만
+  `DecompressionStream` 우선 + local fallback 순서로 처리한다. 새 production dependency는 추가하지 않았다.
+- 검증: `npx vitest run tests/sourceUploads.test.ts` 4/4(`DecompressionStream` 없는 런타임 포함) ·
+  `npm run check` 0 오류 · `npm test` 32/32 · `npm run tauri:build:mac:standalone` OK ·
+  `/Applications/Bindery.app` 최신 빌드 교체 및 `codesign --verify --deep --strict` OK · 앱 실행 프로세스 확인.
+
 ## 2026-07-06 최초 기획 자료 zip 및 무제한 업로드
 
 - 홈의 최초 [AI에게 기획 맡기기] 자료 업로드가 앱 차원의 파일 개수 제한 없이 동작하도록 바뀌었다.

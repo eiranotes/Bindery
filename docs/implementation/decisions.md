@@ -154,3 +154,10 @@ command/model이 남는다.
 Tauri가 만든 실행 파일의 linker ad-hoc 서명만으로는 `.app` 리소스 봉인이 없어
 `codesign --verify --deep --strict`가 실패할 수 있으므로, 배포 전 검증 가능한 앱 번들을
 반복 생성하기 위해 빌드 명령에 서명 단계를 고정한다.
+
+### D29. zip 압축 해제는 WebView API에만 의존하지 않는다
+최초 기획 자료 zip은 중앙 디렉터리에서 텍스트 엔트리를 선별한 뒤 브라우저 메모리에서 읽는다.
+deflated 엔트리는 먼저 `DecompressionStream('deflate-raw')`을 시도하지만, macOS WebView처럼 이 API가
+없거나 형식 지원이 불완전한 런타임에서는 `sourceUploads.ts`의 순수 JS raw deflate fallback으로
+푼다. 이 fallback은 zip의 stored/fixed/dynamic deflate 블록을 읽는 좁은 범위의 구현이며,
+새 production dependency 없이 앱 내부 자료 업로드 경로에만 사용한다.

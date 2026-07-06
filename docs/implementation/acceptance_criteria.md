@@ -47,14 +47,17 @@
 
 ## 빌드·정적 검증
 
-- `npx vitest run tests/sourceUploads.test.ts` — 3/3 통과
-- `npm test` — 31/31 통과 (코어 단위 + 시나리오 E2E + 자료 업로드 zip)
+- `npx vitest run tests/sourceUploads.test.ts` — 4/4 통과
+  (`DecompressionStream` 없는 macOS WebView형 zip fallback 포함)
+- `npm test` — 32/32 통과 (코어 단위 + 시나리오 E2E + 자료 업로드 zip)
 - `npm run check` — svelte-check 0 errors / 0 warnings
 - `npm run tauri:build:mac:standalone` — vite 프로덕션 빌드 OK(기존 chunk-size warning 유지) +
   macOS `Bindery.app` 번들 생성 및 ad-hoc 서명 OK:
   `src-tauri/target/release/bundle/macos/Bindery.app`
 - `codesign --verify --deep --strict --verbose=2 src-tauri/target/release/bundle/macos/Bindery.app` —
   `valid on disk`, Designated Requirement 충족.
+- `/Applications/Bindery.app` — 최신 번들로 교체 후 `codesign --verify --deep --strict` 통과,
+  `open -n /Applications/Bindery.app` + `pgrep`으로 실행 확인.
 
 ## 2026-07-05 후속 구현 확인
 

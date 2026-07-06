@@ -62,12 +62,61 @@ const ZIP_CENTRAL_DIRECTORY = 0x02014b50;
 const ZIP_END_CENTRAL_DIRECTORY = 0x06054b50;
 const ZIP_STORED = 0;
 const ZIP_DEFLATED = 8;
+const CODE_LENGTH_ORDER = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
+const LENGTH_BASE = [
+  3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83,
+  99, 115, 131, 163, 195, 227, 258
+];
+const LENGTH_EXTRA = [
+  0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5,
+  5, 5, 0
+];
+const DISTANCE_BASE = [
+  1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769,
+  1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577
+];
+const DISTANCE_EXTRA = [
+  0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11,
+  11, 12, 12, 13, 13
+];
 
 type ZipTextEntry = {
   name: string;
   size: number;
   text: string;
 };
+
+type HuffmanTable = {
+  maps: Array<Map<number, number>>;
+  maxBits: number;
+};
+
+class DeflateBitReader {
+  private bitOffset = 0;
+
+  constructor(private readonly bytes: Uint8Array) {}
+
+  readBit(): number {
+    if (this.bitOffset >= this.bytes.length * 8) {
+      throw new Error('Unexpected end of deflate stream');
+    }
+    const bit = (this.bytes[this.bitOffset >> 3] >> (this.bitOffset & 7)) & 1;
+    this.bitOffset++;
+    return bit;
+  }
+
+  readBits(count: number): number {
+    let value = 0;
+    for (let index = 0; index < count; index++) {
+      value |= this.readBit() << index;
+    }
+    return value;
+  }
+
+  alignByte(): void {
+    this.bitOffset = Math.ceil(this.bitOffset / 8) * 8;
+  }
+}
 
 function uploadId(name: string): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}-${slugify(name)}`;
@@ -151,22 +200,198 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return copy.buffer;
 }
 
-async function inflateRawZipPayload(payload: Uint8Array): Promise<Uint8Array> {
+function reverseBits(value: number, length: number): number {
+  let reversed = 0;
+  for (let index = 0; index < length; index++) {
+    reversed = (reversed << 1) | (value & 1);
+    value >>= 1;
+  }
+  return reversed;
+}
+
+function buildHuffmanTable(lengths: number[]): HuffmanTable {
+  const maxBits = Math.max(0, ...lengths);
+  const counts = new Array(maxBits + 1).fill(0);
+  const nextCode = new Array(maxBits + 1).fill(0);
+  const maps = Array.from({ length: maxBits + 1 }, () => new Map<number, number>());
+
+  for (const length of lengths) {
+    if (length > 0) counts[length]++;
+  }
+
+  let code = 0;
+  for (let bits = 1; bits <= maxBits; bits++) {
+    code = (code + counts[bits - 1]) << 1;
+    nextCode[bits] = code;
+  }
+
+  lengths.forEach((length, symbol) => {
+    if (length <= 0) return;
+    const symbolCode = nextCode[length]++;
+    maps[length].set(reverseBits(symbolCode, length), symbol);
+  });
+
+  return { maps, maxBits };
+}
+
+function decodeHuffmanSymbol(reader: DeflateBitReader, table: HuffmanTable): number {
+  let code = 0;
+  for (let bits = 1; bits <= table.maxBits; bits++) {
+    code |= reader.readBit() << (bits - 1);
+    const symbol = table.maps[bits]?.get(code);
+    if (symbol !== undefined) return symbol;
+  }
+  throw new Error('Invalid deflate Huffman code');
+}
+
+function fixedHuffmanTables(): { literal: HuffmanTable; distance: HuffmanTable } {
+  const literalLengths = new Array(288).fill(0);
+  for (let symbol = 0; symbol <= 143; symbol++) literalLengths[symbol] = 8;
+  for (let symbol = 144; symbol <= 255; symbol++) literalLengths[symbol] = 9;
+  for (let symbol = 256; symbol <= 279; symbol++) literalLengths[symbol] = 7;
+  for (let symbol = 280; symbol <= 287; symbol++) literalLengths[symbol] = 8;
+  return {
+    literal: buildHuffmanTable(literalLengths),
+    distance: buildHuffmanTable(new Array(32).fill(5))
+  };
+}
+
+function dynamicHuffmanTables(reader: DeflateBitReader): { literal: HuffmanTable; distance: HuffmanTable } {
+  const literalCount = reader.readBits(5) + 257;
+  const distanceCount = reader.readBits(5) + 1;
+  const codeLengthCount = reader.readBits(4) + 4;
+  const codeLengthLengths = new Array(19).fill(0);
+
+  for (let index = 0; index < codeLengthCount; index++) {
+    codeLengthLengths[CODE_LENGTH_ORDER[index]] = reader.readBits(3);
+  }
+
+  const codeLengthTable = buildHuffmanTable(codeLengthLengths);
+  const lengths: number[] = [];
+  const total = literalCount + distanceCount;
+
+  while (lengths.length < total) {
+    const symbol = decodeHuffmanSymbol(reader, codeLengthTable);
+    if (symbol <= 15) {
+      lengths.push(symbol);
+    } else if (symbol === 16) {
+      if (!lengths.length) throw new Error('Invalid deflate repeat length');
+      const repeat = reader.readBits(2) + 3;
+      const previous = lengths[lengths.length - 1];
+      for (let index = 0; index < repeat; index++) lengths.push(previous);
+    } else if (symbol === 17) {
+      const repeat = reader.readBits(3) + 3;
+      for (let index = 0; index < repeat; index++) lengths.push(0);
+    } else if (symbol === 18) {
+      const repeat = reader.readBits(7) + 11;
+      for (let index = 0; index < repeat; index++) lengths.push(0);
+    } else {
+      throw new Error('Invalid deflate code length symbol');
+    }
+  }
+
+  return {
+    literal: buildHuffmanTable(lengths.slice(0, literalCount)),
+    distance: buildHuffmanTable(lengths.slice(literalCount, total))
+  };
+}
+
+function inflateRawDeflate(payload: Uint8Array, expectedSize: number): Uint8Array {
+  const reader = new DeflateBitReader(payload);
+  let output = new Uint8Array(Math.max(1024, expectedSize || 0));
+  let outputLength = 0;
+
+  function ensureCapacity(extra: number): void {
+    const required = outputLength + extra;
+    if (required <= output.length) return;
+    let nextLength = output.length;
+    while (nextLength < required) nextLength *= 2;
+    const next = new Uint8Array(nextLength);
+    next.set(output);
+    output = next;
+  }
+
+  function appendByte(byte: number): void {
+    ensureCapacity(1);
+    output[outputLength++] = byte & 0xff;
+  }
+
+  function copyFromDistance(distance: number, length: number): void {
+    if (distance <= 0 || distance > outputLength) throw new Error('Invalid deflate distance');
+    ensureCapacity(length);
+    for (let index = 0; index < length; index++) {
+      output[outputLength] = output[outputLength - distance];
+      outputLength++;
+    }
+  }
+
+  function inflateCompressedBlock(literal: HuffmanTable, distance: HuffmanTable): void {
+    while (true) {
+      const symbol = decodeHuffmanSymbol(reader, literal);
+      if (symbol < 256) {
+        appendByte(symbol);
+      } else if (symbol === 256) {
+        return;
+      } else {
+        const lengthIndex = symbol - 257;
+        const baseLength = LENGTH_BASE[lengthIndex];
+        if (baseLength === undefined) throw new Error('Invalid deflate length symbol');
+        const length = baseLength + reader.readBits(LENGTH_EXTRA[lengthIndex]);
+        const distanceSymbol = decodeHuffmanSymbol(reader, distance);
+        const baseDistance = DISTANCE_BASE[distanceSymbol];
+        if (baseDistance === undefined) throw new Error('Invalid deflate distance symbol');
+        const copyDistance = baseDistance + reader.readBits(DISTANCE_EXTRA[distanceSymbol]);
+        copyFromDistance(copyDistance, length);
+      }
+    }
+  }
+
+  let finalBlock = false;
+  while (!finalBlock) {
+    finalBlock = reader.readBits(1) === 1;
+    const blockType = reader.readBits(2);
+    if (blockType === 0) {
+      reader.alignByte();
+      const length = reader.readBits(16);
+      const inverseLength = reader.readBits(16);
+      if (((length ^ 0xffff) & 0xffff) !== inverseLength) {
+        throw new Error('Invalid deflate stored block length');
+      }
+      for (let index = 0; index < length; index++) appendByte(reader.readBits(8));
+    } else if (blockType === 1) {
+      const tables = fixedHuffmanTables();
+      inflateCompressedBlock(tables.literal, tables.distance);
+    } else if (blockType === 2) {
+      const tables = dynamicHuffmanTables(reader);
+      inflateCompressedBlock(tables.literal, tables.distance);
+    } else {
+      throw new Error('Unsupported deflate block type');
+    }
+  }
+
+  return output.slice(0, outputLength);
+}
+
+async function inflateRawZipPayload(payload: Uint8Array, expectedSize: number): Promise<Uint8Array> {
   const StreamCtor = (globalThis as unknown as {
     DecompressionStream?: new (format: string) => DecompressionStream;
   }).DecompressionStream;
 
-  if (!StreamCtor) {
-    throw new Error('DecompressionStream is not available');
+  if (StreamCtor) {
+    try {
+      const stream = new Blob([toArrayBuffer(payload)]).stream().pipeThrough(new StreamCtor('deflate-raw'));
+      return new Uint8Array(await new Response(stream).arrayBuffer());
+    } catch {
+      // macOS WebView support is uneven; fall through to the local inflater.
+    }
   }
 
-  const stream = new Blob([toArrayBuffer(payload)]).stream().pipeThrough(new StreamCtor('deflate-raw'));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
+  return inflateRawDeflate(payload, expectedSize);
 }
 
-async function decodeZipPayload(payload: Uint8Array, method: number): Promise<Uint8Array> {
+async function decodeZipPayload(payload: Uint8Array, method: number, uncompressedSize: number): Promise<Uint8Array> {
   if (method === ZIP_STORED) return payload;
-  if (method === ZIP_DEFLATED) return inflateRawZipPayload(payload);
+  if (method === ZIP_DEFLATED) return inflateRawZipPayload(payload, uncompressedSize);
   throw new Error(`Unsupported ZIP compression method: ${method}`);
 }
 
@@ -229,7 +454,7 @@ async function readZipTextEntries(file: SourceReadableFile): Promise<{
 
     try {
       const payload = bytes.slice(dataStart, dataEnd);
-      const textBytes = await decodeZipPayload(payload, method);
+      const textBytes = await decodeZipPayload(payload, method, uncompressedSize);
       const text = new TextDecoder('utf-8', { fatal: false }).decode(textBytes);
       entries.push({ name: entryName, size: uncompressedSize, text });
     } catch {
