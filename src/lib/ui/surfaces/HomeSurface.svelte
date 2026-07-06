@@ -11,12 +11,33 @@
     ensureEpisodeScaffold, type FoundationResult
   } from '$lib/harness/autopilot';
   import { nextEpisode } from '$lib/harness/episode';
+  import { clip, nowIso, slugify } from '$lib/core/text';
   import type { IdeaFile } from '$lib/harness/ideas';
   import LiveRunPanel from '../LiveRunPanel.svelte';
 
+  type SourceUpload = {
+    id: string;
+    name: string;
+    size: number;
+    chars: number;
+    content: string;
+    truncated: boolean;
+  };
+
+  const SOURCE_FILE_LIMIT = 3;
+  const SOURCE_FILE_MAX_CHARS = 120_000;
+  const SOURCE_PROMPT_MAX_CHARS = 18_000;
+
   let step = $state<NextStep | null>(null);
   let starterIdeas = $state<IdeaFile[]>([]);
+  let sourceUploads = $state<SourceUpload[]>([]);
+  let sourceInput = $state<HTMLInputElement | null>(null);
   const running = $derived(Boolean($busy || $activeRun));
+  const sourceSummary = $derived.by(() => {
+    if (!sourceUploads.length) return '선택한 자료 없음';
+    const chars = sourceUploads.reduce((sum, file) => sum + file.chars, 0);
+    return `${sourceUploads.length}개 · ${chars.toLocaleString()}자`;
+  });
 
   $effect(() => {
     void $progress;
@@ -37,7 +58,12 @@
     if (!step) return;
     if (step.action === 'startProject') {
       clearRunFeed();
-      const r = await withBusy('기획 후보 생성', () => runProjectStarterAutopilot(ctx(), $intentNote.trim()), false);
+      const starterNote = [$intentNote.trim(), sourcePromptText()].filter(Boolean).join('\n\n');
+      const sourceCount = sourceUploads.length;
+      const r = await withBusy('기획 후보 생성', async () => {
+        await saveSourceRawIfNeeded();
+        return runProjectStarterAutopilot(ctx(), starterNote);
+      }, false);
       if (!r) return;
       if (r.error) {
         toast(r.error, 'warn');
@@ -45,6 +71,7 @@
       }
       starterIdeas = r.ideas;
       intentNote.set('');
+      if (sourceCount) toast('업로드 자료 저장됨: notes/source-raw.md', 'ok');
       if (r.ideas.every((i) => i.seed.source === 'local')) {
         toast('AI 실행기가 연결되지 않아 뼈대만 만들었습니다. 설정을 확인하세요.', 'warn');
       }
@@ -67,6 +94,7 @@
     const r = await withBusy('작품 기본 구성', () => adoptStarterIdea(ctx(), idea, $project?.title ?? '작품'));
     if (!r) return;
     starterIdeas = [];
+    sourceUploads = [];
     const bible = r.bibleSource === 'agent' ? 'AI 바이블' : r.bibleSource === 'fallback' ? '로컬 바이블' : '바이블 없음';
     toast(`기획 채택됨 — 세계관 자산 ${r.assets}건 → ${bible} → 플롯 초안 ${r.plotEpisodes}화가 준비됐습니다.`, 'ok');
     await refreshAll();
@@ -132,6 +160,105 @@
     autopilotKick.set('writeFresh');
     mode.set('write');
   }
+
+  function uploadId(file: File): string {
+    return `${Date.now()}-${Math.random().toString(36).slice(2)}-${slugify(file.name)}`;
+  }
+
+  function formatBytes(bytes: number): string {
+    if (bytes < 1024) return `${bytes}B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+  }
+
+  function sourcePromptText(): string {
+    if (!sourceUploads.length) return '';
+    const perFileBudget = Math.max(2500, Math.floor(SOURCE_PROMPT_MAX_CHARS / sourceUploads.length));
+    const body = sourceUploads.map((file) => [
+      `## ${file.name}`,
+      `크기: ${formatBytes(file.size)}, 읽은 글자: ${file.chars.toLocaleString()}자${file.truncated ? ', 앱 입력 한도에서 잘림' : ''}`,
+      '',
+      clip(file.content, perFileBudget)
+    ].join('\n')).join('\n\n');
+    return clip([
+      '[업로드 기획 자료]',
+      '아래 자료를 우선 근거로 삼아 기획 후보를 만들어라. 원문 저장 위치: notes/source-raw.md.',
+      '',
+      body
+    ].join('\n'), SOURCE_PROMPT_MAX_CHARS);
+  }
+
+  function renderIndented(content: string): string {
+    const source = content.trimEnd() || '(빈 파일)';
+    return source.split('\n').map((line) => `    ${line}`).join('\n');
+  }
+
+  function renderSourceRaw(): string {
+    const sections = sourceUploads.flatMap((file) => [
+      `## ${file.name}`,
+      '',
+      `- 크기: ${formatBytes(file.size)}`,
+      `- 읽은 글자: ${file.chars.toLocaleString()}자${file.truncated ? ' (앱 입력 한도에서 잘림)' : ''}`,
+      '',
+      renderIndented(file.content),
+      ''
+    ]);
+    return [
+      '# 업로드 기획 자료',
+      '',
+      `- 저장: ${nowIso()}`,
+      `- 파일 수: ${sourceUploads.length}`,
+      '',
+      ...sections
+    ].join('\n');
+  }
+
+  async function saveSourceRawIfNeeded(): Promise<void> {
+    if (!sourceUploads.length) return;
+    const c = ctx();
+    await c.bridge.writeFile(c.root, 'notes/source-raw.md', renderSourceRaw());
+  }
+
+  async function chooseSourceFiles(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const files = Array.from(input.files ?? []);
+    input.value = '';
+    if (!files.length) return;
+
+    const slots = SOURCE_FILE_LIMIT - sourceUploads.length;
+    if (slots <= 0) {
+      toast(`자료 파일은 최대 ${SOURCE_FILE_LIMIT}개까지 추가할 수 있습니다.`, 'warn');
+      return;
+    }
+
+    const beforeCount = sourceUploads.length;
+    let skipped = Math.max(0, files.length - slots);
+    const next = [...sourceUploads];
+    for (const file of files.slice(0, slots)) {
+      try {
+        const raw = (await file.text()).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        const content = raw.slice(0, SOURCE_FILE_MAX_CHARS);
+        next.push({
+          id: uploadId(file),
+          name: file.name || 'untitled.txt',
+          size: file.size,
+          chars: content.length,
+          content,
+          truncated: raw.length > SOURCE_FILE_MAX_CHARS
+        });
+      } catch {
+        skipped++;
+      }
+    }
+    const added = next.length - beforeCount;
+    sourceUploads = next;
+    if (added > 0) toast(`자료 파일 ${added}개를 불러왔습니다`, 'ok');
+    if (skipped > 0) toast(`자료 파일 ${skipped}개는 건너뛰었습니다`, 'warn');
+  }
+
+  function removeSourceFile(id: string) {
+    sourceUploads = sourceUploads.filter((file) => file.id !== id);
+  }
 </script>
 
 <div class="surface">
@@ -170,6 +297,45 @@
         <button class="primary big" onclick={go}>{step.cta}</button>
       </div>
 
+      {#if step.action === 'startProject'}
+        <section class="source-intake" aria-label="기획 자료 업로드">
+          <div class="source-head">
+            <div>
+              <strong>자료 파일</strong>
+              <span>{sourceSummary}</span>
+            </div>
+            <div class="row source-actions">
+              {#if sourceUploads.length}
+                <button class="quiet" onclick={() => (sourceUploads = [])}>비우기</button>
+              {/if}
+              <button class="quiet" onclick={() => sourceInput?.click()} disabled={sourceUploads.length >= SOURCE_FILE_LIMIT}>파일 추가</button>
+              <input
+                bind:this={sourceInput}
+                class="file-input"
+                type="file"
+                multiple
+                accept=".txt,.md,.markdown,.json,.yaml,.yml,.csv,.tsv"
+                onchange={chooseSourceFiles}
+              />
+            </div>
+          </div>
+          {#if sourceUploads.length}
+            <div class="source-list">
+              {#each sourceUploads as file (file.id)}
+                <div class="source-row">
+                  <div class="source-meta">
+                    <b>{file.name}</b>
+                    <span>{formatBytes(file.size)} · {file.chars.toLocaleString()}자{file.truncated ? ' · 잘림' : ''}</span>
+                  </div>
+                  <button class="quiet danger" onclick={() => removeSourceFile(file.id)}>삭제</button>
+                </div>
+              {/each}
+            </div>
+          {/if}
+          <p>업로드한 텍스트는 notes/source-raw.md에 저장되고 기획 후보 입력에 함께 들어갑니다. 최대 {SOURCE_FILE_LIMIT}개.</p>
+        </section>
+      {/if}
+
       <div class="aux">
         {#if $pendingProposals > 0}
           <button class="card" onclick={() => mode.set('pending')}>
@@ -206,6 +372,55 @@
   .ctarow { margin-top: 8px; }
   .grow { flex: 1; min-width: 220px; padding: 9px 12px; }
   .big { padding: 10px 24px; font-size: 14px; }
+
+  .source-intake {
+    display: grid;
+    gap: var(--space-2);
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    padding: var(--space-3) 0;
+  }
+  .source-head {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+  .source-head > div:first-child { display: grid; gap: 2px; }
+  .source-head strong { font-size: 13px; }
+  .source-head span,
+  .source-intake p,
+  .source-meta span {
+    color: var(--muted);
+    font-size: 11.5px;
+  }
+  .source-actions { justify-content: flex-end; }
+  .file-input { display: none; }
+  .source-list { display: grid; gap: 6px; }
+  .source-row {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+    justify-content: space-between;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 8px 10px;
+    background: var(--bg-1);
+  }
+  .source-meta {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+  }
+  .source-meta b {
+    overflow: hidden;
+    color: var(--text);
+    font-size: 12.5px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .danger { color: var(--bad); }
 
   .aux { display: grid; gap: 8px; margin-top: 22px; }
   .card {
