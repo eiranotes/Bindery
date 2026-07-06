@@ -1,6 +1,6 @@
 <script lang="ts">
-  // 제안·정사 화면 — 모든 proposal(세계관 확장·정사 변경)의 승인/거부와 반영.
-  // 여기가 "AI는 제안, 사람이 확정"의 관문이다.
+  // 제안·정사 화면 - 모든 proposal(세계관 확장·정사 변경)의 승인/거부, 반영.
+  // 여기는 "AI가 제안, 사람이 확정"의 관문이다.
   import { ctx, proposals, withBusy, toast } from '$lib/stores/app';
   import { decideItem, applyProposal, assetTargetPath, type Proposal, type ItemDecision } from '$lib/harness/proposals';
 
@@ -53,7 +53,7 @@
   </header>
 
   {#if visible.length === 0}
-    <p class="empty">표시할 proposal이 없습니다. 세계관 확장이나 회차 요약 후 정사 변경 제안이 여기 쌓입니다.</p>
+    <p class="empty">표시할 proposal이 없습니다. 세계관 확장이나 회차 요약 후 정사 변경 제안이 여기 옵니다.</p>
   {/if}
 
   {#each visible as p (p.id)}

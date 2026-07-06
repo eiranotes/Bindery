@@ -5,7 +5,7 @@
 // 패키징 시 Tauri command로 대체해도 프런트엔드 코드는 바뀌지 않는다.
 import type { Plugin, ViteDevServer } from 'vite';
 import { promises as fs } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
 
@@ -37,6 +37,7 @@ type AgentRequest = {
 export type FileNode = { name: string; path: string; kind: 'file' | 'directory'; children?: FileNode[] };
 
 const TEXT_EXT = /\.(md|ya?ml|json|txt|prompt\.md)$/i;
+const activeAgents = new Map<string, ChildProcess>();
 
 function bad(msg: string): never {
   const err = new Error(msg) as Error & { status?: number };
@@ -126,6 +127,14 @@ function substituteArgs(template: string[], vars: Record<string, string>): strin
     .filter((arg) => arg.length > 0);
 }
 
+function activeKey(root: string, label: string): string {
+  return `${root}\0${label}`;
+}
+
+function writeSse(res: NodeJS.WritableStream, event: unknown): void {
+  res.write(`data: ${JSON.stringify(event)}\n\n`);
+}
+
 async function handleAgent(req: AgentRequest): Promise<unknown> {
   const root = await resolveRoot(req.root);
   const s = req.settings;
@@ -152,12 +161,18 @@ async function handleAgent(req: AgentRequest): Promise<unknown> {
 
   return await new Promise((resolve) => {
     const child = spawn(s.command, args, { cwd: root, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    // 청크 경계가 UTF-8 멀티바이트 문자를 자르면 한글이 깨진다 — 반드시 인코딩 지정.
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    const key = activeKey(root, req.label ?? 'run');
+    activeAgents.set(key, child);
     let stdout = '';
     let stderr = '';
     let settled = false;
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
+      activeAgents.delete(key);
       child.kill('SIGKILL');
       resolve({ ok: false, text: '', stderr: `timeout after ${timeoutMs}ms`, exitCode: -1, durationMs: Date.now() - started, mode: 'timeout', promptFile: path.relative(root, promptFile) });
     }, timeoutMs);
@@ -166,12 +181,14 @@ async function handleAgent(req: AgentRequest): Promise<unknown> {
     child.on('error', (err) => {
       if (settled) return;
       settled = true;
+      activeAgents.delete(key);
       clearTimeout(timer);
       resolve({ ok: false, text: '', stderr: String(err), exitCode: -1, durationMs: Date.now() - started, mode: 'spawn-error', promptFile: path.relative(root, promptFile) });
     });
     child.on('close', async (code) => {
       if (settled) return;
       settled = true;
+      activeAgents.delete(key);
       clearTimeout(timer);
       let text = stdout;
       if (s.outputMode === 'file' && outputFile) {
@@ -188,6 +205,111 @@ async function handleAgent(req: AgentRequest): Promise<unknown> {
       });
     });
   });
+}
+
+async function handleAgentStream(req: AgentRequest, res: NodeJS.WritableStream): Promise<void> {
+  const root = await resolveRoot(req.root);
+  const s = req.settings;
+  if (!s?.command?.trim()) bad('agent command not configured');
+  const timeoutMs = Math.min(Math.max(s.timeoutMs ?? 180_000, 5_000), 600_000);
+  const started = Date.now();
+  const label = req.label ?? 'run';
+
+  const stamp = `${Date.now()}`;
+  const traceDir = path.join(root, '.bindery', 'trace');
+  await fs.mkdir(traceDir, { recursive: true });
+  const promptFile = path.join(traceDir, `${stamp}-${label.replace(/[^\w-]/g, '_')}.prompt.md`);
+  await fs.writeFile(promptFile, req.prompt, 'utf8');
+
+  const outputFile = s.outputMode === 'file'
+    ? path.join(traceDir, `${stamp}-output.md`)
+    : '';
+  const args = substituteArgs(s.argsTemplate, {
+    prompt: req.prompt,
+    model: s.model ?? '',
+    promptFile,
+    outputFile
+  });
+
+  const key = activeKey(root, label);
+  const child = spawn(s.command, args, { cwd: root, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+  // 청크 경계가 UTF-8 멀티바이트 문자를 자르면 한글이 깨진다 — 반드시 인코딩 지정.
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  activeAgents.set(key, child);
+  let stdout = '';
+  let stderr = '';
+  let settled = false;
+
+  writeSse(res, { type: 'status', text: `prompt saved: ${path.relative(root, promptFile)}`, promptFile: path.relative(root, promptFile) });
+
+  const finish = async (result: {
+    ok: boolean;
+    text: string;
+    stderr: string;
+    exitCode: number;
+    mode: string;
+  }) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    activeAgents.delete(key);
+    let text = result.text;
+    if (s.outputMode === 'file' && outputFile && result.ok) {
+      text = await fs.readFile(outputFile, 'utf8').catch(() => result.text);
+    }
+    writeSse(res, {
+      type: 'done',
+      result: {
+        ok: result.ok && text.trim().length > 0,
+        text,
+        stderr: result.stderr.slice(0, 20_000),
+        exitCode: result.exitCode,
+        durationMs: Date.now() - started,
+        mode: result.mode,
+        promptFile: path.relative(root, promptFile)
+      }
+    });
+    res.end();
+  };
+
+  const timer = setTimeout(() => {
+    if (settled) return;
+    child.kill('SIGKILL');
+    void finish({ ok: false, text: '', stderr: `timeout after ${timeoutMs}ms`, exitCode: -1, mode: 'timeout' });
+  }, timeoutMs);
+
+  child.stdout.on('data', (d) => {
+    const text = String(d);
+    stdout += text;
+    writeSse(res, { type: 'stdout', text });
+  });
+  child.stderr.on('data', (d) => {
+    const text = String(d);
+    stderr += text;
+    writeSse(res, { type: 'stderr', text });
+  });
+  child.on('error', (err) => {
+    void finish({ ok: false, text: '', stderr: String(err), exitCode: -1, mode: 'spawn-error' });
+  });
+  child.on('close', (code, signal) => {
+    const killed = signal === 'SIGTERM' || signal === 'SIGKILL';
+    void finish({
+      ok: code === 0,
+      text: stdout,
+      stderr: killed ? `${stderr}\ncancelled by user`.trim() : stderr,
+      exitCode: code ?? -1,
+      mode: killed ? 'cancelled' : 'cli'
+    });
+  });
+}
+
+async function handleAgentCancel(req: { root: string; label: string }): Promise<{ ok: boolean; cancelled: boolean }> {
+  const root = await resolveRoot(req.root);
+  const child = activeAgents.get(activeKey(root, req.label));
+  if (!child) return { ok: true, cancelled: false };
+  child.kill('SIGTERM');
+  return { ok: true, cancelled: true };
 }
 
 async function readBody(req: NodeJS.ReadableStream): Promise<string> {
@@ -217,6 +339,14 @@ export function harnessBridge(): Plugin {
             let result: unknown;
             if (req.url === '/fs') result = await handleFs(payload as FsRequest);
             else if (req.url === '/agent') result = await handleAgent(payload as AgentRequest);
+            else if (req.url === '/agent-stream') {
+              res.setHeader('content-type', 'text/event-stream');
+              res.setHeader('cache-control', 'no-cache');
+              res.setHeader('connection', 'keep-alive');
+              await handleAgentStream(payload as AgentRequest, res);
+              return;
+            }
+            else if (req.url === '/agent/cancel') result = await handleAgentCancel(payload as { root: string; label: string });
             else if (req.url === '/scaffold') result = await handleScaffold(payload as { base: string; name: string });
             else {
               res.statusCode = 404;

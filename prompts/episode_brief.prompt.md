@@ -11,8 +11,11 @@
 ## 재개 상태 (이전 회차 요약·열린 떡밥·인물 상태)
 {{resumeState}}
 
-## 설정 바이블 발췌
+## 설정 컨텍스트 (이번 화 관련도로 선별된 canon)
 {{bible}}
+
+## 열린 떡밥 (plot/open-threads.md)
+{{openThreads}}
 
 ## 이전 회차 확정 원고 끝부분 (사람 확정본 — 이어짐의 진실)
 {{previousTail}}

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // 우측 인스펙터 — 최근 실행의 투명성(모드/시간/프롬프트 파일)과 대기 중 결정.
+  // 우측 인스펙터 - 최근 실행의 투명성(모델/시간/프롬프트 파일)과 대기 중 결정.
   import { runlog, proposals, selectedRun, runDockOpen, mode, settings, project } from '$lib/stores/app';
 
   const last = $derived($selectedRun ?? $runlog[0] ?? null);
@@ -56,7 +56,7 @@
     <span class="label">원칙</span>
     <p class="rule">AI 출력은 후보·제안으로만 남습니다. canon 파일과 원고 반영은 항상 사람의 승인과 스냅샷을 거칩니다.</p>
     {#if $settings.offline}
-      <p class="rule warn-text">오프라인 모드: 모든 단계가 로컬 뼈대로 동작합니다.</p>
+      <p class="rule warn-text">오프라인 모드: 모든 단계는 로컬 뼈대로 동작합니다.</p>
     {/if}
     <p class="rule mono small">{$project?.root}</p>
   </section>

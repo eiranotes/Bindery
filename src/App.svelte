@@ -16,7 +16,7 @@
 </script>
 
 {#if !ready}
-  <div class="boot">Bindery 시작 중…</div>
+  <div class="boot">Bindery 시작 중...</div>
 {:else if !$project}
   <ProjectPicker {bridgeKind} />
 {:else}
@@ -32,8 +32,8 @@
 <style>
   .boot { display: grid; place-items: center; height: 100%; color: var(--faint); }
   .toast-host {
-    position: fixed; right: 16px; bottom: 16px; z-index: 200;
-    display: grid; gap: 6px; max-width: 380px;
+    position: fixed; right: var(--space-4); bottom: var(--space-4); z-index: 200;
+    display: grid; gap: 6px; max-width: min(380px, calc(100vw - (var(--space-4) * 2)));
   }
   .toast {
     padding: 8px 12px; border-radius: 6px; font-size: 12.5px;
@@ -44,4 +44,12 @@
   .toast.warn { border-left: 3px solid var(--warn); }
   .toast.bad { border-left: 3px solid var(--bad); }
   .toast.info { border-left: 3px solid var(--accent); }
+  @media (max-width: 480px) {
+    .toast-host {
+      left: var(--space-2);
+      right: var(--space-2);
+      bottom: var(--space-2);
+      max-width: none;
+    }
+  }
 </style>

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Diff 뷰 — 후보 vs 기준 원고. hunk 단위 선택 적용.
+  // Diff 뷰 - 후보 vs 기존 원고. hunk 단위 선택 적용.
   import { diffLines, groupHunks, applyHunks, type Hunk } from '$lib/core/diff';
 
   let {
@@ -16,7 +16,7 @@
   let selected = $state(new Set<number>());
 
   $effect(() => {
-    // 후보가 바뀌면 기본 전체 선택
+    // 후보를 바꾸면 기본 전체 선택
     selected = new Set(hunks.map((h) => h.id));
   });
 
@@ -34,7 +34,7 @@
 </script>
 
 {#if hunks.length === 0}
-  <p class="empty">기준 원고와 차이가 없습니다.</p>
+  <p class="empty">기존 원고와 차이가 없습니다.</p>
 {:else}
   <div class="diffbar">
     <span class="dim">{hunks.length}개 변경 구간 · {selected.size}개 선택</span>

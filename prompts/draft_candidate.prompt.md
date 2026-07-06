@@ -16,8 +16,17 @@
 ## 재개 상태 (연속성 근거)
 {{resumeState}}
 
-## 설정 바이블 발췌 (canon — 위반 금지)
+## 이전 회차 요약 (연속성 근거)
+{{previousSummary}}
+
+## 이전 회차 확정 원고 끝부분 (문체와 이어짐의 진실)
+{{previousTail}}
+
+## 설정 컨텍스트 (이번 화 관련도로 선별·정제된 canon — 위반 금지)
 {{bible}}
+
+## 열린 떡밥 (배치·회수 후보)
+{{openThreads}}
 
 ## 스타일 지침
 {{styleGuide}}

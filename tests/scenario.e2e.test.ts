@@ -12,7 +12,8 @@ import { assembleBible, applyBibleCandidate } from '../src/lib/harness/bible';
 import { proposePlot, approvePlotEpisodes, loadPlotPlan } from '../src/lib/harness/plot';
 import {
   generateBrief, generateScenePlan, generateDraftCandidates, readCandidateBody,
-  applyToManuscript, runQA, generateRevisionPlanStage, generateRevisionCandidate
+  applyToManuscript, runQA, generateRevisionPlanStage, generateRevisionCandidate,
+  setPlanningApproval, approvalStatus
 } from '../src/lib/harness/episode';
 import { summarizeEpisode, proposeCanonDelta, fixEpisode, loadProgress } from '../src/lib/harness/closeout';
 import { diffLines, groupHunks, applyHunks } from '../src/lib/core/diff';
@@ -195,13 +196,21 @@ describe('검증 시나리오 — 소재 발굴부터 resume state까지', () =>
     // 7. 회차 브리프 → 파일로 존재
     const brief = await generateBrief(ctx, 'ep001', '', 1200);
     expect(brief.source).toBe('agent');
+    expect(approvalStatus(brief.output)).toBe('draft');
     expect(await memoryBridge.exists(ctx.root, episodePaths('ep001').brief)).toBe(true);
 
-    // 8. 장면 계획
+    // 8. 장면 계획 — 승인된 브리프 뒤에만 생성된다
+    const blockedScenes = await generateScenePlan(ctx, 'ep001');
+    expect('error' in blockedScenes && blockedScenes.error).toContain('승인');
+    await setPlanningApproval(ctx, 'ep001', 'brief', 'approved');
     const scenes = await generateScenePlan(ctx, 'ep001');
     expect('output' in scenes && scenes.output.scenes.length).toBe(2);
+    expect('output' in scenes && approvalStatus(scenes.output)).toBe('draft');
 
-    // 9. 초안 후보 — 원고를 덮어쓰지 않는다
+    // 9. 초안 후보 — 승인된 브리프와 장면 계획 뒤에만 생성되고, 원고를 덮어쓰지 않는다
+    const blockedDrafts = await generateDraftCandidates(ctx, 'ep001', 1, '');
+    expect(blockedDrafts.error).toContain('승인');
+    await setPlanningApproval(ctx, 'ep001', 'scene-plan', 'approved');
     const { candidates } = await generateDraftCandidates(ctx, 'ep001', 1, '');
     expect(candidates.length).toBe(1);
     const manuscriptBefore = await memoryBridge.readFile(ctx.root, episodePaths('ep001').manuscript);

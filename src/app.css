@@ -1,5 +1,5 @@
-/* Bindery 디자인 토큰 — warm paper + teal (레거시 DESIGN.md 토큰 계약 흡수).
-   규칙: 새 색/간격/서체 값은 여기 먼저 추가한다. 카드 중첩 대신 표·레일·hairline. */
+/* Bindery 디자인 토큰 - warm paper + teal (레거시 DESIGN.md 토큰 계약 흡수).
+   규칙: 새 색/간격/서체 값은 여기 먼저 선언한다. 카드 중첩 대신 표·레일·hairline. */
 :root {
   --bg: #f4f2ee;
   --bg-1: #fbf9f5;
@@ -23,6 +23,13 @@
   --bad-soft: rgba(207, 78, 99, 0.12);
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   --serif: 'Noto Serif KR', 'KoPub Batang', ui-serif, Georgia, serif;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
 }
 
 @media (prefers-color-scheme: dark) {

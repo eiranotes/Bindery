@@ -9,6 +9,11 @@ export type Ctx = {
   agent: AgentSettings;
   /** true면 agent 호출을 건너뛰고 즉시 로컬 폴백을 쓴다 (오프라인 모드). */
   offline?: boolean;
+  /** 스테이지별 실행기(저/중/고 티어 라우팅). 없으면 agent를 그대로 쓴다. */
+  agentFor?: (stage: string) => AgentSettings;
+  /** 로컬 선별 컨텍스트 예산/정제 임계값 (없으면 기본값). */
+  contextBudgetChars?: number;
+  distillThresholdChars?: number;
 };
 
 export type StageSource = 'agent' | 'fallback' | 'web-import' | 'human';
@@ -55,3 +60,10 @@ export type StageOutcome<T> = {
 
 /** 러너가 run 완료를 알릴 때 사용 — UI(run log dock)가 구독한다. */
 export type RunListener = (record: RunRecord) => void;
+
+export type RunLiveEvent =
+  | { type: 'start'; runId: string; stage: string; scope: string; startedAt: string }
+  | { type: 'status' | 'stdout' | 'stderr'; runId: string; stage: string; scope: string; text: string }
+  | { type: 'finish'; runId: string; stage: string; scope: string; record: RunRecord };
+
+export type RunLiveListener = (event: RunLiveEvent) => void;

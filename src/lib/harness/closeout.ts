@@ -112,6 +112,7 @@ const PROGRESS_PATH = `${LAYOUT.bindery.root}/episodes.json`;
 
 export async function loadProgress(ctx: Ctx): Promise<EpisodeProgress> {
   try {
+    if (!(await ctx.bridge.exists(ctx.root, PROGRESS_PATH))) return {};
     return JSON.parse(await ctx.bridge.readFile(ctx.root, PROGRESS_PATH)) as EpisodeProgress;
   } catch {
     return {};

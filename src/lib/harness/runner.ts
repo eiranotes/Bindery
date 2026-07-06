@@ -5,18 +5,28 @@
 import { renderBlueprint } from '$lib/core/blueprint';
 import { nowIso, stamp } from '$lib/core/text';
 import { runPath, LAYOUT } from '$lib/core/layout';
-import type { Ctx, RunListener, RunRecord, StageOutcome, StageRunSpec } from './types';
+import type { Ctx, RunListener, RunLiveEvent, RunLiveListener, RunRecord, StageOutcome, StageRunSpec } from './types';
 import type { AgentResult } from '$lib/bridge';
 
 const listeners = new Set<RunListener>();
+const liveListeners = new Set<RunLiveListener>();
 
 export function onRun(listener: RunListener): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
 
+export function onRunLive(listener: RunLiveListener): () => void {
+  liveListeners.add(listener);
+  return () => liveListeners.delete(listener);
+}
+
 function emit(record: RunRecord): void {
   for (const l of listeners) l(record);
+}
+
+function emitLive(event: RunLiveEvent): void {
+  for (const l of liveListeners) l(event);
 }
 
 function repairPrompt(hint: string, invalidOutput: string, reason: string): string {
@@ -65,6 +75,8 @@ export async function runStage<T>(ctx: Ctx, spec: StageRunSpec<T>): Promise<Stag
   const t0 = Date.now();
   const prompt = renderBlueprint(spec.blueprint, spec.vars);
   const runId = `${stamp()}-${spec.stage}-${spec.scope}`;
+  // 스테이지별 티어 라우팅 — 집필은 고급, 정제/요약은 경량처럼 다른 CLI/모델을 쓸 수 있다.
+  const agent = ctx.agentFor?.(spec.stage) ?? ctx.agent;
 
   let agentResult: AgentResult | undefined;
   let output: T | null = null;
@@ -72,18 +84,29 @@ export async function runStage<T>(ctx: Ctx, spec: StageRunSpec<T>): Promise<Stag
   let repairUsed = false;
   let parseFailReason: string | undefined;
 
-  if (!ctx.offline && ctx.agent.command.trim()) {
-    agentResult = await ctx.bridge.runAgent(ctx.root, prompt, runId, ctx.agent);
+  const runAgent = (promptText: string, label: string): Promise<AgentResult> => {
+    emitLive({ type: 'start', runId: label, stage: spec.stage, scope: spec.scope, startedAt: nowIso() });
+    if (ctx.bridge.runAgentStream) {
+      return ctx.bridge.runAgentStream(ctx.root, promptText, label, agent, (event) => {
+        if (event.type === 'status' || event.type === 'stdout' || event.type === 'stderr') {
+          emitLive({ type: event.type, runId: label, stage: spec.stage, scope: spec.scope, text: event.text });
+        }
+      });
+    }
+    emitLive({ type: 'status', runId: label, stage: spec.stage, scope: spec.scope, text: 'CLI 실행 중' });
+    return ctx.bridge.runAgent(ctx.root, promptText, label, agent);
+  };
+
+  if (!ctx.offline && agent.command.trim()) {
+    agentResult = await runAgent(prompt, runId);
     if (agentResult.ok) {
       output = spec.parse(agentResult.text);
       if (output == null && spec.repairHint) {
         parseFailReason = '1차 출력 스키마 검증 실패';
         repairUsed = true;
-        const repair = await ctx.bridge.runAgent(
-          ctx.root,
+        const repair = await runAgent(
           repairPrompt(spec.repairHint, agentResult.text, parseFailReason),
-          `${runId}-repair`,
-          ctx.agent
+          `${runId}-repair`
         );
         if (repair.ok) output = spec.parse(repair.text);
         if (output == null) parseFailReason = 'repair 후에도 검증 실패';
@@ -118,11 +141,12 @@ export async function runStage<T>(ctx: Ctx, spec: StageRunSpec<T>): Promise<Stag
     promptFile: agentResult?.promptFile,
     repairUsed,
     parseFailReason: source === 'agent' ? undefined : parseFailReason,
-    command: ctx.agent.command,
-    model: ctx.agent.model ?? ''
+    command: agent.command,
+    model: agent.model ?? ''
   };
   await persistRun(ctx, record);
   emit(record);
+  emitLive({ type: 'finish', runId, stage: spec.stage, scope: spec.scope, record });
   return { output, source, prompt, run: record, agentResult };
 }
 

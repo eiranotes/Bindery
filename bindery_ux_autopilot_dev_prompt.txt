@@ -1,0 +1,199 @@
+너는 Bindery 저장소를 개선하는 고성능 개발 에이전트다.
+
+이번 작업의 목표는 AI 파이프라인을 더 많이 노출하거나 세부 단계를 더 늘리는 것이 아니다. 현재 Bindery의 장기 집필 하네스 구조, local-first Markdown 구조, AI candidate-first 원칙, proposal/candidate/snapshot/diff 안전장치는 유지하되, 사용자 경험을 “최소 입력 · 자동 중간 처리 · 최종 선택” 중심으로 재구성하라.
+
+핵심 문제는 현재 내부 파이프라인이 UI에 그대로 노출되어 사용자가 매번 브리프 승인, 장면 계획 승인, QA 실행, 수정 계획 승인, 정사 변경 승인 등을 처리해야 한다는 점이다. 이 구조는 기능적으로 안전하지만 실제 사용 피로가 크다. 이번 작업에서는 내부 stage를 삭제하지 말고, 그 위에 UX-first workflow/autopilot 레이어를 추가하라.
+
+반드시 현재 저장소의 README, DESIGN.md, docs, src/lib/harness, src/lib/ui, prompts, schemas, bridge, Tauri command 구조를 먼저 읽고 작업하라. 이미 구현된 기능을 중복 구현하지 말고, 기존 stage와 파일 구조를 재사용하라.
+
+작업 목표:
+
+1. 사용자에게 보이는 기본 흐름을 다음처럼 단순화한다.
+
+   홈 → 이번 화 쓰기 → 후보 선택 → 원고 적용 → 검토/수정 → 회차 마감
+
+2. 간단 모드에서는 다음과 같은 세부 버튼이나 용어가 직접 노출되지 않게 한다.
+
+   - 브리프 승인
+   - 장면 계획 승인
+   - 개별 QA 실행
+   - 수정 계획 승인
+   - raw proposal apply
+   - packet
+   - trace
+   - artifact
+   - schema
+   - canon delta
+
+   단, 이 기능들은 삭제하지 말고 설계자/고급 모드 또는 “생성 근거 보기” 안에서 접근 가능하게 유지한다.
+
+3. 다음 파일을 추가하거나 이에 준하는 구조를 구현한다.
+
+   - src/lib/harness/workflow.ts
+   - src/lib/harness/autopilot.ts
+
+   workflow.ts는 현재 프로젝트 상태를 읽고 사용자에게 필요한 다음 행동을 계산해야 한다.
+   autopilot.ts는 기존 stage들을 상황에 맞게 묶어 실행해야 한다.
+
+4. 기본 사용자 액션을 다음 정도로 축약한다.
+
+   type UserAction =
+     | 'startProject'
+     | 'writeNextEpisode'
+     | 'regenerateCandidates'
+     | 'applyCandidate'
+     | 'reviseCurrentDraft'
+     | 'applyRevision'
+     | 'closeEpisode'
+     | 'reviewPendingChanges'
+     | 'directEdit'
+     | 'openAdvancedDetails';
+
+5. runEpisodeAutopilot을 구현한다.
+
+   목표:
+   - 사용자가 버튼 하나로 다음 회차 후보를 얻을 수 있어야 한다.
+   - 사용자 메모는 optional이다.
+   - 입력이 비어 있어도 resume state, plot, canon, previous summary, open threads를 읽고 진행해야 한다.
+   - 내부적으로 필요한 경우 episode brief, scene plan, draft candidate, candidate QA를 생성한다.
+   - 기본 출력은 후보 카드 2~3개다.
+   - 후보는 단순 번호가 아니라 의미 있는 라벨을 가져야 한다.
+
+   권장 라벨:
+   - 정석안
+   - 추진안
+   - 감정안
+   - 압축안
+   - 확장안
+   - 반전안
+
+   기본 후보 수는 3개 이하로 제한한다.
+
+6. runRevisionAutopilot을 구현한다.
+
+   목표:
+   - 사용자가 QA 3종을 따로 누르지 않아도 된다.
+   - 문체·리듬, 플롯·연속성, 정사·설정 검토를 묶어서 실행한다.
+   - 결과는 체크박스형 수정 제안 목록으로 보여준다.
+   - AI 추천 항목은 기본 체크 상태로 둔다.
+   - 사용자는 해제하거나 적용만 하면 된다.
+   - 수정 적용 전 snapshot을 남겨야 한다.
+
+7. runCloseEpisodeAutopilot을 구현한다.
+
+   목표:
+   - 회차 마감 버튼 하나로 요약, 다음 화 메모, 설정 변경 후보 추출, 스냅샷 생성을 처리한다.
+   - canon/character/world/plot 변경은 자동 확정하지 않는다.
+   - 마감 화면에서는 “추천 반영으로 마감”, “직접 고르고 마감”, “보류” 세 선택지만 기본 노출한다.
+   - 직접 고르기 화면에서는 설정 변경 후보를 체크박스로 보여준다.
+   - AI 추천 반영 항목은 기본 체크 상태로 둔다.
+
+8. UI를 다음 방향으로 정리한다.
+
+   기존 상단 메뉴:
+   홈 | 소재 | 세계관 | 플롯 | 회차 | 제안·정사 | 파일 | 설정
+
+   목표 메뉴:
+   홈 | 집필 | 작품노트 | 보류함 | 파일 | 설정
+
+   단, 한 번에 큰 리팩터링이 위험하면 기존 메뉴는 유지하되 HomeSurface와 EpisodeSurface부터 UX-first로 바꿔라.
+
+9. HomeSurface를 “다음 작업 센터”로 바꾼다.
+
+   홈은 설명 화면이 아니라 사용자가 지금 눌러야 할 CTA 하나를 보여주는 화면이어야 한다.
+
+   예:
+   - 새 작품을 시작할 차례입니다 → [AI에게 기획 맡기기]
+   - ep012를 이어 쓸 차례입니다 → [이번 화 쓰기]
+   - 원고 후보가 준비됐습니다 → [후보 보기]
+   - 설정 변경 후보가 쌓였습니다 → [보류함 검토]
+
+10. EpisodeSurface는 기본적으로 단일 진행 레일이어야 한다.
+
+    설계 → 초안 → 검토·수정 → 마감
+
+    하지만 사용자가 각 단계를 모두 직접 눌러야 하는 구조가 되면 안 된다. 진행 상태를 보여주고, 기본 CTA는 하나만 크게 보여줘라.
+
+11. 새 UI 컴포넌트를 도입하라. 파일명은 현재 구조에 맞게 조정해도 된다.
+
+    - AutopilotPanel.svelte
+    - CandidateCard.svelte
+    - OneLineIntentInput.svelte
+    - PendingChangesDrawer.svelte
+    - EvidenceDrawer.svelte
+
+12. 입력 폼을 최소화하라.
+
+    주요 AI 작업에는 한 줄 선택 입력만 둔다.
+
+    예:
+    “이번 화에 원하는 방향이 있으면 적으세요. 비워두면 AI가 현재 플롯과 다음 화 메모를 기준으로 진행합니다.”
+
+    장르, 톤, 시점, 사건, 등장인물, 금지 요소 등을 매번 별도 필드로 요구하지 마라.
+
+13. 내부 산출물은 계속 파일로 남긴다.
+
+    삭제 금지:
+    - candidate 파일
+    - proposal 파일
+    - QA report
+    - brief
+    - scene plan
+    - summary
+    - resume state
+    - trace
+    - snapshot
+
+    단, 기본 UI에서는 “생성 근거 보기” 안에 접어둔다.
+
+14. 승인 모델을 다음처럼 재정의하라.
+
+    Soft output: 자동 생성 가능, 별도 승인 불필요
+    - brief
+    - scene plan
+    - QA report
+    - revision plan
+    - candidate summary
+
+    Hard commit: 사람 확정 필요
+    - manuscript 적용
+    - canon 변경
+    - character/world/plot 변경
+    - episode fixed/closed 처리
+
+15. 테스트와 문서를 추가하라.
+
+    최소 문서:
+    - docs/ux/autopilot_pipeline_redesign.md
+    - docs/ux/simple_mode_user_flow.md
+    - docs/implementation/workflow_autopilot_plan.md
+
+    테스트:
+    - workflow가 상태별 next action을 올바르게 계산하는지
+    - runEpisodeAutopilot이 기존 stage를 재사용하면서 후보 카드를 반환하는지
+    - 간단 모드에서 중간 승인 버튼이 노출되지 않는지
+    - hard commit이 자동 적용되지 않는지
+    - closeEpisodeAutopilot이 canon 변경을 proposal/checklist로 남기는지
+
+16. 수용 기준:
+
+    - 새 회차 후보 생성까지 기본 사용자 행동은 1~2회 이내여야 한다.
+    - 기본 후보 수는 3개 이하야 한다.
+    - 사용자 입력이 없어도 다음 회차 쓰기가 가능해야 한다.
+    - 간단 모드에서 packet, trace, artifact, schema 같은 내부 용어가 보이면 안 된다.
+    - 원고 본문과 canon 변경은 자동 확정되면 안 된다.
+    - 기존 local-first Markdown 구조는 유지되어야 한다.
+    - 기존 고급 파이프라인 기능은 삭제하지 말고 접어둬야 한다.
+
+작업 방식:
+
+1. 먼저 현재 구조를 읽고 짧은 audit 문서를 작성한다.
+2. workflow/autopilot 설계를 문서화한다.
+3. 가장 작은 단위로 HomeSurface와 EpisodeSurface부터 개선한다.
+4. 기존 테스트를 깨지 않도록 한다.
+5. 구현 후 변경 파일 목록, 테스트 결과, 남은 리스크, 다음 단계 작업을 보고한다.
+
+중요:
+
+이번 작업은 “Bindery에 AI 단계 더 붙이기”가 아니다.
+이번 작업은 “Bindery의 강한 내부 파이프라인을 숨기고, 사용자가 글을 쓰는 느낌을 회복시키는 UX 레이어 구축”이다.

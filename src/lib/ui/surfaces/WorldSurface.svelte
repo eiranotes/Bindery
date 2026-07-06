@@ -1,5 +1,5 @@
 <script lang="ts">
-  // 세계관 화면 — 채택 소재 → 확장 proposal 생성 → (승인은 제안·정사 화면) → 자산 목록 → 바이블 조립.
+  // 세계관 화면 - 채택 소재, 확장 proposal 생성, 승인된 제안·정사 화면, 자산 목록, 바이블 조립.
   import { onMount } from 'svelte';
   import { ctx, ideas, tree, project, withBusy, toast, mode, proposals } from '$lib/stores/app';
   import { expandWorld, renderWorldProposalArtifact } from '$lib/harness/world';
@@ -55,8 +55,8 @@
     if (result) {
       toast(
         result.outcome.source === 'agent'
-          ? `자산 ${result.proposal.payload.assets.length}건 제안됨 — 제안·정사 화면에서 승인하세요`
-          : '로컬 뼈대 proposal 생성됨 — 내용을 채우기 전에는 승인하지 마세요',
+          ? `자산 ${result.proposal.payload.assets.length}건 제안됨 - 제안·정사 화면에서 승인하세요`
+          : '로컬 뼈대 proposal 생성됨 - 내용을 채우기 전에는 승인하지 마세요',
         result.outcome.source === 'agent' ? 'ok' : 'warn'
       );
       mode.set('canon');
@@ -68,7 +68,7 @@
     if (result) {
       bibleCandidatePath = result.candidatePath;
       bibleCandidate = await ctx().bridge.readFile(ctx().root, result.candidatePath);
-      toast(result.outcome.source === 'agent' ? '바이블 후보 생성됨 — 검토 후 적용하세요' : '오프라인 조립본 생성됨', result.outcome.source === 'agent' ? 'ok' : 'warn');
+      toast(result.outcome.source === 'agent' ? '바이블 후보 생성됨 - 검토 후 적용하세요' : '오프라인 조립본 생성됨', result.outcome.source === 'agent' ? 'ok' : 'warn');
     }
   }
 
@@ -109,7 +109,7 @@
 
   async function copyPacket() {
     await navigator.clipboard.writeText(exchangePacket);
-    toast('packet이 클립보드에 복사됨 — 웹 AI에 붙여넣으세요', 'ok');
+    toast('packet이 클립보드에 복사됨 - 웹 AI에 붙여넣으세요', 'ok');
   }
 
   async function importResult() {
@@ -125,7 +125,7 @@
       await saveProposal(c, proposal);
       await writeArtifact(c, 'work', 'world-expansion', `세계관 확장 proposal (웹 교환) · 자산 ${parsed.assets.length}건`, renderWorldProposalArtifact(parsed), 'web-import');
       if (exchangeId) await recordImport(c, exchangeId, importText, true);
-      toast(`웹 AI 제안 등록됨 (자산 ${parsed.assets.length}건) — 제안·정사 화면에서 승인하세요`, 'ok');
+      toast(`웹 AI 제안 등록됨 (자산 ${parsed.assets.length}건) - 제안·정사 화면에서 승인하세요`, 'ok');
       importText = '';
       showExchange = false;
     });
@@ -140,11 +140,11 @@
   </header>
 
   <section>
-    <span class="label">세계관 확장 — 채택 소재 {selected.length}건 기반</span>
+      <span class="label">세계관 확장 - 채택 소재 {selected.length}건 기반</span>
     {#if selected.length}
       <ul class="seedline">{#each selected as s}<li>{s.seed.title}</li>{/each}</ul>
     {:else}
-      <p class="empty">채택된 소재가 없습니다. <button class="quiet" onclick={() => mode.set('ideas')}>소재 화면으로 →</button></p>
+      <p class="empty">채택된 소재가 없습니다. <button class="quiet" onclick={() => mode.set('ideas')}>소재 화면으로</button></p>
     {/if}
     <div class="row">
       <input bind:value={notes} placeholder="확장 방향 지시 (선택)" />
@@ -185,7 +185,7 @@
   </section>
 
   <section>
-    <span class="label">설정 바이블 — canon/setting-bible.md</span>
+    <span class="label">설정 바이블 - canon/setting-bible.md</span>
     <div class="row">
       <button class="primary" onclick={assemble} disabled={assets.length === 0 && selected.length === 0}>자산에서 바이블 조립</button>
       <span class="dim">조립 결과는 후보로 만들어지며, 적용 시 기존 바이블은 스냅샷으로 보존됩니다.</span>

@@ -68,6 +68,7 @@ export async function listProjectTree(ctx: Ctx): Promise<FileNode[]> {
 /** 존재하면 읽고 없으면 빈 문자열 — 컨텍스트 조립에서 반복되는 패턴. */
 export async function readOptional(ctx: Ctx, path: string): Promise<string> {
   try {
+    if (!(await ctx.bridge.exists(ctx.root, path))) return '';
     return await ctx.bridge.readFile(ctx.root, path);
   } catch {
     return '';

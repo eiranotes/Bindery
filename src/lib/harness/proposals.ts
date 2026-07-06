@@ -79,6 +79,7 @@ export async function saveProposal(ctx: Ctx, proposal: Proposal): Promise<void> 
 export async function loadProposals(ctx: Ctx): Promise<Proposal[]> {
   let index: ProposalIndexEntry[] = [];
   try {
+    if (!(await ctx.bridge.exists(ctx.root, proposalIndexPath()))) return [];
     index = JSON.parse(await ctx.bridge.readFile(ctx.root, proposalIndexPath())) as ProposalIndexEntry[];
   } catch {
     return [];

@@ -11,6 +11,7 @@ import type { Ctx, StageOutcome } from './types';
 
 export async function loadPlotPlan(ctx: Ctx): Promise<PlotPlan | null> {
   try {
+    if (!(await ctx.bridge.exists(ctx.root, LAYOUT.plot.board))) return null;
     const raw = JSON.parse(await ctx.bridge.readFile(ctx.root, LAYOUT.plot.board)) as PlotPlan;
     return raw.schema_version === 'bindery.plot_plan.v1' ? raw : null;
   } catch {

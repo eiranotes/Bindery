@@ -27,6 +27,11 @@ export type AgentResult = {
   promptFile?: string;
 };
 
+export type AgentStreamEvent =
+  | { type: 'status'; text: string; promptFile?: string }
+  | { type: 'stdout' | 'stderr'; text: string }
+  | { type: 'done'; result: AgentResult };
+
 export interface Bridge {
   readonly kind: 'dev' | 'memory' | 'tauri';
   readFile(root: string, path: string): Promise<string>;
@@ -38,5 +43,13 @@ export interface Bridge {
   /** 프로젝트 루트 폴더 생성. 반환값은 절대경로 루트. */
   scaffold(base: string, name: string): Promise<string>;
   runAgent(root: string, prompt: string, label: string, settings: AgentSettings): Promise<AgentResult>;
+  runAgentStream?(
+    root: string,
+    prompt: string,
+    label: string,
+    settings: AgentSettings,
+    onEvent: (event: AgentStreamEvent) => void
+  ): Promise<AgentResult>;
+  cancelAgent?(root: string, label: string): Promise<{ ok: boolean; cancelled: boolean }>;
   env(): Promise<{ home: string; cwd: string }>;
 }

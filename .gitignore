@@ -2,6 +2,11 @@ node_modules/
 dist/
 .DS_Store
 *.log
+*.zip
 .vite/
+.claude/
+.superloopy/
+src-tauri/target/
+src-tauri/gen/schemas/
 # 로컬 실험용 프로젝트 (검증 시나리오가 생성)
 sandbox-projects/

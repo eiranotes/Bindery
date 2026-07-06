@@ -45,7 +45,9 @@ export async function snapshotFile(ctx: Ctx, targetPath: string, label: string, 
 
 export async function loadSnapshotIndex(ctx: Ctx): Promise<SnapshotMeta[]> {
   try {
-    return JSON.parse(await ctx.bridge.readFile(ctx.root, `${LAYOUT.bindery.snapshots}/index.json`)) as SnapshotMeta[];
+    const indexPath = `${LAYOUT.bindery.snapshots}/index.json`;
+    if (!(await ctx.bridge.exists(ctx.root, indexPath))) return [];
+    return JSON.parse(await ctx.bridge.readFile(ctx.root, indexPath)) as SnapshotMeta[];
   } catch {
     return [];
   }

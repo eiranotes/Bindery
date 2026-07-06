@@ -1,5 +1,5 @@
 <script lang="ts">
-  // 소재 화면 — 조건 입력 → 후보 생성(inbox) → 카드 검토 → 씨앗/채택/보류/폐기.
+  // 소재 화면 - 조건 입력, 후보 생성(inbox), 카드 검토, 씨앗/채택/보류/폐기.
   // 모든 카드는 ideas/ 아래 Markdown 파일이며, 버튼은 파일 이동일 뿐이다.
   import { ctx, ideas, withBusy, toast, refreshAll, mode } from '$lib/stores/app';
   import { discoverIdeas, moveIdea, triageIdeas, type IdeaFile } from '$lib/harness/ideas';
@@ -45,7 +45,7 @@
       toast(
         result.outcome.source === 'agent'
           ? `소재 후보 ${result.files.length}건이 ideas/inbox/에 생성됨`
-          : '로컬 뼈대 1건 생성됨 — AI 실행기 연결 후 다시 실행하면 후보가 채워집니다',
+          : '로컬 뼈대 1건 생성됨 - AI 실행기 연결 후 다시 실행하면 후보가 채워집니다',
         result.outcome.source === 'agent' ? 'ok' : 'warn'
       );
     }
@@ -54,14 +54,14 @@
   async function move(idea: IdeaFile, to: IdeaStatus) {
     await withBusy(`소재 이동(${to})`, async () => {
       await moveIdea(ctx(), idea, to);
-      toast(`「${idea.seed.title}」 → ideas/${to}/`, 'ok');
+      toast(`${idea.seed.title} -> ideas/${to}/`, 'ok');
     });
   }
 
   async function triage() {
     const pool = $ideas.filter((i) => i.status === 'inbox' || i.status === 'seeds');
     if (pool.length < 2) {
-      toast('비교할 소재가 2건 이상 필요합니다', 'warn');
+      toast('비교할 소재는 2건 이상 필요합니다', 'warn');
       return;
     }
     const outcome = await withBusy('소재 선별 권고', () => triageIdeas(ctx(), pool, criteria.readerExperience), false);
@@ -103,7 +103,7 @@
 
   async function copyPacket() {
     await navigator.clipboard.writeText(exchangePacket);
-    toast('packet이 클립보드에 복사됨 — 웹 AI에 붙여넣으세요', 'ok');
+    toast('packet이 클립보드에 복사됨 - 웹 AI에 붙여넣으세요', 'ok');
   }
 </script>
 
@@ -116,11 +116,11 @@
   <section class="criteria">
     <span class="label">발굴 조건</span>
     <div class="form">
-      <label>장르<input bind:value={criteria.genres} placeholder="현대 판타지, 미스터리…" /></label>
+      <label>장르<input bind:value={criteria.genres} placeholder="현대 판타지, 미스터리" /></label>
       <label>분위기<input bind:value={criteria.mood} placeholder="서늘한 성장담" /></label>
       <label>활용할 클리셰<input bind:value={criteria.cliches} /></label>
       <label>독자 경험<input bind:value={criteria.readerExperience} placeholder="매 화 하나의 비밀" /></label>
-      <label>금지 요소<input bind:value={criteria.avoid} placeholder="회귀, 아카데미…" /></label>
+      <label>금지 소재<input bind:value={criteria.avoid} placeholder="회귀, 아카데미" /></label>
       <label>후보 수<input type="number" min="1" max="10" bind:value={criteria.count} /></label>
       <label class="wide">메모<input bind:value={criteria.notes} /></label>
     </div>
@@ -134,7 +134,7 @@
 
   {#if showExchange}
     <section class="exchange">
-      <span class="label">웹 AI 교환 — CLI 없이 ChatGPT/Claude/Gemini 웹으로 실행</span>
+      <span class="label">웹 AI 교환 - CLI 없이 ChatGPT/Claude/Gemini 웹으로 실행</span>
       {#if exchangePacket}
         <div class="row"><button onclick={copyPacket}>packet 복사</button><span class="dim">.bindery/exchange/{exchangeId}/packet.md 에도 저장됨</span></div>
       {/if}
@@ -187,7 +187,7 @@
             <button class="quiet" onclick={() => mode.set('files')}>파일로 열기</button>
           </div>
           {#if selected.status === 'selected'}
-            <p class="next">채택됨 — <button class="quiet" onclick={() => mode.set('world')}>세계관 확장으로 이동 →</button></p>
+            <p class="next">채택됨 - <button class="quiet" onclick={() => mode.set('world')}>세계관 확장으로 이동</button></p>
           {/if}
         </article>
       {/if}
@@ -196,7 +196,7 @@
 
   {#if triageReport}
     <section>
-      <span class="label">선별 권고 (AI 의견 — 결정은 사람이)</span>
+      <span class="label">선별 권고 (AI 의견 - 결정은 사람이)</span>
       <pre class="pre">{triageReport}</pre>
     </section>
   {/if}
@@ -231,4 +231,5 @@
   .detail dd { margin: 0; font-size: 13px; line-height: 1.6; }
   .next { font-size: 12.5px; color: var(--ok); }
   @media (max-width: 900px) { .split { grid-template-columns: 1fr; } .form { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 600px) { .surface { padding: 18px 16px; } .form { grid-template-columns: 1fr; } }
 </style>

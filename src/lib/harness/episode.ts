@@ -21,13 +21,57 @@ import {
   type QAAspect,
   type RevisionPlan
 } from '$lib/schemas/contracts';
-import { loadPlotPlan } from './plot';
+import { loadEpisodeContext } from './context';
+import { buildEpisodeContextPack, prepareDraftContext } from './contextPack';
 import type { Ctx, StageOutcome } from './types';
+
+// 회차 번호 헬퍼는 context.ts가 원본이다 (기초자료 로더와의 순환 참조 방지).
+export { previousEpisode, nextEpisode } from './context';
 
 const JSON_BLOCK = /<!--\s*bindery:json\s*([\s\S]*?)-->/;
 
+export type PlanningApprovalStatus = 'draft' | 'approved';
+/** 승인 주체 — 계획 산출물(soft output)은 autopilot이 자동 승인할 수 있다.
+ *  hard commit(원고 적용·canon 변경·픽스)은 여전히 human만 가능하다. */
+export type PlanningApprover = 'human' | 'autopilot';
+export type PlanningApproval = {
+  status: PlanningApprovalStatus;
+  updatedAt: string;
+  approvedAt?: string;
+  approvedBy: PlanningApprover;
+};
+export type ApprovedEpisodeBrief = EpisodeBrief & { bindery_approval?: PlanningApproval };
+export type ApprovedScenePlan = ScenePlan & { bindery_approval?: PlanningApproval };
+export type PlanningKind = 'brief' | 'scene-plan';
+
 function embedJson(markdown: string, payload: unknown): string {
   return `${markdown.trimEnd()}\n\n<!-- bindery:json\n${JSON.stringify(payload, null, 2)}\n-->\n`;
+}
+
+function replaceEmbeddedJson(content: string, payload: unknown): string {
+  const block = `<!-- bindery:json\n${JSON.stringify(payload, null, 2)}\n-->`;
+  return JSON_BLOCK.test(content) ? content.replace(JSON_BLOCK, block) : `${content.trimEnd()}\n\n${block}\n`;
+}
+
+function withPlanningApproval<T extends object>(
+  payload: T,
+  status: PlanningApprovalStatus,
+  by: PlanningApprover = 'human'
+): T & { bindery_approval: PlanningApproval } {
+  const previous = (payload as { bindery_approval?: PlanningApproval }).bindery_approval;
+  return {
+    ...payload,
+    bindery_approval: {
+      status,
+      updatedAt: nowIso(),
+      approvedAt: status === 'approved' ? (previous?.approvedAt ?? nowIso()) : undefined,
+      approvedBy: by
+    }
+  };
+}
+
+export function approvalStatus(payload: { bindery_approval?: PlanningApproval } | null): PlanningApprovalStatus {
+  return payload?.bindery_approval?.status === 'approved' ? 'approved' : 'draft';
 }
 
 export function extractEmbeddedJson<T>(content: string): T | null {
@@ -94,12 +138,12 @@ function localBrief(ctxInfo: { episode: string; plotGoal: string; beats: string[
   };
 }
 
-export async function generateBrief(ctx: Ctx, episode: string, notes: string, targetLength: number): Promise<StageOutcome<EpisodeBrief>> {
+export async function generateBrief(ctx: Ctx, episode: string, notes: string, targetLength: number): Promise<StageOutcome<ApprovedEpisodeBrief>> {
   const paths = episodePaths(episode);
-  const plan = await loadPlotPlan(ctx);
-  const row = plan?.episodes.find((e) => e.episode === episode) ?? null;
-  const prevEp = previousEpisode(episode);
-  const prevTail = prevEp ? tailOf(await readOptional(ctx, episodePaths(prevEp).manuscript), 2000) : '';
+  const base = await loadEpisodeContext(ctx, episode);
+  const row = base.plotRow;
+  // 바이블 통짜 clip 대신 로컬 관련도 선별 팩 — 설계 단계는 AI 정제 없이 결정적 선별만 쓴다.
+  const pack = await buildEpisodeContextPack(ctx, episode, { note: notes });
 
   const outcome = await runStage(ctx, {
     stage: 'episode-brief',
@@ -107,12 +151,11 @@ export async function generateBrief(ctx: Ctx, episode: string, notes: string, ta
     blueprint: BLUEPRINTS.episodeBrief,
     vars: {
       episode,
-      plotRow: row
-        ? `- 제목: ${row.title}\n- 목적: ${row.goal}\n- beats: ${row.beats.join(' / ')}\n- 떡밥 심기: ${row.threads_open.join(', ')}\n- 떡밥 회수: ${row.threads_close.join(', ')}\n- hook: ${row.hook}\n- 승인: ${row.status}`
-        : '(플롯 row 없음 — 플롯 설계를 먼저 승인하면 근거가 강해집니다)',
-      resumeState: clip(await readOptional(ctx, LAYOUT.status.resume), 4000),
-      bible: clip(await readOptional(ctx, LAYOUT.canon.bible), 6000),
-      previousTail: prevTail || '(첫 회차)',
+      plotRow: base.plotRowText,
+      resumeState: base.resumeState,
+      bible: pack.text,
+      openThreads: base.openThreads,
+      previousTail: base.previousTail,
       notes: notes || '(없음)',
       targetLength: String(targetLength)
     },
@@ -121,16 +164,26 @@ export async function generateBrief(ctx: Ctx, episode: string, notes: string, ta
     repairHint: `{"schema_version":"bindery.episode_brief.v1","episode":"${episode}","goal":"...","must_events":["..."],"characters":[],"locations":[],"pov":"...","knowledge_change":[],"emotion_change":[],"conflict_change":"...","threads_touch":[],"forbidden":[],"target_length":${targetLength},"exit_hook":"..."}`
   });
 
-  const content = embedJson(renderBriefMarkdown(outcome.output), outcome.output);
+  const approved = withPlanningApproval(outcome.output, 'draft');
+  const content = embedJson(renderBriefMarkdown(approved), approved);
   await ctx.bridge.writeFile(ctx.root, paths.brief, content);
   await writeArtifact(ctx, episode, 'episode-brief', `회차 브리프${outcome.source === 'fallback' ? ' (로컬)' : ''}`, content, outcome.source);
-  return outcome;
+  return { ...outcome, output: approved };
 }
 
-export async function loadBrief(ctx: Ctx, episode: string): Promise<EpisodeBrief | null> {
+export async function loadBrief(ctx: Ctx, episode: string): Promise<ApprovedEpisodeBrief | null> {
   const content = await readOptional(ctx, episodePaths(episode).brief);
   if (!content) return null;
-  return extractEmbeddedJson<EpisodeBrief>(content);
+  return extractEmbeddedJson<ApprovedEpisodeBrief>(content);
+}
+
+export async function saveWebBrief(ctx: Ctx, brief: EpisodeBrief): Promise<ApprovedEpisodeBrief> {
+  const paths = episodePaths(brief.episode);
+  const payload = withPlanningApproval({ ...brief, source: 'web-import' as const }, 'draft');
+  const content = embedJson(renderBriefMarkdown(payload), payload);
+  await ctx.bridge.writeFile(ctx.root, paths.brief, content);
+  await writeArtifact(ctx, brief.episode, 'episode-brief', '회차 브리프 (웹 교환)', content, 'web-import');
+  return payload;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,9 +207,10 @@ export function renderScenePlanMarkdown(p: ScenePlan): string {
   return lines.join('\n');
 }
 
-export async function generateScenePlan(ctx: Ctx, episode: string): Promise<StageOutcome<ScenePlan> | { error: string }> {
+export async function generateScenePlan(ctx: Ctx, episode: string): Promise<StageOutcome<ApprovedScenePlan> | { error: string }> {
   const brief = await loadBrief(ctx, episode);
   if (!brief) return { error: '회차 브리프가 없습니다. 브리프를 먼저 생성/작성하세요.' };
+  if (approvalStatus(brief) !== 'approved') return { error: '회차 브리프를 먼저 명시적으로 승인하세요.' };
   const paths = episodePaths(episode);
   const outcome = await runStage(ctx, {
     stage: 'scene-plan',
@@ -187,16 +241,44 @@ export async function generateScenePlan(ctx: Ctx, episode: string): Promise<Stag
     }),
     repairHint: `{"schema_version":"bindery.scene_plan.v1","episode":"${episode}","scenes":[{"id":"s1","purpose":"...","setting":"...","characters":[],"conflict":"...","turn":"...","carries":[],"target_length":1200,"exit":"..."}],"risks":[]}`
   });
-  const content = embedJson(renderScenePlanMarkdown(outcome.output), outcome.output);
+  const approved = withPlanningApproval(outcome.output, 'draft');
+  const content = embedJson(renderScenePlanMarkdown(approved), approved);
   await ctx.bridge.writeFile(ctx.root, paths.scenePlan, content);
   await writeArtifact(ctx, episode, 'scene-plan', `장면 계획 ${outcome.output.scenes.length}장면${outcome.source === 'fallback' ? ' (로컬)' : ''}`, content, outcome.source);
-  return outcome;
+  return { ...outcome, output: approved };
 }
 
-export async function loadScenePlan(ctx: Ctx, episode: string): Promise<ScenePlan | null> {
+export async function loadScenePlan(ctx: Ctx, episode: string): Promise<ApprovedScenePlan | null> {
   const content = await readOptional(ctx, episodePaths(episode).scenePlan);
   if (!content) return null;
-  return extractEmbeddedJson<ScenePlan>(content);
+  return extractEmbeddedJson<ApprovedScenePlan>(content);
+}
+
+export async function saveWebScenePlan(ctx: Ctx, plan: ScenePlan): Promise<ApprovedScenePlan> {
+  const paths = episodePaths(plan.episode);
+  const payload = withPlanningApproval({ ...plan, source: 'web-import' as const }, 'draft');
+  const content = embedJson(renderScenePlanMarkdown(payload), payload);
+  await ctx.bridge.writeFile(ctx.root, paths.scenePlan, content);
+  await writeArtifact(ctx, plan.episode, 'scene-plan', `장면 계획 ${plan.scenes.length}장면 (웹 교환)`, content, 'web-import');
+  return payload;
+}
+
+export async function setPlanningApproval(
+  ctx: Ctx,
+  episode: string,
+  kind: PlanningKind,
+  status: PlanningApprovalStatus,
+  by: PlanningApprover = 'human'
+): Promise<ApprovedEpisodeBrief | ApprovedScenePlan> {
+  const path = kind === 'brief' ? episodePaths(episode).brief : episodePaths(episode).scenePlan;
+  const content = await ctx.bridge.readFile(ctx.root, path);
+  const payload = kind === 'brief'
+    ? extractEmbeddedJson<ApprovedEpisodeBrief>(content)
+    : extractEmbeddedJson<ApprovedScenePlan>(content);
+  if (!payload) throw new Error(`${kind} JSON 블록을 찾지 못했습니다`);
+  const next = withPlanningApproval(payload, status, by);
+  await ctx.bridge.writeFile(ctx.root, path, replaceEmbeddedJson(content, next));
+  return next;
 }
 
 // ---------------------------------------------------------------------------
@@ -210,11 +292,39 @@ export type CandidateFile = {
   episode: string;
   kind: 'draft' | 'revision';
   baselineHash: string;
-  source: 'agent' | 'fallback';
+  source: 'agent' | 'fallback' | 'web-import';
   createdAt: string;
   changeSummary: string;
   deltaCandidates: DraftCandidate['canon_delta_candidates'];
+  /** 후보 카드 표시용 — 자체 점검에서 분리한 위험·미커버 장면 */
+  risks?: string[];
+  selfCheckScore?: number | null;
+  charCount?: number;
 };
+
+export async function saveWebDraftCandidate(ctx: Ctx, episode: string, candidate: DraftCandidate): Promise<CandidateFile> {
+  const paths = episodePaths(episode);
+  const current = await readOptional(ctx, paths.manuscript);
+  const id = stamp();
+  const path = candidatePath(episode, `draft-web-${id}.md`);
+  const meta: CandidateFile = {
+    id,
+    label: '웹 초안 후보',
+    path,
+    episode,
+    kind: 'draft',
+    baselineHash: contentHash(current),
+    source: 'web-import',
+    createdAt: nowIso(),
+    changeSummary: candidate.change_summary,
+    deltaCandidates: candidate.canon_delta_candidates
+  };
+  await ctx.bridge.writeFile(ctx.root, path, embedJson(candidate.manuscript_md, { ...meta, source: 'web-import', canon_delta_candidates: candidate.canon_delta_candidates }));
+  const existing = await loadCandidateIndex(ctx, episode);
+  await saveCandidateIndex(ctx, episode, [meta, ...existing]);
+  await writeArtifact(ctx, episode, 'draft-candidates', `웹 초안 후보 · ${path}`, `- 웹 교환 후보: ${path}`, 'web-import');
+  return meta;
+}
 
 function localDraftFallback(episode: string, brief: EpisodeBrief | null): DraftCandidate {
   return {
@@ -236,46 +346,93 @@ function localDraftFallback(episode: string, brief: EpisodeBrief | null): DraftC
   };
 }
 
+/** 라벨이 곧 접근 방향이다 — 단순 번호 후보 대신 의미 있는 변주를 만든다. */
+export const CANDIDATE_APPROACHES: Record<string, string> = {
+  정석안: '플롯과 장면 계획을 가장 안정적으로 수행한다. 설명량 중간, 마지막 훅을 선명하게.',
+  추진안: '사건 전개 속도를 우선한다. 설명을 줄이고 장면 전환을 빠르게, 갈등을 앞당겨 배치한다.',
+  감정안: '인물의 감정과 관계 변화를 강조한다. 내면 묘사와 대화의 밀도를 높이되 사건은 동일하게 유지한다.',
+  압축안: '설명과 묘사를 줄이고 진행 중심으로 압축한다.',
+  확장안: '묘사와 장면 밀도를 강화해 장면을 깊게 판다.',
+  반전안: '기존 플롯 전개를 흔드는 대안적 전개를 시도한다. 확정 설정(canon)은 위반하지 않는다.'
+};
+
+export type DraftOptions = {
+  /** 의미 라벨 목록. 지정하면 count 대신 이 목록 길이만큼 생성. */
+  labels?: string[];
+  /** true면 브리프·장면 계획 승인 게이트를 건너뛴다 (autopilot의 soft-output 정책). */
+  skipApprovalGate?: boolean;
+};
+
+function candidateRisks(output: DraftCandidate): string[] {
+  const risks: string[] = [];
+  for (const cover of output.scene_coverage ?? []) {
+    if (cover.covered === false) risks.push(`장면 ${cover.scene} 미커버${cover.note ? ` — ${cover.note}` : ''}`);
+  }
+  if (output.style_self_check?.notes && output.style_self_check.score > 0) {
+    risks.push(output.style_self_check.notes);
+  }
+  return risks.slice(0, 4);
+}
+
 export async function generateDraftCandidates(
   ctx: Ctx,
   episode: string,
   count: number,
-  notes: string
+  notes: string,
+  opts: DraftOptions = {}
 ): Promise<{ candidates: CandidateFile[]; error?: string }> {
   const brief = await loadBrief(ctx, episode);
   const scenePlan = await loadScenePlan(ctx, episode);
   if (!brief || !scenePlan) {
     return { candidates: [], error: '초안 전에 회차 브리프와 장면 계획이 있어야 합니다.' };
   }
+  if (!opts.skipApprovalGate && (approvalStatus(brief) !== 'approved' || approvalStatus(scenePlan) !== 'approved')) {
+    return { candidates: [], error: '초안 전에 회차 브리프와 장면 계획을 모두 승인해야 합니다.' };
+  }
   const paths = episodePaths(episode);
-  const current = await readOptional(ctx, paths.manuscript);
+  const base = await loadEpisodeContext(ctx, episode);
+  const current = base.currentManuscript;
   const baseBody = parseFrontmatter(current).body ?? current;
   const baselineHash = contentHash(current);
+  // 토큰 라우터: 로컬 관련도 선별 → (팩이 크면) 경량 모델 정제 캡슐.
+  // 초안 후보는 2~3회 반복 실행되므로 여기서 줄인 사전 토큰이 그대로 배수로 절감된다.
+  const packed = await prepareDraftContext(ctx, episode, {
+    note: notes,
+    extraQuery: `${brief.goal}\n${brief.must_events.join('\n')}\n${brief.characters.join(' ')}`
+  });
   const vars = {
     episode,
     brief: renderBriefMarkdown(brief),
     scenePlan: renderScenePlanMarkdown(scenePlan),
-    resumeState: clip(await readOptional(ctx, LAYOUT.status.resume), 3500),
-    bible: clip(await readOptional(ctx, LAYOUT.canon.bible), 6000),
-    styleGuide: clip(await readOptional(ctx, LAYOUT.style.guide), 2500),
+    resumeState: base.resumeState,
+    previousSummary: base.previousSummary,
+    previousTail: base.previousTail,
+    bible: packed.capsule,
+    openThreads: base.openThreads,
+    styleGuide: base.styleGuide,
     currentManuscript: excerptWindow(baseBody, 8000) || '(빈 원고)',
     notes: notes || '(없음)',
     targetLength: String(brief.target_length),
     variation: ''
   };
 
-  const labels = ['후보 A', '후보 B', '후보 C', '후보 D'];
+  const labels = opts.labels?.length
+    ? opts.labels.slice(0, 4)
+    : ['후보 A', '후보 B', '후보 C', '후보 D'].slice(0, Math.max(1, Math.min(4, count)));
   const candidates: CandidateFile[] = [];
-  const target = Math.max(1, Math.min(4, count));
-  for (let i = 0; i < target; i++) {
+  for (let i = 0; i < labels.length; i++) {
+    const label = labels[i];
+    const approach = CANDIDATE_APPROACHES[label];
+    const variation = approach
+      ? `이번 후보의 접근은 「${label}」이다: ${approach}${i > 0 ? ' 이전 후보와 장면 진입점·리듬·묘사 초점을 다르게 하되 사건과 확정 설정은 동일하게 유지하라.' : ''}`
+      : i === 0
+        ? ''
+        : `이번 후보는 ${i + 1}번째 변주다. 이전 후보와 다른 접근(장면 진입점, 리듬, 묘사 초점)을 시도하되 사건과 확정 설정은 동일하게 유지하라.`;
     const outcome = await runStage(ctx, {
       stage: i === 0 ? 'draft-candidate' : `draft-candidate-${i + 1}`,
       scope: episode,
       blueprint: BLUEPRINTS.draftCandidate,
-      vars: i === 0 ? vars : {
-        ...vars,
-        variation: `이번 후보는 ${i + 1}번째 변주다. 이전 후보와 다른 접근(장면 진입점, 리듬, 묘사 초점)을 시도하되 사건과 확정 설정은 동일하게 유지하라.`
-      },
+      vars: { ...vars, variation },
       parse: (text) => parseDraftCandidate(text, episode, baseBody).candidate,
       fallback: () => localDraftFallback(episode, brief),
       repairHint: `{"schema_version":"bindery.draft_candidate.v1","episode":"${episode}","manuscript_md":"...","scene_coverage":[],"canon_delta_candidates":[],"style_self_check":{"score":0,"notes":""},"change_summary":"..."}`
@@ -284,7 +441,7 @@ export async function generateDraftCandidates(
     const path = candidatePath(episode, `draft-${id}.md`);
     const meta: CandidateFile = {
       id,
-      label: labels[i],
+      label,
       path,
       episode,
       kind: 'draft',
@@ -292,7 +449,10 @@ export async function generateDraftCandidates(
       source: outcome.source,
       createdAt: nowIso(),
       changeSummary: outcome.output.change_summary,
-      deltaCandidates: outcome.output.canon_delta_candidates
+      deltaCandidates: outcome.output.canon_delta_candidates,
+      risks: candidateRisks(outcome.output),
+      selfCheckScore: outcome.output.style_self_check?.score ?? null,
+      charCount: outcome.output.manuscript_md.replace(/\s/g, '').length
     };
     await ctx.bridge.writeFile(ctx.root, path, embedJson(outcome.output.manuscript_md, { ...meta, canon_delta_candidates: outcome.output.canon_delta_candidates }));
     candidates.push(meta);
@@ -353,7 +513,9 @@ const candidateIndexPath = (episode: string): string => candidatePath(episode, '
 
 export async function loadCandidateIndex(ctx: Ctx, episode: string): Promise<CandidateFile[]> {
   try {
-    return JSON.parse(await ctx.bridge.readFile(ctx.root, candidateIndexPath(episode))) as CandidateFile[];
+    const path = candidateIndexPath(episode);
+    if (!(await ctx.bridge.exists(ctx.root, path))) return [];
+    return JSON.parse(await ctx.bridge.readFile(ctx.root, path)) as CandidateFile[];
   } catch {
     return [];
   }
@@ -505,22 +667,6 @@ export async function generateRevisionPlanStage(ctx: Ctx, episode: string, repor
 // ---------------------------------------------------------------------------
 // 헬퍼
 // ---------------------------------------------------------------------------
-
-export function previousEpisode(episode: string): string | null {
-  const n = parseInt(episode.replace(/\D/g, ''), 10);
-  return Number.isFinite(n) && n > 1 ? `ep${String(n - 1).padStart(3, '0')}` : null;
-}
-
-export function nextEpisode(episode: string): string {
-  const n = parseInt(episode.replace(/\D/g, ''), 10);
-  return `ep${String((Number.isFinite(n) ? n : 0) + 1).padStart(3, '0')}`;
-}
-
-function tailOf(content: string, chars: number): string {
-  const body = parseFrontmatter(content).body.trim();
-  if (!body) return '';
-  return body.length > chars ? `...(앞부분 생략)\n${body.slice(-chars)}` : body;
-}
 
 export async function readSummary(ctx: Ctx, episode: string): Promise<string> {
   return readOptional(ctx, summaryPath(episode));

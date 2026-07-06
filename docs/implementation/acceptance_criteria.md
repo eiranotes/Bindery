@@ -11,9 +11,9 @@
 | 4 | 세계관 확장 proposal | 구현 | 자동 (승인 전 파일 미생성 단언 포함) |
 | 5 | 바이블/자산 파일 생성 | 구현 | 자동 (거부 자산 미생성, 승인 자산 생성, 바이블 후보→스냅샷→교체) |
 | 6 | 플롯 구성 | 구현 | 자동 (제안→ep001만 승인→ep002는 draft 유지) |
-| 7 | ep001 브리프 | 구현 | 자동 (plot row+resume 입력, 파일 존재 단언) |
-| 8 | 장면 계획 | 구현 | 자동 (브리프 없으면 거부, 2장면 생성) |
-| 9 | 초안 후보 | 구현 | 자동 (원고 비덮어쓰기 단언) |
+| 7 | ep001 브리프 | 구현 | 자동 (plot row+resume 입력, 파일 존재, 승인 전 draft 상태 단언) |
+| 8 | 장면 계획 | 구현 | 자동 (브리프 승인 전 거부 → 승인 후 2장면 생성, 승인 전 draft 상태 단언) |
+| 9 | 초안 후보 | 구현 | 자동 (장면 계획 승인 전 거부 → 승인 후 후보 생성, 원고 비덮어쓰기 단언) |
 | 10 | 후보 diff 확인 | 구현 | 자동 (hunk 생성) + 단위 테스트 (hunk 선택 적용) |
 | 11 | QA 실행 | 구현 | 자동 (continuity 관점, warn 판정·근거 인용) — UI에서 3관점 선택 실행 |
 | 12 | 수정 후보 생성 | 구현 | 자동 (수용 항목만 반영) |
@@ -38,9 +38,9 @@
 | 항목 | 결과 |
 |---|---|
 | 시작 화면 렌더 (다크 테마) | OK |
-| 프로젝트 열기 → 셸(탭/탐색/인스펙터) 렌더 | OK |
+| 프로젝트 열기 → 셸(탭/탐색/하단 상태바) 렌더 | OK |
 | 설정: Claude 프리셋 선택·저장 (.bindery/settings.json) | OK |
-| 소재 발굴 인앱 실 AI 실행 | OK — 후보 2건 생성 (51.6s), busy 칩·AI 배지·인스펙터 trace 경로 표시 |
+| 소재 발굴 인앱 실 AI 실행 | OK — 후보 2건 생성 (51.6s), busy 칩·AI 배지·trace 경로 표시 |
 | 소재 채택 클릭 → 디스크 폴더 이동 | OK — ideas/inbox → ideas/selected 실파일 이동, 사이드바 카운트 갱신 |
 | run 기록 파일 | OK — .bindery/runs/{runId}.json + index.json |
 | 콘솔 오류 | 0건 |
@@ -49,13 +49,50 @@
 
 - `npm test` — 12/12 통과 (코어 단위 + 시나리오 E2E)
 - `npm run check` — svelte-check 0 errors / 0 warnings
-- `npm run build` — vite 프로덕션 빌드 OK (gzip 약 67KB)
+- `npm run build` — vite 프로덕션 빌드 OK (CodeMirror 포함으로 JS chunk 약 728KB / gzip 약 252KB, chunk-size warning 있음)
+- `cargo check` (`src-tauri`) — Tauri Rust command 어댑터 컴파일 OK
+- `npm run tauri:build -- --bundles app` — macOS `Bindery.app` 번들 생성 OK:
+  `src-tauri/target/release/bundle/macos/Bindery.app`
 
-## 명시적 placeholder / 미구현 (roadmap 참조)
+## 2026-07-05 후속 구현 확인
 
-- 실행 중 스트리밍·취소 없음 (완료 대기 + timeout만)
-- 브리프/장면 계획의 명시적 승인 플래그 없음 (존재 여부만 게이트)
-- 스냅샷 복원 UI 없음 (인덱스·restoreSnapshot 함수는 구현됨, 파일로는 접근 가능)
-- 웹 AI 교환: idea-discovery/world-expansion만 UI 왕복, 나머지 단계는 export 함수만 존재
-- Tauri 패키징 없음 — dev 서버(`npm run dev`)가 현재의 로컬 런타임
+- 우측 고정 인스펙터 제거, 2단 레이아웃 + 하단 1줄 상태바 적용. 상태바는 설정에서 숨김 가능.
+- 상단바 [작품 선택]으로 열린 작품에서 시작 화면(ProjectPicker)으로 돌아갈 수 있음. 실행 중인
+  작업이 있을 때는 복귀를 막고 안내함.
+- 홈 [같은 작품에서 epXXX 처음부터 쓰기]와 집필 [처음부터 새 후보 만들기]로 동일 프로젝트 안에서
+  새 회차 또는 새 초안 후보를 시작할 수 있음. 기존 원고는 자동으로 덮지 않음.
+- dev bridge 실행은 `/__bridge/agent-stream`으로 stdout/stderr tail을 상태바에 표시하고, 실행 중 취소 요청을 보낼 수 있음.
+- 브리프/장면 계획은 `bindery_approval.status`(`draft`/`approved`)를 저장하고, 초안 후보는 둘 다 approved일 때만 생성됨.
+- 파일 화면에서 최근 스냅샷 복원 UI 제공. 복원 전 현재 파일도 자동 백업됨.
+- 파일 화면과 회차 직접 원고 수정은 CodeMirror Markdown 에디터 사용.
+- 웹 AI 교환 UI가 idea/world 외에 plot/brief/scene/draft/canon-delta까지 확장됨.
+- Tauri v2 `tauriBridge` + Rust command 어댑터(fs/scaffold/run_agent/cancel_agent/env) 추가, macOS 앱 번들 생성 확인.
+
+## 남은 제한 (roadmap 참조)
+
+- 패키지된 `Bindery.app`에서 실제 프로젝트 열기/CLI 실행/cancel의 클릭스루 검증은 아직 별도 수동 QA 필요.
 - QA 대상은 현재 원고만 (후보 대상 QA는 로드맵)
+- CodeMirror 고급 위젯(타자기 모드, 목표/통계 위젯)은 아직 없음.
+
+## 2026-07-05 UX-first autopilot 개편 확인
+
+수용 기준(bindery_ux_autopilot_pipeline_plan.md §9) 대비:
+
+- **행동 수 1~2회**: 홈 → [이번 화 쓰기] 한 번으로 설계+장면+후보 3개까지 자동 진행 —
+  실 CLI(gemini-3.5-flash) 클릭스루로 확인 (설계 13.5s → 장면 20.9s → 후보 3개 57~82s/개).
+- **중간 승인 제거**: 간단 모드 화면에 브리프/장면 계획 승인, 개별 QA, packet 복사, trace,
+  raw proposal apply 버튼 없음 (설계자 모드·"생성 근거 보기"에 보존).
+- **후보 수 3개 이하 + 의미 라벨**: 정석안/추진안/감정안, 자체 점검 점수 기반 추천 배지.
+- **무입력 실행**: userNote optional — 기초자료(loadEpisodeContext)만으로 진행.
+- **Hard commit 보호**: tests/autopilot.test.ts가 원고/canon/픽스 자동 확정 없음을 고정
+  (17/17 통과). 원고 반영·수정 적용·마감 반영은 전부 스냅샷 선행.
+- **파일 기반 유지**: 후보/브리프/장면/QA/수정/요약/proposal/trace 경로 불변.
+- **기초자료 강제**: draft 프롬프트에 이전 회차 요약·이전 화 끝부분·열린 떡밥 추가.
+  바이블 또는 현재 회차 플롯 row가 비어 있으면 라이트모드에서 [바이블과 플롯 준비하고 쓰기]
+  CTA를 먼저 내고 `runEpisodeAutopilot`도 후보 생성을 거부한다. 스타일/이전 요약 등은
+  contextMissing 토스트로 안내.
+- **스트리밍**: SSE stdout 원문을 LiveRunPanel에 실시간 표시. UTF-8 청크 경계 깨짐 버그를
+  `setEncoding('utf8')`로 수정하고 300KB 한글 왕복(치환문자 0)으로 검증.
+
+검증: `npm run check` 0 오류 · `npm test` 21/21 · `npm run build` OK · 실 CLI 클릭스루
+(홈 CTA→스트리밍→후보 카드→후보 적용→홈 next action 갱신→설계자 모드 전환).

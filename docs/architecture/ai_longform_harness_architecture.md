@@ -3,7 +3,7 @@
 ## 0. 위치
 
 - 저장소: `/Users/tofu/Bindery` (신규 구축). 레거시 참조: `~/HermesWorkspace/project/Bindery`.
-- 스택: Vite 6 + Svelte 5 + TypeScript. 데스크톱 패키징(Tauri)은 로드맵 — 브리지 계층이 그 경계다.
+- 스택: Vite 6 + Svelte 5 + TypeScript + Tauri v2 패키징 스캐폴드. 브리지 계층이 dev/memory/tauri 런타임 경계다.
 
 ## 1. 계층 (Composable architecture 원칙)
 
@@ -15,9 +15,9 @@ UI (src/lib/ui)                 화면·상호작용만. 도메인 로직 없음
           ├ schemas ← contracts 출력 계약 검증
           ├ prompts ← blueprint prompts/*.prompt.md 원본
           └ bridge (src/lib/bridge)  로컬 접근 인터페이스
-              ├ devBridge  → server/bridge.ts (Vite 미들웨어: Node fs + CLI spawn)
+              ├ devBridge  → server/bridge.ts (Vite 미들웨어: Node fs + CLI spawn + SSE stream/cancel)
               ├ memoryBridge (테스트·데모)
-              └ (로드맵) tauriBridge
+              └ tauriBridge → src-tauri Rust commands (fs/scaffold/run_agent/cancel_agent/env)
 ```
 
 의존 방향은 위→아래 단방향. harness는 Svelte를 import하지 않으므로 vitest에서 그대로 돈다
@@ -98,7 +98,7 @@ story/chapters/{ep}/{brief,scene-plan,manuscript,index}.md
 - 실행 trace: stdout/stderr/exit/duration + 프롬프트 원문 파일. timeout·spawn 오류도 기록.
 - 웹 AI 교환: packet export(.bindery/exchange/{id}/packet.md + manifest) → 사용자가 웹 AI 실행 →
   응답 붙여넣기 → 동일 파서로 검증 → 정식 artifact/proposal 등록(source=web-import).
-  현재 idea-discovery·world-expansion 왕복이 UI에 연결됨(다른 단계는 로드맵).
+  현재 idea-discovery·world-expansion·plot-plan·episode-brief·scene-plan·draft-candidate·canon-delta 왕복이 UI에 연결됨.
 - 오프라인 모드: 모든 단계가 로컬 뼈대로 동작하되, 수정 후보·정사 변경처럼 "지어내면 위험한"
   단계는 뼈대를 만들지 않고 정직하게 거부한다.
 
@@ -106,6 +106,9 @@ story/chapters/{ep}/{brief,scene-plan,manuscript,index}.md
 
 - 브리지 fs: 프로젝트 루트 앵커 + 경로 탈출 거부 (검증됨).
 - 파괴적 쓰기 전 스냅샷(.bindery/snapshots) — 후보 적용, 바이블 교체, proposal 반영, 픽스.
+- 스냅샷 복원 UI는 파일 화면에서 제공하며, 복원 전에도 현재 상태를 자동 백업한다.
+- 브리프/장면 계획은 파일 내부 `bindery:json`의 `bindery_approval.status`로 draft/approved를 저장한다.
+  초안 생성은 둘 다 approved일 때만 통과한다.
 - CanonDelta target_path 화이트리스트 + `..` 거부.
 - QA에서 근거(evidence) 없는 fail은 warn으로 강등 — 추정으로 실패 처리하지 않는다.
 
@@ -113,5 +116,6 @@ story/chapters/{ep}/{brief,scene-plan,manuscript,index}.md
 
 - `npm test` — 코어 단위 + 검증 시나리오 E2E(지시서 §11 전체 루프, memory 브리지 + 스크립트 에이전트).
 - `npm run check` — svelte-check 0 errors.
+- `npm run build`, `cargo check`, `npm run tauri:build -- --bundles app` — 웹 빌드와 macOS app 번들 생성 검증.
 - dev 브리지 실검증: fs 왕복·경로 탈출 거부·Claude CLI 실행(BINDERY-OK)·실제 소재 발굴 1회
   (blueprint→CLI→스키마 통과, 65s). docs/implementation/acceptance_criteria.md 참조.

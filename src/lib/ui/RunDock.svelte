@@ -1,5 +1,5 @@
 <script lang="ts">
-  // 하단 run 로그 도크 — 실행 trace 목록. 프롬프트 원문은 .bindery/trace/ 파일로 남는다.
+  // 하단 run 로그 도크 - 실행 trace 목록. 프롬프트 원문은 .bindery/trace/ 파일로 남는다.
   import { runlog, selectedRun, runDockOpen } from '$lib/stores/app';
 
   function fmtMs(ms: number): string {
