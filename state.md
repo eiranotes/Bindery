@@ -1,5 +1,32 @@
 # state.md — 현재 인수인계 상태
 
+## 2026-07-06 최초 기획 자료 zip 및 무제한 업로드
+
+- 홈의 최초 [AI에게 기획 맡기기] 자료 업로드가 앱 차원의 파일 개수 제한 없이 동작하도록 바뀌었다.
+  기존 3개 제한과 [파일 추가] 비활성 조건을 제거했다.
+- `.zip` 파일을 추가하면 내부 텍스트 엔트리(`.txt`, `.md`, `.json`, `.yaml`, `.csv`, `.tsv`, `.log`,
+  `.rtf`, `.xml`, `.html`)를 자동으로 펼쳐 일반 자료 파일처럼 목록에 넣는다. 경로 탈출, macOS 메타
+  파일, 비텍스트 엔트리는 건너뛴다.
+- 원문 저장/프롬프트 폭주 방지 계약은 유지한다. 각 자료는 앱 입력 한도 안에서 `notes/source-raw.md`에
+  저장되고, 기획 후보 프롬프트에는 제한된 발췌만 들어간다.
+- 검증: `npx vitest run tests/sourceUploads.test.ts` 3/3 · `npm run check` 0 오류 · `npm test` 31/31 ·
+  `npm run build` OK(기존 chunk-size warning 유지).
+- 브라우저 QA: Playwright Chromium에서 zip 1개(텍스트 2개 + 비텍스트 1개)와 별도 텍스트 5개를 업로드해
+  총 7개 행 표시를 확인했다. 390/768/1280px 스크린샷 및 QA 기록:
+  `.superloopy/evidence/frontend/20260706T2034-source-zip-unlimited-upload/VISUAL_QA.md`.
+
+## 2026-07-06 레거시 아이콘 적용 및 재빌드
+
+- 현재 Tauri 앱 아이콘을 레거시 Bindery 아이콘 세트와 동일하게 맞췄다.
+  원본: `/Users/tofu/HermesWorkspace/project/Bindery/apps/desktop/src-tauri/icons/`.
+- `src-tauri/icons/`에 32/128/256/1024 PNG, macOS `icon.icns`, Windows `icon.ico`를 복사하고
+  `src-tauri/tauri.conf.json`의 `bundle.icon`에 명시했다.
+- macOS standalone 재빌드 명령은 `npm run tauri:build:mac:standalone`이다. `tauri build --bundles app`
+  뒤에 `Bindery.app`을 ad-hoc 서명해 `codesign --verify --deep --strict`가 통과하는 번들을 만든다.
+- 검증: `npx vitest run tests/sourceUploads.test.ts` 3/3 · `npm run check` 0 오류 · `npm test` 31/31 ·
+  `npm run tauri:build:mac:standalone` OK(기존 chunk-size warning 유지) ·
+  `codesign --verify --deep --strict --verbose=2 src-tauri/target/release/bundle/macos/Bindery.app` OK.
+
 ## 2026-07-06 최초 기획 자료 업로드
 
 - 홈의 최초 [AI에게 기획 맡기기] 흐름에 [자료 파일] 업로드 메뉴를 추가했다. 텍스트 기반 파일
@@ -57,7 +84,8 @@
 - `/Users/tofu/Bindery`가 제품 저장소다 (git, main). 레거시(HermesWorkspace/project/Bindery)는
   참조로만 쓰였고 이번 작업의 수정 없이 원상태다.
 - 스택: Vite 6 + Svelte 5 + TS + Tauri v2. `npm run dev`(포트 5199)가 dev 브리지(파일/CLI)를 포함한
-  완전한 로컬 런타임이고, `npm run tauri:build -- --bundles app`이 macOS `Bindery.app`을 만든다.
+  완전한 로컬 런타임이고, `npm run tauri:build:mac:standalone`이 macOS `Bindery.app`을 만들고
+  ad-hoc 서명한다.
 - 제품 루프 전체 구현: 소재(폴더 상태 보드) → 세계관 proposal → 승인 → 자산 파일 → 바이블
   후보/교체 → 플롯 제안/표 편집/회차 승인 → 브리프 → 장면 → 초안 후보 → diff hunk 적용
   (스냅샷) → 3관점 QA → 수정 계획(수용/기각) → 수정 후보 → 요약 → 정사 delta proposal →

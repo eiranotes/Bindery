@@ -11,21 +11,12 @@
     ensureEpisodeScaffold, type FoundationResult
   } from '$lib/harness/autopilot';
   import { nextEpisode } from '$lib/harness/episode';
-  import { clip, nowIso, slugify } from '$lib/core/text';
+  import { clip, nowIso } from '$lib/core/text';
+  import { SOURCE_FILE_ACCEPT, formatSourceBytes, readSourceUploads } from '$lib/harness/sourceUploads';
+  import type { SourceUpload } from '$lib/harness/sourceUploads';
   import type { IdeaFile } from '$lib/harness/ideas';
   import LiveRunPanel from '../LiveRunPanel.svelte';
 
-  type SourceUpload = {
-    id: string;
-    name: string;
-    size: number;
-    chars: number;
-    content: string;
-    truncated: boolean;
-  };
-
-  const SOURCE_FILE_LIMIT = 3;
-  const SOURCE_FILE_MAX_CHARS = 120_000;
   const SOURCE_PROMPT_MAX_CHARS = 18_000;
 
   let step = $state<NextStep | null>(null);
@@ -161,22 +152,12 @@
     mode.set('write');
   }
 
-  function uploadId(file: File): string {
-    return `${Date.now()}-${Math.random().toString(36).slice(2)}-${slugify(file.name)}`;
-  }
-
-  function formatBytes(bytes: number): string {
-    if (bytes < 1024) return `${bytes}B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-    return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
-  }
-
   function sourcePromptText(): string {
     if (!sourceUploads.length) return '';
     const perFileBudget = Math.max(2500, Math.floor(SOURCE_PROMPT_MAX_CHARS / sourceUploads.length));
     const body = sourceUploads.map((file) => [
       `## ${file.name}`,
-      `크기: ${formatBytes(file.size)}, 읽은 글자: ${file.chars.toLocaleString()}자${file.truncated ? ', 앱 입력 한도에서 잘림' : ''}`,
+      `크기: ${formatSourceBytes(file.size)}, 읽은 글자: ${file.chars.toLocaleString()}자${file.truncated ? ', 앱 입력 한도에서 잘림' : ''}`,
       '',
       clip(file.content, perFileBudget)
     ].join('\n')).join('\n\n');
@@ -197,7 +178,7 @@
     const sections = sourceUploads.flatMap((file) => [
       `## ${file.name}`,
       '',
-      `- 크기: ${formatBytes(file.size)}`,
+      `- 크기: ${formatSourceBytes(file.size)}`,
       `- 읽은 글자: ${file.chars.toLocaleString()}자${file.truncated ? ' (앱 입력 한도에서 잘림)' : ''}`,
       '',
       renderIndented(file.content),
@@ -225,35 +206,16 @@
     input.value = '';
     if (!files.length) return;
 
-    const slots = SOURCE_FILE_LIMIT - sourceUploads.length;
-    if (slots <= 0) {
-      toast(`자료 파일은 최대 ${SOURCE_FILE_LIMIT}개까지 추가할 수 있습니다.`, 'warn');
-      return;
-    }
+    const { uploads, skipped, zipEntries } = await readSourceUploads(files);
+    sourceUploads = [...sourceUploads, ...uploads];
 
-    const beforeCount = sourceUploads.length;
-    let skipped = Math.max(0, files.length - slots);
-    const next = [...sourceUploads];
-    for (const file of files.slice(0, slots)) {
-      try {
-        const raw = (await file.text()).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-        const content = raw.slice(0, SOURCE_FILE_MAX_CHARS);
-        next.push({
-          id: uploadId(file),
-          name: file.name || 'untitled.txt',
-          size: file.size,
-          chars: content.length,
-          content,
-          truncated: raw.length > SOURCE_FILE_MAX_CHARS
-        });
-      } catch {
-        skipped++;
-      }
+    if (uploads.length > 0) {
+      const zipPart = zipEntries > 0 ? ` (zip에서 ${zipEntries}개 펼침)` : '';
+      toast(`자료 파일 ${uploads.length}개를 불러왔습니다${zipPart}`, 'ok');
     }
-    const added = next.length - beforeCount;
-    sourceUploads = next;
-    if (added > 0) toast(`자료 파일 ${added}개를 불러왔습니다`, 'ok');
-    if (skipped > 0) toast(`자료 파일 ${skipped}개는 건너뛰었습니다`, 'warn');
+    if (skipped.length > 0) {
+      toast(`자료 ${skipped.length}개는 텍스트로 읽지 못해 건너뛰었습니다`, 'warn');
+    }
   }
 
   function removeSourceFile(id: string) {
@@ -308,13 +270,13 @@
               {#if sourceUploads.length}
                 <button class="quiet" onclick={() => (sourceUploads = [])}>비우기</button>
               {/if}
-              <button class="quiet" onclick={() => sourceInput?.click()} disabled={sourceUploads.length >= SOURCE_FILE_LIMIT}>파일 추가</button>
+              <button class="quiet" onclick={() => sourceInput?.click()}>파일 추가</button>
               <input
                 bind:this={sourceInput}
                 class="file-input"
                 type="file"
                 multiple
-                accept=".txt,.md,.markdown,.json,.yaml,.yml,.csv,.tsv"
+                accept={SOURCE_FILE_ACCEPT}
                 onchange={chooseSourceFiles}
               />
             </div>
@@ -325,14 +287,14 @@
                 <div class="source-row">
                   <div class="source-meta">
                     <b>{file.name}</b>
-                    <span>{formatBytes(file.size)} · {file.chars.toLocaleString()}자{file.truncated ? ' · 잘림' : ''}</span>
+                    <span>{formatSourceBytes(file.size)} · {file.chars.toLocaleString()}자{file.truncated ? ' · 잘림' : ''}</span>
                   </div>
                   <button class="quiet danger" onclick={() => removeSourceFile(file.id)}>삭제</button>
                 </div>
               {/each}
             </div>
           {/if}
-          <p>업로드한 텍스트는 notes/source-raw.md에 저장되고 기획 후보 입력에 함께 들어갑니다. 최대 {SOURCE_FILE_LIMIT}개.</p>
+          <p>업로드한 텍스트와 zip 내부 텍스트는 notes/source-raw.md에 저장되고 기획 후보 입력에 함께 들어갑니다.</p>
         </section>
       {/if}
 

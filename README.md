@@ -25,7 +25,7 @@ npm run dev        # http://localhost:5199 — dev 브리지가 로컬 파일/CL
 npm test           # 코어 + 검증 시나리오 E2E
 npm run check      # svelte-check
 npm run build      # 웹 번들
-npm run tauri:build -- --bundles app  # macOS Bindery.app 생성
+npm run tauri:build:mac:standalone    # macOS Bindery.app 생성 + ad-hoc 서명
 ```
 
 시작 화면에서 새 작품을 만들면 프로젝트 폴더(ideas/ canon/ characters/ world/ plot/ story/ …)가

@@ -135,6 +135,22 @@ UI와 하네스는 여전히 Bridge 인터페이스만 알며, dev 서버의 `/_
 command/model이 남는다.
 
 ### D26. 최초 기획 업로드는 원문 파일 + 제한된 프롬프트 요약으로 분리
-최초 [AI에게 기획 맡기기]에서 사용자가 붙인 텍스트 자료는 `notes/source-raw.md`에 먼저
-저장한다. 기획 후보 생성 프롬프트에는 저장 경로와 제한된 발췌만 넣어 입력 폭주를 막는다.
-현재 범위는 텍스트로 읽을 수 있는 파일이며, PDF/문서 파싱이나 장기 RAG 색인은 별도 기능으로 둔다.
+최초 [AI에게 기획 맡기기]에서 사용자가 붙인 텍스트 자료와 `.zip` 내부의 텍스트 엔트리는
+`notes/source-raw.md`에 먼저 저장한다. 기획 후보 생성 프롬프트에는 저장 경로와 제한된 발췌만
+넣어 입력 폭주를 막는다. 앱은 업로드 개수 자체를 제한하지 않지만, 각 파일 원문과 전체
+프롬프트에는 문자 예산을 유지한다. zip은 메모리에서 펼치고 경로 탈출, macOS 메타 파일,
+비텍스트 엔트리는 건너뛴다. PDF/문서 파싱이나 장기 RAG 색인은 별도 기능으로 둔다.
+
+### D27. 패키지 아이콘은 레거시 Bindery 아이콘 세트를 그대로 사용
+현재 Tauri 패키지의 앱 아이콘은 레거시 Bindery의 검증된 아이콘 세트
+(`/Users/tofu/HermesWorkspace/project/Bindery/apps/desktop/src-tauri/icons/`)를 원본으로 한다.
+번들러가 기본값을 추론하지 않도록 `bundle.icon`에 `32x32.png`, `128x128.png`,
+`128x128@2x.png`, `icon.icns`, `icon.ico`를 명시한다.
+
+### D28. macOS standalone 재빌드는 앱 번들 ad-hoc 서명까지 포함한다
+현재 루트 Tauri 체크아웃의 macOS standalone 산출물은 `npm run tauri:build:mac:standalone`으로
+만든다. 이 스크립트는 `tauri build --bundles app` 뒤에
+`codesign --force --deep --sign - src-tauri/target/release/bundle/macos/Bindery.app`을 실행한다.
+Tauri가 만든 실행 파일의 linker ad-hoc 서명만으로는 `.app` 리소스 봉인이 없어
+`codesign --verify --deep --strict`가 실패할 수 있으므로, 배포 전 검증 가능한 앱 번들을
+반복 생성하기 위해 빌드 명령에 서명 단계를 고정한다.

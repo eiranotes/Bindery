@@ -47,12 +47,14 @@
 
 ## 빌드·정적 검증
 
-- `npm test` — 12/12 통과 (코어 단위 + 시나리오 E2E)
+- `npx vitest run tests/sourceUploads.test.ts` — 3/3 통과
+- `npm test` — 31/31 통과 (코어 단위 + 시나리오 E2E + 자료 업로드 zip)
 - `npm run check` — svelte-check 0 errors / 0 warnings
-- `npm run build` — vite 프로덕션 빌드 OK (CodeMirror 포함으로 JS chunk 약 728KB / gzip 약 252KB, chunk-size warning 있음)
-- `cargo check` (`src-tauri`) — Tauri Rust command 어댑터 컴파일 OK
-- `npm run tauri:build -- --bundles app` — macOS `Bindery.app` 번들 생성 OK:
+- `npm run tauri:build:mac:standalone` — vite 프로덕션 빌드 OK(기존 chunk-size warning 유지) +
+  macOS `Bindery.app` 번들 생성 및 ad-hoc 서명 OK:
   `src-tauri/target/release/bundle/macos/Bindery.app`
+- `codesign --verify --deep --strict --verbose=2 src-tauri/target/release/bundle/macos/Bindery.app` —
+  `valid on disk`, Designated Requirement 충족.
 
 ## 2026-07-05 후속 구현 확인
 
@@ -61,8 +63,10 @@
   작업이 있을 때는 복귀를 막고 안내함.
 - 홈 [같은 작품에서 epXXX 처음부터 쓰기]와 집필 [처음부터 새 후보 만들기]로 동일 프로젝트 안에서
   새 회차 또는 새 초안 후보를 시작할 수 있음. 기존 원고는 자동으로 덮지 않음.
-- 최초 [AI에게 기획 맡기기]에서 텍스트 자료 파일을 업로드할 수 있음. 실행 시 원문은
-  `notes/source-raw.md`에 저장되고, 기획 후보 생성 입력에는 제한된 자료 요약이 함께 들어감.
+- 최초 [AI에게 기획 맡기기]에서 텍스트 자료 파일과 zip 묶음 자료를 업로드할 수 있음. zip은
+  내부 텍스트 엔트리를 펼쳐 읽고, 별도 파일 업로드도 앱 차원의 개수 제한 없이 추가할 수 있음.
+  실행 시 원문은 `notes/source-raw.md`에 저장되고, 기획 후보 생성 입력에는 제한된 자료 요약이
+  함께 들어감.
 - dev bridge 실행은 `/__bridge/agent-stream`으로 stdout/stderr tail을 상태바에 표시하고, 실행 중 취소 요청을 보낼 수 있음.
 - 브리프/장면 계획은 `bindery_approval.status`(`draft`/`approved`)를 저장하고, 초안 후보는 둘 다 approved일 때만 생성됨.
 - 파일 화면에서 최근 스냅샷 복원 UI 제공. 복원 전 현재 파일도 자동 백업됨.
