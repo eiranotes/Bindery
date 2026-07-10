@@ -23,6 +23,7 @@
   } from '$lib/harness/sourcePackage';
   import type { IdeaFile } from '$lib/harness/ideas';
   import { isAgyCommand } from '$lib/harness/usage';
+  import { PLANNING_INSTRUCTION_MAX_CHARS } from '$lib/harness/planningInstruction';
   import LiveRunPanel from '../LiveRunPanel.svelte';
 
   const SOURCE_PROMPT_MAX_CHARS = 18_000;
@@ -138,6 +139,7 @@
       const foundation = await ensureStoryFoundation(ctx(), {
         title: $project?.title ?? '작품',
         notes: imported.plotPrompt,
+        startInstruction: $intentNote,
         episode: imported.startEpisode,
         episodeCount: imported.episodeCount,
         forcePlot: true
@@ -174,7 +176,7 @@
     const r = await withBusy('작품 기준 준비', () =>
       ensureStoryFoundation(ctx(), {
         title: $project?.title ?? '작품',
-        notes: $intentNote.trim(),
+        startInstruction: $intentNote,
         episode: step?.episode ?? undefined
       }), false
     );
@@ -191,7 +193,14 @@
   const targetPlotReady = $derived(Boolean(workflowSnapshot?.targetHasPlotRow));
   const agentStatus = $derived($settings.offline ? '오프라인' : $settings.command ? '연결됨' : '미설정');
   // CTA 문구에 이미 실행 의미가 있으므로 홈은 버튼 하나만 크게 둔다.
-  const showIntent = $derived(step?.action === 'startProject' || step?.action === 'writeNextEpisode' || step?.action === 'prepareStoryFoundation');
+  const showPrimaryIntent = $derived(step?.action === 'startProject' || step?.action === 'writeNextEpisode' || step?.action === 'prepareStoryFoundation');
+  const showRestartOnlyIntent = $derived(Boolean(step && step.action !== 'startProject' && !showPrimaryIntent));
+  const intentHelp = $derived.by(() => {
+    if (planningPackage) return 'ep001 재시작과 이어쓰기 어느 쪽이든 플롯과 회차 설계 프롬프트에 반드시 포함됩니다.';
+    if (step?.action === 'startProject') return '입력한 내용은 기획 후보 생성 프롬프트에 포함됩니다.';
+    if (showPrimaryIntent) return '이어쓰기와 ep001 재시작의 회차 설계와 초안 프롬프트에 반드시 포함됩니다.';
+    return '아래 ep001 재시작의 플롯과 회차 설계 프롬프트에 반드시 포함됩니다.';
+  });
   const freshEpisode = 'ep001';
 
   async function startFreshEpisode() {
@@ -204,7 +213,7 @@
       await ensureEpisodeScaffold(ctx(), target);
       return ensureStoryFoundation(ctx(), {
         title: $project?.title ?? '작품',
-        notes: $intentNote.trim(),
+        startInstruction: $intentNote,
         episode: target
       });
     }, false);
@@ -362,10 +371,16 @@
       <h1>{step.title}</h1>
       <p class="lead">{step.detail}</p>
       <div class="cta-stack">
-        {#if showIntent}
+        {#if showPrimaryIntent}
           <label class="intent-field">
-            <span>방향 메모</span>
-            <input class="grow" bind:value={$intentNote} placeholder="원하는 방향이 있으면 한 줄로" onkeydown={(e) => e.key === 'Enter' && go()} />
+            <span>추가 지시 (선택)</span>
+            <input
+              class="grow"
+              bind:value={$intentNote}
+              maxlength={PLANNING_INSTRUCTION_MAX_CHARS}
+              placeholder="예: 1화는 현장 장면부터, 코믹 톤은 줄이기"
+            />
+            <small>{intentHelp} {$intentNote.length}/{PLANNING_INSTRUCTION_MAX_CHARS}</small>
           </label>
         {/if}
         <button class="primary big" onclick={go} disabled={sourceReading}>{sourceReading ? '자료 읽는 중...' : step.cta}</button>
@@ -409,6 +424,7 @@
                 <b>구조화 기획 패키지 감지</b>
                 <span>{planningPackage.archiveName} / {planningPackage.files.length}개 문서 / {planningPackage.totalChars.toLocaleString()}자</span>
                 <span>설정, 인물, 세계, 플롯, 재개 문서를 보존하고 플롯 구조만 정리합니다.</span>
+                <span>위 추가 지시는 어느 시작 방식을 선택해도 프롬프트에 함께 들어갑니다.</span>
               </div>
               <div class="package-actions">
                 {#if packageResumeEpisode && packageResumeEpisode !== 'ep001'}
@@ -458,6 +474,18 @@
           작품노트 <span class="go">인물 · 세계 · 플롯 · 떡밥 →</span>
         </button>
         {#if step.action !== 'startProject'}
+          {#if showRestartOnlyIntent}
+            <label class="intent-field restart-intent">
+              <span>ep001 재시작 추가 지시 (선택)</span>
+              <input
+                class="grow"
+                bind:value={$intentNote}
+                maxlength={PLANNING_INSTRUCTION_MAX_CHARS}
+                placeholder="예: 1화는 현장 장면부터, 코믹 톤은 줄이기"
+              />
+              <small>{intentHelp} {$intentNote.length}/{PLANNING_INSTRUCTION_MAX_CHARS}</small>
+            </label>
+          {/if}
           <button class="card" onclick={startFreshEpisode} disabled={running}>
             같은 설정으로 <b>ep001</b>부터 다시 쓰기 <span class="go">시작 →</span>
           </button>
@@ -533,6 +561,8 @@
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .cta-stack { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2); align-items: end; margin-top: var(--space-2); }
   .intent-field { display: grid; gap: var(--space-1); color: var(--muted); font-size: 11px; }
+  .intent-field small { color: var(--faint); font-size: inherit; }
+  .restart-intent { padding: var(--space-3) var(--space-2); }
   .grow { width: 100%; min-width: 220px; padding: var(--space-2) var(--space-3); }
   .big { min-height: 40px; padding: var(--space-2) var(--space-6); font-size: 13.5px; }
 

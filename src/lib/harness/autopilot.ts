@@ -22,6 +22,7 @@ import { applyProposal, decideItem, type CanonDeltaRecord, type ItemDecision } f
 import { hasSubstance, loadEpisodeContext, nextEpisode } from './context';
 import { readOptional } from './project';
 import { inferPlanningEpisodeCount, isPlanningRestartState } from './sourcePackage';
+import { formatPlanningInstruction } from './planningInstruction';
 import type { QAAspect, QAReport, RevisionPlan } from '$lib/schemas/contracts';
 import type { Ctx } from './types';
 
@@ -78,7 +79,10 @@ export async function runEpisodeAutopilot(
   opts: { episode: string; userNote?: string; candidateCount?: 1; targetLength?: number; regeneratePlan?: boolean }
 ): Promise<EpisodeAutopilotResult> {
   const { episode } = opts;
-  const note = opts.userNote?.trim() ?? '';
+  const note = formatPlanningInstruction(opts.userNote);
+  // 추가 지시가 있으면 기존 회차 설계를 재사용하지 않는다. 그래야 사용자가 입력한 지시가
+  // 브리프와 장면 계획 프롬프트에서 빠진 채 초안에만 적용되는 일이 없다.
+  const regeneratePlan = Boolean(opts.regeneratePlan || note);
   const paths = episodePaths(episode);
   await ensureEpisodeScaffold(ctx, episode);
   const base = await loadEpisodeContext(ctx, episode);
@@ -95,7 +99,7 @@ export async function runEpisodeAutopilot(
   }
 
   // 1) 설계 — 있으면 재사용, 없거나 재생성 요청이면 생성 후 autopilot 승인(soft output)
-  let brief = opts.regeneratePlan ? null : await loadBrief(ctx, episode);
+  let brief = regeneratePlan ? null : await loadBrief(ctx, episode);
   if (!brief) {
     const r = await generateBrief(ctx, episode, note, opts.targetLength ?? 5000);
     brief = r.output;
@@ -104,9 +108,9 @@ export async function runEpisodeAutopilot(
     await setPlanningApproval(ctx, episode, 'brief', 'approved', 'autopilot');
   }
 
-  let scenePlan = opts.regeneratePlan ? null : await loadScenePlan(ctx, episode);
+  let scenePlan = regeneratePlan ? null : await loadScenePlan(ctx, episode);
   if (!scenePlan) {
-    const r = await generateScenePlan(ctx, episode);
+    const r = await generateScenePlan(ctx, episode, note);
     if ('error' in r) {
       return { episode, candidates: [], recommendedId: null, evidence: { briefPath: paths.brief, scenePlanPath: paths.scenePlan }, contextMissing: base.missing, error: r.error };
     }
@@ -282,7 +286,7 @@ export async function runProjectStarterAutopilot(ctx: Ctx, userNote: string): Pr
  *  바이블을 새로 만들었거나 현재 회차 row가 없으면 그 바이블을 입력으로 플롯을 다시 제안한다. */
 export async function ensureStoryFoundation(
   ctx: Ctx,
-  opts: { title: string; notes?: string; episode?: string; episodeCount?: number; forcePlot?: boolean }
+  opts: { title: string; notes?: string; startInstruction?: string; episode?: string; episodeCount?: number; forcePlot?: boolean }
 ): Promise<FoundationResult> {
   const [assets, ideas, bibleRaw, existingPlot, resumeState, importedPlot] = await Promise.all([
     collectAssetFiles(ctx),
@@ -331,6 +335,7 @@ export async function ensureStoryFoundation(
         '반드시 ep001 행을 포함하고, 원본의 1화 사건부터 새 회차 설계의 출발점으로 취급한다.',
         importedPlot.trim() ? `\n[원본 플롯 바이블]\n${clip(importedPlot, 12_000)}` : ''
       ].filter(Boolean).join('\n') : '',
+      formatPlanningInstruction(opts.startInstruction),
       opts.notes?.trim(),
       selectedIdeas.length ? `채택 기획: ${selectedIdeas.map((i) => `${i.seed.title} - ${i.seed.hook}`).join(' / ')}` : '',
       bibleCreated ? '바이블을 방금 조립했으므로 이 바이블을 기준으로 플롯을 정렬한다.' : ''

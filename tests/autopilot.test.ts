@@ -232,6 +232,29 @@ describe('autopilot — 최소 입력·자동 중간 처리·최종 선택', () 
     expect(await memoryBridge.exists(ctx.root, r.candidates[0].path)).toBe(true);
   });
 
+  it('runEpisodeAutopilot: 추가 지시가 있으면 기존 회차 설계를 재사용하지 않고 모든 생성 프롬프트에 넣는다', async () => {
+    await prepareFoundation(ctx);
+    await runEpisodeAutopilot(ctx, { episode: 'ep001' });
+
+    const instruction = '첫 장면은 설명이 아니라 실패한 공략 현장으로 시작한다.';
+    const prompts: Record<string, string> = {};
+    setAgentScript((prompt, label) => {
+      for (const stage of ['episode-brief', 'scene-plan', 'draft-candidate']) {
+        if (label.includes(stage) && !prompts[stage]) prompts[stage] = prompt;
+      }
+      return scriptedAgent(prompt, label);
+    });
+
+    const rerun = await runEpisodeAutopilot(ctx, { episode: 'ep001', userNote: instruction });
+
+    expect(rerun.error).toBeUndefined();
+    expect(Object.keys(prompts).sort()).toEqual(['draft-candidate', 'episode-brief', 'scene-plan']);
+    for (const prompt of Object.values(prompts)) {
+      expect(prompt).toContain('[사용자 추가 지시]');
+      expect(prompt).toContain(instruction);
+    }
+  });
+
   it('workflow: 상태에 따라 next action이 이동한다', async () => {
     // 빈 프로젝트 → startProject
     let step = computeNextStep(await loadWorkflowSnapshot(ctx));
@@ -284,6 +307,14 @@ describe('autopilot — 최소 입력·자동 중간 처리·최종 선택', () 
   });
 
   it('workflow: imported resume point can continue at ep015 instead of the blank ep001 scaffold', async () => {
+    const startInstruction = '콜러 설명보다 팀이 실제로 엇갈리는 현장 장면을 먼저 보여준다.';
+    const continuationPrompts: Record<string, string> = {};
+    setAgentScript((prompt, label) => {
+      for (const stage of ['plot-plan', 'episode-brief', 'scene-plan', 'draft-candidate']) {
+        if (label.includes(stage) && !continuationPrompts[stage]) continuationPrompts[stage] = prompt;
+      }
+      return scriptedAgent(prompt, label);
+    });
     await memoryBridge.writeFile(ctx.root, LAYOUT.canon.bible, [
       '# 메달리온 설정 바이블', '',
       '확정 설정과 인물 관계가 충분히 기록되어 있으며, 던전 진입 규칙과 구단 운영 원칙은 이후 회차에서도 변경하지 않는다.'
@@ -307,11 +338,24 @@ describe('autopilot — 최소 입력·자동 중간 처리·최종 선택', () 
     const step = computeNextStep(await loadWorkflowSnapshot(ctx));
     expect(step.action).toBe('writeNextEpisode');
     expect(step.episode).toBe('ep015');
+
+    const continued = await runEpisodeAutopilot(ctx, { episode: 'ep015', userNote: startInstruction, regeneratePlan: true });
+    expect(continued.error).toBeUndefined();
+    await ensureStoryFoundation(ctx, {
+      title: '메달리온', episode: 'ep015', episodeCount: 20, forcePlot: true, startInstruction
+    });
+    for (const prompt of Object.values(continuationPrompts)) {
+      expect(prompt).toContain('[사용자 추가 지시]');
+      expect(prompt).toContain(startInstruction);
+    }
+    expect(Object.keys(continuationPrompts).sort()).toEqual(['draft-candidate', 'episode-brief', 'plot-plan', 'scene-plan']);
   });
 
   it('workflow: ep001 재작성은 ep015 활성 플롯을 이어 쓰지 않고 회차 설계부터 다시 만든다', async () => {
     const restartCtx: Ctx = { ...ctx };
+    const startInstruction = '1화는 계약 설명보다 실패 공략 현장을 먼저 보여주고 코믹 톤을 줄인다.';
     let restartPlotPrompt = '';
+    const restartEpisodePrompts: Record<string, string> = {};
     setAgentScript((prompt, label) => {
       if (label.includes('plot-plan')) {
         if (!restartPlotPrompt) restartPlotPrompt = prompt;
@@ -323,6 +367,9 @@ describe('autopilot — 최소 입력·자동 중간 처리·최종 선택', () 
             beats: ['훈련 로그 분석'], threads_open: [], threads_close: [], hook: '콜러를 찾는다', risk: ''
           }]
         }));
+      }
+      for (const stage of ['episode-brief', 'scene-plan', 'draft-candidate']) {
+        if (label.includes(stage) && !restartEpisodePrompts[stage]) restartEpisodePrompts[stage] = prompt;
       }
       return scriptedAgent(prompt, label);
     });
@@ -346,7 +393,9 @@ describe('autopilot — 최소 입력·자동 중간 처리·최종 선택', () 
       '# 재개 상태', '> planning_start_mode: restart', '- 다음 회차: ep001', '- 실제 원고는 ep001부터 새로 작성합니다.'
     ].join('\n'));
 
-    const foundation = await ensureStoryFoundation(restartCtx, { title: '메달리온', episode: 'ep001' });
+    const foundation = await ensureStoryFoundation(restartCtx, {
+      title: '메달리온', episode: 'ep001', startInstruction
+    });
     const replanned = await loadPlotPlan(restartCtx);
     expect(foundation.plotCreated).toBe(true);
     expect(foundation.plotEpisodes).toBe(20);
@@ -354,6 +403,8 @@ describe('autopilot — 최소 입력·자동 중간 처리·최종 선택', () 
     expect(restartPlotPrompt).toContain('[ep001 재작성 모드]');
     expect(restartPlotPrompt).toContain('[원본 플롯 바이블]');
     expect(restartPlotPrompt).toContain('1화: 성공한 공략');
+    expect(restartPlotPrompt).toContain('[사용자 추가 지시]');
+    expect(restartPlotPrompt).toContain(startInstruction);
     expect(replanned?.episodes[0].episode).toBe('ep001');
     expect(replanned?.episodes.at(-1)?.episode).toBe('ep020');
     const snapshotIndex = JSON.parse(await readOptional(restartCtx, `${LAYOUT.bindery.snapshots}/index.json`)) as Array<{ targetPath: string }>;
@@ -365,10 +416,15 @@ describe('autopilot — 최소 입력·자동 중간 처리·최종 선택', () 
     expect(step.action).toBe('writeNextEpisode');
     expect(step.episode).toBe('ep001');
 
-    const written = await runEpisodeAutopilot(restartCtx, { episode: 'ep001', regeneratePlan: true });
+    const written = await runEpisodeAutopilot(restartCtx, { episode: 'ep001', userNote: startInstruction, regeneratePlan: true });
     expect(written.error).toBeUndefined();
     expect(await loadBrief(restartCtx, 'ep001')).not.toBeNull();
     expect(await loadScenePlan(restartCtx, 'ep001')).not.toBeNull();
+    for (const prompt of Object.values(restartEpisodePrompts)) {
+      expect(prompt).toContain('[사용자 추가 지시]');
+      expect(prompt).toContain(startInstruction);
+    }
+    expect(Object.keys(restartEpisodePrompts).sort()).toEqual(['draft-candidate', 'episode-brief', 'scene-plan']);
   });
 
   it('workflow: 원고가 있어도 바이블이 없으면 준비를 먼저 요구한다', async () => {

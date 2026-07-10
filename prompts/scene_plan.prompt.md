@@ -11,6 +11,9 @@
 ## 스타일 지침 (장면 리듬 참고)
 {{styleGuide}}
 
+## 사용자 추가 지시 (hard constraint)
+{{notes}}
+
 # 출력 형식
 JSON object 하나만 출력한다.
 ```json

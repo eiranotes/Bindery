@@ -209,7 +209,7 @@ export function renderScenePlanMarkdown(p: ScenePlan): string {
   return lines.join('\n');
 }
 
-export async function generateScenePlan(ctx: Ctx, episode: string): Promise<StageOutcome<ApprovedScenePlan> | { error: string }> {
+export async function generateScenePlan(ctx: Ctx, episode: string, notes = ''): Promise<StageOutcome<ApprovedScenePlan> | { error: string }> {
   const brief = await loadBrief(ctx, episode);
   if (!brief) return { error: '회차 브리프가 없습니다. 브리프를 먼저 생성/작성하세요.' };
   if (approvalStatus(brief) !== 'approved') return { error: '회차 브리프를 먼저 명시적으로 승인하세요.' };
@@ -221,7 +221,8 @@ export async function generateScenePlan(ctx: Ctx, episode: string): Promise<Stag
     vars: {
       episode,
       brief: renderBriefMarkdown(brief),
-      styleGuide: clip(await readOptional(ctx, LAYOUT.style.guide), 2000)
+      styleGuide: clip(await readOptional(ctx, LAYOUT.style.guide), 2000),
+      notes: notes || '(없음)'
     },
     parse: (text) => parseScenePlan(text, episode),
     fallback: () => ({

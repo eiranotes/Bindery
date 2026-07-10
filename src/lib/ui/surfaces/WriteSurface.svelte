@@ -164,7 +164,7 @@
     const r = await withBusy('작품 기준 준비', () =>
       ensureStoryFoundation(ctx(), {
         title: $project?.title ?? '작품',
-        notes: $intentNote.trim(),
+        startInstruction: $intentNote,
         episode: ep
       }), false
     );
