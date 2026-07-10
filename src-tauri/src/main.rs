@@ -84,7 +84,11 @@ fn resolve_inside(root: &Path, rel: &str) -> Result<PathBuf, String> {
         return bad("empty relative path");
     }
     let rel_path = Path::new(rel);
-    if rel_path.is_absolute() || rel_path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+    if rel_path.is_absolute()
+        || rel_path
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
         return bad(format!("path escapes project root: {rel}"));
     }
     Ok(root.join(rel_path))
@@ -135,7 +139,11 @@ fn walk(dir: &Path, base: &Path, depth: usize) -> Vec<FileNode> {
     for entry in entries.flatten() {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
-        let rel = path.strip_prefix(base).unwrap_or(&path).to_string_lossy().replace('\\', "/");
+        let rel = path
+            .strip_prefix(base)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
         if path.is_dir() {
             if is_ignored_walk_dir(&name, &rel) {
                 continue;
@@ -159,8 +167,7 @@ fn walk(dir: &Path, base: &Path, depth: usize) -> Vec<FileNode> {
     out
 }
 
-#[tauri::command]
-fn fs_op(req: FsRequest) -> Result<Value, String> {
+fn fs_op_blocking(req: FsRequest) -> Result<Value, String> {
     let root = resolve_root(&req.root)?;
     match req.op.as_str() {
         "read" => {
@@ -199,7 +206,13 @@ fn fs_op(req: FsRequest) -> Result<Value, String> {
 }
 
 #[tauri::command]
-fn scaffold(base: String, name: String) -> Result<Value, String> {
+async fn fs_op(req: FsRequest) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || fs_op_blocking(req))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+fn scaffold_blocking(base: String, name: String) -> Result<Value, String> {
     let base_path = Path::new(&base);
     if !base_path.is_absolute() {
         return bad("base must be absolute");
@@ -215,11 +228,26 @@ fn scaffold(base: String, name: String) -> Result<Value, String> {
         return bad("empty project name");
     }
     let root = base_path.join(safe);
-    if root.exists() && fs::read_dir(&root).map_err(|e| e.to_string())?.next().is_some() {
-        return bad(format!("project folder is not empty: {}", root.to_string_lossy()));
+    if root.exists()
+        && fs::read_dir(&root)
+            .map_err(|e| e.to_string())?
+            .next()
+            .is_some()
+    {
+        return bad(format!(
+            "project folder is not empty: {}",
+            root.to_string_lossy()
+        ));
     }
     fs::create_dir_all(&root).map_err(|e| e.to_string())?;
     Ok(json!({ "root": root.to_string_lossy() }))
+}
+
+#[tauri::command]
+async fn scaffold(base: String, name: String) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || scaffold_blocking(base, name))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 fn substitute_args(template: &[String], vars: &HashMap<&str, String>) -> Vec<String> {
@@ -237,7 +265,10 @@ fn substitute_args(template: &[String], vars: &HashMap<&str, String>) -> Vec<Str
 }
 
 fn now_millis() -> u128 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis()
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
 }
 
 fn agent_key(root: &Path, label: &str) -> String {
@@ -321,7 +352,11 @@ fn run_agent_blocking(
     if req.settings.command.trim().is_empty() {
         return bad("agent command not configured");
     }
-    let timeout_ms = req.settings.timeout_ms.unwrap_or(180_000).clamp(5_000, 600_000);
+    let timeout_ms = req
+        .settings
+        .timeout_ms
+        .unwrap_or(180_000)
+        .clamp(5_000, 600_000);
     let started = Instant::now();
     let label = req.label.unwrap_or_else(|| "run".to_string());
 
@@ -330,7 +365,14 @@ fn run_agent_blocking(
     let prompt_file = trace_dir.join(format!(
         "{}-{}.prompt.md",
         now_millis(),
-        label.chars().map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect::<String>()
+        label
+            .chars()
+            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            })
+            .collect::<String>()
     ));
     fs::write(&prompt_file, req.prompt.as_bytes()).map_err(|e| e.to_string())?;
     let output_file = trace_dir.join(format!("{}-output.md", now_millis()));
@@ -362,13 +404,20 @@ fn run_agent_blocking(
                 exit_code: -1,
                 duration_ms: started.elapsed().as_millis(),
                 mode: "spawn-error".to_string(),
-                prompt_file: prompt_file.strip_prefix(&root).ok().map(|p| p.to_string_lossy().replace('\\', "/")),
+                prompt_file: prompt_file
+                    .strip_prefix(&root)
+                    .ok()
+                    .map(|p| p.to_string_lossy().replace('\\', "/")),
             });
         }
     };
 
     let key = agent_key(&root, &label);
-    state.active.lock().map_err(|e| e.to_string())?.insert(key.clone(), child.id());
+    state
+        .active
+        .lock()
+        .map_err(|e| e.to_string())?
+        .insert(key.clone(), child.id());
     send_agent_event(
         &channel,
         json!({
@@ -419,18 +468,31 @@ fn run_agent_blocking(
     let result = AgentResult {
         ok: !timed_out && status.success() && !text.trim().is_empty(),
         text,
-        stderr: stderr.chars().rev().take(20_000).collect::<String>().chars().rev().collect(),
+        stderr: stderr
+            .chars()
+            .rev()
+            .take(20_000)
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect(),
         exit_code,
         duration_ms: started.elapsed().as_millis(),
         mode,
-        prompt_file: prompt_file.strip_prefix(&root).ok().map(|p| p.to_string_lossy().replace('\\', "/")),
+        prompt_file: prompt_file
+            .strip_prefix(&root)
+            .ok()
+            .map(|p| p.to_string_lossy().replace('\\', "/")),
     };
     send_agent_event(&channel, json!({ "type": "done", "result": &result }));
     Ok(result)
 }
 
 #[tauri::command]
-async fn run_agent(req: AgentRequest, state: tauri::State<'_, AgentState>) -> Result<AgentResult, String> {
+async fn run_agent(
+    req: AgentRequest,
+    state: tauri::State<'_, AgentState>,
+) -> Result<AgentResult, String> {
     let state = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || run_agent_blocking(req, state, None))
         .await
@@ -450,14 +512,25 @@ async fn run_agent_stream(
 }
 
 #[tauri::command]
-fn cancel_agent(root: String, label: String, state: tauri::State<AgentState>) -> Result<Value, String> {
+fn cancel_agent(
+    root: String,
+    label: String,
+    state: tauri::State<AgentState>,
+) -> Result<Value, String> {
     let root = resolve_root(&root)?;
     let key = agent_key(&root, &label);
-    let pid = state.active.lock().map_err(|e| e.to_string())?.get(&key).copied();
+    let pid = state
+        .active
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get(&key)
+        .copied();
     if let Some(pid) = pid {
         #[cfg(unix)]
         {
-            let _ = Command::new("kill").args(["-TERM", &pid.to_string()]).status();
+            let _ = Command::new("kill")
+                .args(["-TERM", &pid.to_string()])
+                .status();
         }
         Ok(json!({ "ok": true, "cancelled": true }))
     } else {
@@ -490,7 +563,10 @@ fn pick_folder(prompt: String) -> Result<Value, String> {
             }
             return bad(stderr.trim().to_string());
         }
-        let path = String::from_utf8_lossy(&output.stdout).trim().trim_end_matches('/').to_string();
+        let path = String::from_utf8_lossy(&output.stdout)
+            .trim()
+            .trim_end_matches('/')
+            .to_string();
         return Ok(json!({ "path": path, "cancelled": false }));
     }
     #[cfg(not(target_os = "macos"))]
@@ -557,6 +633,43 @@ mod tests {
         assert!(events.contains("\"type\":\"stdout\""));
         assert!(events.contains("alpha"));
         assert!(events.contains("\"type\":\"done\""));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn blocking_fs_helpers_keep_path_guards_and_round_trip_text() {
+        let root = std::env::temp_dir().join(format!("bindery-fs-test-{}", now_millis()));
+        fs::create_dir_all(&root).unwrap();
+        let root_text = root.to_string_lossy().to_string();
+
+        let write = fs_op_blocking(FsRequest {
+            op: "write".to_string(),
+            root: root_text.clone(),
+            path: Some("notes/test.md".to_string()),
+            to: None,
+            content: Some("비동기 파일 브리지".to_string()),
+        })
+        .unwrap();
+        assert_eq!(write["ok"], true);
+
+        let read = fs_op_blocking(FsRequest {
+            op: "read".to_string(),
+            root: root_text.clone(),
+            path: Some("notes/test.md".to_string()),
+            to: None,
+            content: None,
+        })
+        .unwrap();
+        assert_eq!(read["content"], "비동기 파일 브리지");
+
+        let escaped = fs_op_blocking(FsRequest {
+            op: "read".to_string(),
+            root: root_text,
+            path: Some("../outside.md".to_string()),
+            to: None,
+            content: None,
+        });
+        assert!(escaped.is_err());
         let _ = fs::remove_dir_all(root);
     }
 

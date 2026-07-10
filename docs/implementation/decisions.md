@@ -238,3 +238,26 @@ Finder 실행은 터미널의 PATH를 상속하지 않는다. Tauri agent adapte
 `~/.local/bin`, `~/.cargo/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, `/bin`을
 중복 없이 보강하고 단순 명령 이름을 절대경로로 해석한다. 보강한 PATH는 CLI 자식 프로세스에도
 전달해 `/usr/bin/env` shebang과 하위 실행기가 같은 도구 체인을 찾게 한다.
+
+### D41. 깊은 화면 탐색은 상단 탭이 아니라 작업 레일이 소유한다
+간단 모드 8개, 설계자 모드 13개 화면을 한 줄 상단 탭에 계속 넣지 않는다. 980px보다 넓은 화면은
+208px 작업 레일에서 진행/설계/프로젝트로 그룹화하고, 좁은 화면은 같은 순서를 가로 작업 스트립으로
+바꾼다. 작업면의 상태와 현재 화면 힌트는 48px 문맥 헤더가 소유한다. 기능 모드와 도메인 상태는
+기존 store를 그대로 사용한다.
+
+### D42. UI surface는 기능별로 지연 로드한다
+Home만 초기 셸과 함께 로드하고 나머지 12개 surface는 mode 진입 시 dynamic import한다. 빠른 화면
+전환은 sequence로 stale import를 버리고, 실패하면 작업면 안에서 재시도한다. CodeMirror/Lezer는
+별도 청크로 나눠 편집기가 필요한 화면에서만 받는다. 이 결정으로 초기 JS를 883.40kB에서
+234.06kB로 줄였으며 새 production dependency는 추가하지 않았다.
+
+### D43. CTA 연결성은 컴파일 외에 AST 계약으로 검증한다
+Svelte compile 성공만으로 버튼의 실행 연결을 보장하지 않는다. `scripts/audit-ui-contract.mjs`가 모든
+Svelte button을 AST로 읽고 `onclick` 또는 명시 form submit이 없는 항목을 실패 처리한다. 런타임
+화면 순회는 별도로 13개 mode의 접근성 이름, disabled 상태, overflow, 콘솔 오류를 기록한다.
+
+### D44. 네이티브 파일 I/O는 Tauri 메인 스레드 밖에서 실행한다
+프로젝트 파일 read/write/list/move/remove와 scaffold는 파일-provider 또는 TCC 상태에 따라 오래
+막힐 수 있다. Tauri command 자체를 async로 선언하고 기존 동기 구현은 `spawn_blocking`에 넘긴다.
+프런트의 15초 프로젝트 열기 제한과 함께 사용해, provider 지연은 늦은 결과 무효화로 처리하되
+WebView 이벤트 루프와 다른 CTA까지 멈추는 전역 프리즈는 허용하지 않는다.

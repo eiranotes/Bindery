@@ -1,5 +1,27 @@
 # state.md — 현재 인수인계 상태
 
+## 2026-07-10 UI 작업실 개편 · CTA 전수 감사 · 번들 병목 제거
+
+- 기준점: 작업트리가 깨끗한 `38615c91`에서 시작했다.
+- 셸: 상단 한 줄 탭을 208px 작업 레일로 교체했다. 진행/설계/프로젝트 그룹, 간단/설계자 전환,
+  48px 문맥 헤더, surface 로딩/오류 상태를 제공한다. 980px 이하는 가로 작업 스트립으로 바뀐다.
+- 홈: 다음 행동을 왼쪽에 유지하고 AI 연결/바이블/플롯/현재 회차/보류/월 사용량을 오른쪽 상태 원장에
+  배치했다. 시작 화면은 제품 맥락/최근 작품/새 작품 3영역으로 재구성했다.
+- 성능: Home 외 12개 surface를 동적 import하고 CodeMirror/Lezer를 청크 분리했다. 초기 JS는
+  883.40kB에서 234.06kB로 73.5% 감소했고 기존 500kB 경고가 사라졌다.
+- CTA: `npm run qa:ui-contract`가 Svelte 22파일의 버튼 175개(174 onclick + form submit 1)를 확인하고
+  연결 없는 버튼 0개를 단언한다. dev 런타임은 13화면/본문 CTA 86개, 콘솔 오류 0, 이름 없는 버튼 0.
+- 반응형: 390/768/1280px에서 13개 화면 전체 진입, 문서/작업면 수평 overflow 0. 390px에서도
+  간단/설계자 전환과 작품 바꾸기 CTA를 유지한다.
+- agy: 직접 `agy -model gemini-3.5-flash -p ...` exit 0(8.46초), 앱 내 연결 테스트 exit 0
+  (7.525초, `BINDERY-OK`). 최종 설치 앱의 Tauri 경로도 exit 0(9.394초, `BINDERY-OK`).
+- 패키지 병목: 설치 앱에서 Medallion 열기 프리즈를 재현하고 main-thread sample로 동기 `fs_op`의
+  `read_to_string` 정지를 확인했다. `fs_op`/`scaffold`를 `spawn_blocking` async command로 바꿔
+  파일-provider가 지연돼도 UI가 반응하고 15초 뒤 시작 화면으로 복귀한다.
+- standalone: 최종 소스로 재빌드해 `/Applications/Bindery.app`에 설치했고 strict codesign, 로컬
+  프로젝트 홈/설정 클릭스루, agy 연결을 통과했다. Rust test는 3/3이다. 상세:
+  `docs/UI_CTA_PERFORMANCE_REVIEW_20260710.md`.
+
 ## 2026-07-10 단일 후보 · 병렬 QA · 네이티브 스트리밍 · 구조화 ZIP · 프로젝트 열기 UX
 
 - 생성량: 간단 모드의 소재·회차 집필은 후보를 기본 3개에서 **집필안 1개**로 줄였다. 설계자

@@ -23,6 +23,8 @@
 9. **P1 일부**: 프로젝트 백업/복원 preview/rollback, 후보 품질 회귀 게이트, 창 포커스 새로고침.
 10. **대기·가져오기·열기 개선(2026-07-10)**: 기본 집필안 1개, QA 3종 병렬 실행과 안전한 원장 저장,
     구조화 ZIP import/진행률/취소/안전 한도, 네이티브 폴더 선택과 stale timeout 차단.
+11. **작업실 UI/성능 개편(2026-07-10)**: 208px 작업 레일, 문맥 헤더, 홈 상태 원장, 반응형 작업
+    스트립, surface dynamic import, CodeMirror/Lezer chunk 분리, CTA AST 감사와 13화면 순회 QA.
 
 ## Phase 1.5 — UX-first autopilot 개편 (완료, 2026-07-05)
 
@@ -31,10 +33,11 @@
 1. **workflow/autopilot 레이어**: `context.ts`(기초자료 단일 로더+누락 보고),
    `workflow.ts`(상태→다음 행동), `autopilot.ts`(starter/episode/revision/close 묶음 실행).
    soft output(브리프·장면 계획) 자동 승인, hard commit(원고·canon·픽스)은 버튼 전용.
-2. **간단/설계자 이원 UI**: 사이드바 제거(최대 2단), 간단 모드 메뉴
+2. **간단/설계자 이원 UI**: 간단 모드 메뉴
    홈|집필|작품노트|보류함|파일|설정. HomeSurface=다음 작업 센터, WriteSurface(진행 레일+
    후보 카드+수정 체크리스트+마감 카드+근거 보기), NotesSurface, PendingSurface 신설.
-   설계자 모드에서 기존 파이프라인 화면 전부 유지.
+   설계자 모드에서 기존 파이프라인 화면 전부 유지. 2026-07-10부터 깊은 화면 탐색은 상단 탭 대신
+   데스크톱 작업 레일/좁은 폭 가로 작업 스트립이 소유한다.
 3. **실시간 스트리밍**: runFeed 누적 + LiveRunPanel — dev SSE와 패키지 Tauri Channel의 CLI
    stdout/stderr를 실시간 표시(자동 스크롤·병렬 수·실제 경과 시간·전체 취소), 상태바는 tail 보조.
 4. **기초자료 구멍 보수**: draft 프롬프트에 이전 회차 요약·이전 화 끝부분·열린 떡밥,
@@ -49,8 +52,8 @@
 1. **프로젝트별 blueprint 오버라이드**: `{project}/prompts/`가 있으면 저장소 기본을 대체.
 2. **artifact 브라우저**: `.bindery/artifacts` 인덱스 열람 화면(현재는 파일 화면으로 접근).
 3. **에디터 고급 위젯**: 타자기 모드, 목표/통계 위젯, 파일 타입별 문법 확장.
-4. **패키지 앱 런타임 QA**: standalone 재빌드·서명·launch와 Tauri stream unit test는 완료.
-   실제 화면의 프로젝트 열기/CLI 실행/cancel 반복 QA는 잠금 해제된 Mac에서 별도 확인한다.
+4. **패키지 앱 런타임 QA**: standalone 재빌드·서명·launch, 실제 프로젝트 열기, 설정/agy CLI
+   클릭스루는 완료. CLI cancel 반복과 Developer ID 배포 검증은 Phase 3에서 다룬다.
 
 ## Phase 2 — 장기 연재 심화
 

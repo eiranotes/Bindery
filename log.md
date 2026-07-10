@@ -1,5 +1,31 @@
 # log.md — 작업 로그
 
+## 2026-07-10 — reference-driven 작업실 UI와 전수 CTA/성능 QA
+
+1. 첨부 `reference-driven-ui-builder` 스킬과 기존 `DESIGN.md`를 결합해 dense analytical workbench를
+   주 모드로 확정했다. 생성 시각 타깃과 토큰 delta는 Superloopy evidence에 남겼다.
+2. `AppShell.svelte`를 208px 작업 레일/문맥 헤더/작업면으로 재구성하고 진행/설계/프로젝트 그룹,
+   간단/설계자 즉시 전환, 로딩/오류 상태, 980px 이하 가로 작업 스트립을 추가했다.
+3. Home 외 모든 surface를 dynamic import하고 CodeMirror/Lezer를 manual chunk로 분리했다. 초기 JS
+   883.40kB → 234.06kB(73.5% 감소), 모든 청크 205kB 이하, 500kB 경고 제거.
+4. 홈을 다음 행동 + 프로젝트 상태 원장 2열로, 시작 화면을 제품 맥락/최근 작품/새 작품 3영역으로
+   개편했다. 포커스, control height, reduced-motion도 전역 토큰으로 고정했다.
+5. `scripts/audit-ui-contract.mjs`/`npm run qa:ui-contract` 추가: 22 Svelte 파일, 버튼 175개,
+   onclick 174, submit 1, 무동작 0.
+6. dev 클릭스루: 13개 화면, 현재 노출 CTA 86개, 이름 없는 버튼 0, 콘솔 오류 0.
+   390/768/1280px 전체 화면 overflow 0.
+7. agy 재검증: 직접 호출 exit 0(8.46초, 지정 JSON), Bindery [연결 테스트] exit 0
+   (7.525초, BINDERY-OK).
+8. 최종 standalone을 재빌드·설치하고 실제 앱에서 시작 화면 → 로컬 프로젝트 → 홈 → 설정을
+   클릭스루했다. 설치 앱 agy 연결도 exit 0(9.394초, BINDERY-OK)으로 통과했다.
+9. 설치 앱에서 Medallion 열기 중 프리즈를 재현하고 sample로 Tauri 메인 스레드의 동기 파일 open을
+   특정했다. `fs_op`/`scaffold`를 async `spawn_blocking`으로 격리해 같은 지연에서도 UI가 반응하고
+   15초 뒤 시작 화면으로 복귀하도록 했다.
+
+검증 중간값: `npm run check` 0/0, `npm test` 73/73, `npm run build` OK(대형 청크 경고 제거),
+Rust test 3/3, standalone build/설치/codesign/실앱 클릭스루 OK, DESIGN.md compliance 위반 0.
+상세는 `docs/UI_CTA_PERFORMANCE_REVIEW_20260710.md`.
+
 ## 2026-07-10 — 생성 지연 축소와 전체 파이프라인 제품화 보강
 
 1. **후보 1개**: 간단 모드의 기획/집필 기본 후보를 `집필안` 1개로 축소했다. 한 회차에서

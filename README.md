@@ -24,6 +24,7 @@ npm install
 npm run dev        # http://localhost:5199 — dev 브리지가 로컬 파일/CLI 접근 제공
 npm test           # 코어 + 검증 시나리오 E2E
 npm run check      # svelte-check
+npm run qa:ui-contract  # 전체 Svelte CTA의 실행 연결 감사
 npm run build      # 웹 번들
 npm run tauri:build:mac:standalone    # macOS Bindery.app 생성 + ad-hoc 서명
 ```
@@ -47,7 +48,8 @@ npm run tauri:build:mac:standalone    # macOS Bindery.app 생성 + ad-hoc 서명
 - `src/lib/schemas/contracts.ts` — AI 출력 계약 검증 (교환용 JSON Schema는 `schemas/`)
 - `prompts/*.prompt.md` — 프롬프트 blueprint 원본 18종
 - `server/bridge.ts` — Vite 미들웨어 (fs + CLI spawn + trace)
-- `src/lib/ui` — 간단 모드(홈·집필·작품노트·보류함) + 설계자 모드(파이프라인 화면) 작업면,
+- `src/lib/ui` — 진행/설계/프로젝트 작업 레일, 간단 모드(홈·집필·작품노트·보류함) +
+  설계자 모드(파이프라인 화면) 지연 로드 작업면,
   dev SSE와 Tauri Channel을 공유하는 실시간 CLI 스트리밍(LiveRunPanel)
 
 문서: `DESIGN.md` `docs/architecture/` `docs/workflows/` `docs/prompts/` `docs/implementation/`

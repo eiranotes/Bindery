@@ -61,6 +61,12 @@ Base unit is 4px. Use these existing scales and derive only from them:
 | `--space-5` | 20px | Surface gaps |
 | `--space-6` | 24px | Page horizontal padding |
 | `--space-7` | 28px | Wide surface horizontal padding |
+| `--control-height` | 32px | Compact desktop controls and navigation rows |
+| `--topbar-height` | 48px | Project context header |
+| `--status-height` | 28px | Optional run and document status strip |
+| `--rail-width` | 208px | Desktop navigation rail |
+| `--content-reading` | 760px | Long-form reading and editing measure |
+| `--content-wide` | 1180px | Maximum workbench content width |
 
 Existing CSS may use literal values that map to these tokens. New CSS should prefer the variables once added to `src/app.css`.
 
@@ -72,7 +78,7 @@ Inputs and textareas: `--bg-2`, border `--line`, 4px radius, focus ring `2px sol
 
 Chips: 3px radius, 10.5px, font-weight 700. Use `ok`, `warn`, `bad`, `info`, or `muted` semantic classes only.
 
-Rails: `--bg-rail` or `--bg-1`, separated by `--line`. Navigation rows use hairlines and selected fill `--accent-soft`.
+Rails: `--bg-rail` or `--bg-1`, separated by `--line`. The desktop application uses one `--rail-width` navigation rail grouped by workflow, design, and project. Navigation rows use hairlines and selected fill `--accent-soft`. Below 980px the rail becomes a horizontal task strip instead of consuming a narrow side column.
 
 Tables: `border-collapse: collapse`, hairline rows, uppercase metadata headers, no nested card framing.
 
@@ -80,7 +86,7 @@ Editor: CodeMirror editor and plain text fallback must live as an unframed work 
 
 ## 6. Motion
 
-Motion is minimal. Hover, active, and focus states may use color, filter, opacity, or transform only. Default duration is 160ms to 220ms ease-out. Reduced motion should still preserve state changes without transform.
+Motion is minimal. Hover, active, and focus states may use color, filter, opacity, or transform only. Default transition is `--motion-fast` at 160ms ease-out; longer state transitions may use 220ms ease-out. Reduced motion should still preserve state changes without transform.
 
 ## 7. Depth
 

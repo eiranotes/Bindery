@@ -8,6 +8,20 @@ import { harnessBridge } from './server/bridge';
 // (패키징 단계에서 Tauri adapter로 교체 가능하도록 브리지 인터페이스는 분리되어 있다.)
 export default defineConfig({
   plugins: [svelte(), harnessBridge()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('/node_modules/@codemirror/view/')) return 'codemirror-view';
+          if (id.includes('/node_modules/@codemirror/state/')) return 'codemirror-state';
+          if (id.includes('/node_modules/@codemirror/commands/')) return 'codemirror-commands';
+          if (id.includes('/node_modules/@codemirror/')) return 'codemirror-language';
+          if (id.includes('/node_modules/@lezer/')) return 'lezer';
+          return undefined;
+        }
+      }
+    }
+  },
   resolve: {
     alias: {
       $lib: fileURLToPath(new URL('./src/lib', import.meta.url)),

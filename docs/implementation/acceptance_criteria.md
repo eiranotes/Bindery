@@ -3,6 +3,23 @@
 지시서 §11 검증 시나리오의 각 단계별 구현·검증 상태. "자동"은 `npm test`의
 `tests/scenario.e2e.test.ts`(memory 브리지 + 스크립트 에이전트)로 매 실행 검증됨을 뜻한다.
 
+## 2026-07-10 UI/CTA/성능 수용 결과
+
+- `npm run qa:ui-contract`: 22 Svelte 파일, button 175개, onclick 174개, form submit 1개,
+  연결 없는 CTA 0개.
+- dev 런타임: 간단/설계자 13화면 모두 진입, 현재 샘플 본문 CTA 86개, 이름 없는 버튼 0,
+  콘솔 오류 0.
+- 390/768/1280px: 13화면 전체 문서/작업면 수평 overflow 0.
+- 초기 production JS: 883.40kB → 234.06kB. 모든 청크 205kB 이하, 500kB warning 제거.
+- agy 직접 호출: `gemini-3.5-flash`, exit 0, 8.46초, 지정 JSON 정확히 반환.
+- 앱 내 Gemini CLI (agy) 연결 테스트: exit 0, 7.525초, `BINDERY-OK`.
+- 최종 `/Applications/Bindery.app` 연결 테스트: exit 0, 9.394초, `BINDERY-OK`.
+- standalone 클릭스루: 시작 화면 → 로컬 프로젝트 → 홈 → 설정 통과, strict codesign 통과.
+- 패키지 프로젝트 열기 병목: 동기 `fs_op`를 async `spawn_blocking`으로 격리. 지연 프로젝트에서도
+  UI 반응 유지, 15초 제한 뒤 시작 화면 복귀.
+- 상세 증거: `docs/UI_CTA_PERFORMANCE_REVIEW_20260710.md` 및
+  `.superloopy/evidence/frontend/20260710-bindery-workbench-overhaul/`.
+
 | # | 시나리오 단계 | 상태 | 검증 방법 |
 |---|---|---|---|
 | 1 | 새 작품 생성 | 구현 | 자동 (createProject → 스켈레톤 파일) + dev 브리지 scaffold curl 검증 |
@@ -55,10 +72,10 @@
 - `npx vitest run tests/sourceUploads.test.ts tests/sourcePackage.test.ts` — 8/8 통과
   (`DecompressionStream` 없는 macOS WebView형 fallback, 진행률/취소/500엔트리 제한, 구조화 기획 가져오기).
 - `npm test` — 73/73 통과 (코어 단위 + 시나리오 E2E + 자료 업로드/구조화 zip + 사용량/문체/백업/품질/외부변경).
-- `cargo test --manifest-path src-tauri/Cargo.toml` — 2/2 통과
-  (`run_agent_stream` stdout event와 최종 결과 일치, Finder PATH에 사용자 CLI 경로 보강).
+- `cargo test --manifest-path src-tauri/Cargo.toml` — 3/3 통과
+  (`run_agent_stream` stdout event와 최종 결과 일치, Finder PATH 보강, 파일 경로 가드/텍스트 왕복).
 - `npm run check` — svelte-check 0 errors / 0 warnings.
-- `npm run build` — OK(기존 chunk-size warning 유지).
+- `npm run build` — OK. 초기 JS 234.06kB, chunk-size warning 없음.
 - `npm run tauri:build:mac:standalone` — OK. macOS `Bindery.app` 번들 생성 및 ad-hoc 서명 OK:
   `src-tauri/target/release/bundle/macos/Bindery.app`.
 - `codesign --verify --deep --strict --verbose=2 src-tauri/target/release/bundle/macos/Bindery.app` —
@@ -100,8 +117,8 @@
 
 ## 남은 제한 (roadmap 참조)
 
-- 패키지된 `Bindery.app`의 빌드·서명·launch와 native stream command는 자동 확인했다. 실제 화면에서
-  프로젝트 열기/CLI cancel 반복 클릭스루는 Mac 잠금 해제 후 수동 QA가 남아 있다.
+- 패키지된 `Bindery.app`의 빌드·서명·launch, 프로젝트 열기, 설정/agy 실제 클릭스루를 완료했다.
+  Developer ID 공증·자동 업데이트와 외부 file-provider 자체의 응답 지연은 별도 배포/환경 경계다.
 - QA 대상은 현재 원고만 (후보 대상 QA는 로드맵)
 - CodeMirror 고급 위젯(타자기 모드, 목표/통계 위젯)은 아직 없음.
 

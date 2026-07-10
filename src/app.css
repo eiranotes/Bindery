@@ -30,6 +30,13 @@
   --space-5: 20px;
   --space-6: 24px;
   --space-7: 28px;
+  --control-height: 32px;
+  --topbar-height: 48px;
+  --status-height: 28px;
+  --rail-width: 208px;
+  --content-reading: 760px;
+  --content-wide: 1180px;
+  --motion-fast: 160ms ease-out;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -65,14 +72,17 @@ button {
   background: transparent;
   border: 1px solid var(--line);
   border-radius: 4px;
-  padding: 4px 10px;
+  padding: var(--space-1) var(--space-3);
   cursor: pointer;
+  min-height: var(--control-height);
+  transition: color var(--motion-fast), background-color var(--motion-fast), border-color var(--motion-fast), filter var(--motion-fast), transform var(--motion-fast);
 }
 button:hover:not(:disabled) { color: var(--text); border-color: var(--line-strong); background: var(--bg-2); }
+button:active:not(:disabled) { transform: translateY(1px); }
 button:disabled { opacity: 0.4; cursor: default; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 650; }
 button.primary:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); filter: brightness(1.06); }
-button.quiet { border: 0; padding: 3px 7px; }
+button.quiet { border: 0; padding: var(--space-1) var(--space-2); }
 button.danger { color: var(--bad); border-color: var(--bad-soft); }
 button.on { background: var(--accent-soft); color: var(--text); border-color: var(--accent); }
 
@@ -82,9 +92,20 @@ input, textarea, select {
   background: var(--bg-2);
   border: 1px solid var(--line);
   border-radius: 4px;
-  padding: 5px 8px;
+  padding: var(--space-1) var(--space-2);
+  min-height: var(--control-height);
+  transition: border-color var(--motion-fast), outline-color var(--motion-fast), background-color var(--motion-fast);
 }
-input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+a:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+input:focus, textarea:focus, select:focus { border-color: var(--accent); }
 textarea { line-height: 1.7; resize: vertical; }
 
 .label {
@@ -98,7 +119,7 @@ textarea { line-height: 1.7; resize: vertical; }
 .dim { color: var(--faint); font-size: 11.5px; }
 .chip {
   display: inline-block;
-  padding: 1px 7px;
+  padding: 0 var(--space-2);
   border-radius: 3px;
   font-size: 10.5px;
   font-weight: 700;
@@ -112,16 +133,16 @@ textarea { line-height: 1.7; resize: vertical; }
 table.grid { border-collapse: collapse; width: 100%; font-size: 12.5px; }
 table.grid th {
   text-align: left;
-  padding: 6px 8px;
+  padding: var(--space-1) var(--space-2);
   border-bottom: 1px solid var(--line-strong);
   color: var(--faint);
   font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
-table.grid td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.grid td { padding: var(--space-2); border-bottom: 1px solid var(--line); vertical-align: top; }
 
-.empty { color: var(--faint); font-size: 12.5px; padding: 18px 0; line-height: 1.7; }
+.empty { color: var(--faint); font-size: 12.5px; padding: var(--space-4) 0; line-height: 1.7; }
 .pre {
   margin: 0;
   white-space: pre-wrap;
@@ -130,7 +151,39 @@ table.grid td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical
   line-height: 1.7;
   color: var(--text);
 }
-.reading { font-family: var(--serif); font-size: 15px; line-height: 2; max-width: 760px; white-space: pre-wrap; }
+.reading { font-family: var(--serif); font-size: 15px; line-height: 2; max-width: var(--content-reading); white-space: pre-wrap; }
+
+.surface-frame {
+  width: min(100%, var(--content-wide));
+  margin-inline: auto;
+  padding: var(--space-5) var(--space-7) var(--space-7);
+}
+
+.surface-heading {
+  display: grid;
+  gap: var(--space-1);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.surface-heading h1 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .surface-frame { padding: var(--space-4) var(--space-3) var(--space-6); }
+}
 
 a { color: var(--accent); }
 ::-webkit-scrollbar { width: 10px; height: 10px; }

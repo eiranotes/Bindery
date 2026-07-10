@@ -87,15 +87,25 @@
   }
 </script>
 
-<div class="picker">
-  <div class="col">
+<main class="picker">
+  <header class="intro">
     <h1>Bindery</h1>
-    <p class="dim">AI 장기 소설 집필 하네스 - 모든 산출물은 로컬 Markdown 파일로 남습니다.</p>
+    <p>장편 집필의 기획, 원고, 검토, 정사를 한 프로젝트 안에서 이어갑니다.</p>
+    <dl>
+      <div><dt>저장</dt><dd>로컬 Markdown</dd></div>
+      <div><dt>실행</dt><dd>CLI 연결 또는 오프라인</dd></div>
+      <div><dt>복구</dt><dd>스냅샷과 백업</dd></div>
+    </dl>
     {#if bridgeKind === 'memory'}
       <p class="notice">브라우저 데모 모드입니다. 파일이 디스크에 저장되지 않습니다. <code>npm run dev</code>로 실행하세요.</p>
     {/if}
+  </header>
 
-    <span class="label">최근 작품</span>
+  <section class="col recent-panel" aria-labelledby="recent-title">
+    <div class="section-head">
+      <h2 id="recent-title">최근 작품</h2>
+      <span>{recents.length}개</span>
+    </div>
     {#if recents.length === 0}
       <p class="empty">최근 작품이 없습니다.</p>
     {:else}
@@ -109,36 +119,50 @@
       </ul>
     {/if}
 
-    <span class="label">폴더 열기</span>
-    <div class="row">
-      <input bind:value={openPath} placeholder="/절대/경로/작품폴더" onkeydown={(e) => e.key === 'Enter' && open(openPath)} />
+    <div class="open-panel">
+      <label for="project-open-path">다른 폴더 열기</label>
+      <div class="row">
+      <input id="project-open-path" bind:value={openPath} placeholder="/절대/경로/작품폴더" onkeydown={(e) => e.key === 'Enter' && open(openPath)} />
       {#if bridgeKind === 'tauri'}<button onclick={() => chooseFolder('open')} disabled={working}>폴더 선택</button>{/if}
       <button onclick={() => open(openPath)} disabled={working}>{opening ? '여는 중...' : '열기'}</button>
+      </div>
     </div>
-  </div>
+  </section>
 
-  <div class="col">
-    <span class="label">새 작품</span>
-    <div class="form">
+  <section class="col create-panel" aria-labelledby="create-title">
+    <div class="section-head">
+      <h2 id="create-title">새 작품</h2>
+      <span>프로젝트 만들기</span>
+    </div>
+    <form class="form" onsubmit={(event) => { event.preventDefault(); void create(); }}>
       <label>저장 위치
         <span class="row"><input bind:value={base} />{#if bridgeKind === 'tauri'}<button type="button" onclick={() => chooseFolder('base')} disabled={working}>선택</button>{/if}</span>
       </label>
       <label>작품 제목<input bind:value={title} placeholder="무제여도 됩니다" /></label>
       <label>작가명<input bind:value={author} /></label>
-      <button class="primary" onclick={create} disabled={working}>{creating ? '생성 중...' : '작품 폴더 만들기'}</button>
-      <p class="dim">ideas/ · canon/ · characters/ · world/ · plot/ · story/ 구조가 생성되고, 소재 발굴부터 시작합니다.</p>
-    </div>
-  </div>
-</div>
+      <button class="primary" type="submit" disabled={working}>{creating ? '생성 중...' : '작품 폴더 만들기'}</button>
+      <p class="dim">ideas, canon, characters, world, plot, story 구조를 만들고 소재 발굴부터 시작합니다.</p>
+    </form>
+  </section>
+</main>
 
 <style>
   .picker {
-    height: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 48px;
-    max-width: 880px; margin: 0 auto; padding: 72px 32px; align-content: start;
+    min-height: 100%; display: grid; grid-template-columns: 224px minmax(300px, 1fr) minmax(320px, 380px); gap: var(--space-7);
+    width: min(100%, var(--content-wide)); margin: 0 auto; padding: 64px var(--space-7); align-content: start;
   }
-  h1 { font-size: 28px; margin: 0 0 4px; }
+  .intro { display: grid; gap: var(--space-3); align-content: start; padding-right: var(--space-5); border-right: 1px solid var(--line-strong); }
+  h1 { color: var(--accent); font-size: 28px; margin: 0; }
+  .intro > p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.7; }
+  .intro dl { margin: var(--space-3) 0 0; border-top: 1px solid var(--line); }
+  .intro dl > div { display: grid; gap: var(--space-1); padding: var(--space-2) 0; border-bottom: 1px solid var(--line); }
+  .intro dt { color: var(--faint); font-size: 10px; font-weight: 800; }
+  .intro dd { margin: 0; color: var(--text); font-size: 11.5px; }
   .col { display: grid; gap: 8px; align-content: start; }
   .col, .recent, .form { min-width: 0; }
+  .section-head { min-height: 40px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line-strong); }
+  .section-head h2 { margin: 0; font-size: 16px; }
+  .section-head span { color: var(--faint); font-size: 10.5px; }
   .recent { list-style: none; margin: 0; padding: 0; }
   .recent li { display: flex; gap: var(--space-2); align-items: center; border-bottom: 1px solid var(--line); }
   .recent-path {
@@ -148,9 +172,20 @@
   .recent-remove { flex: 0 0 auto; color: var(--faint); font-size: 11px; }
   .row { display: flex; gap: 8px; min-width: 0; }
   .row input { flex: 1; min-width: 0; }
-  .form { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .open-panel { display: grid; gap: var(--space-1); margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--line); }
+  .open-panel > label { color: var(--muted); font-size: 11.5px; }
+  .form { display: grid; gap: var(--space-3); padding-top: var(--space-1); }
   .form input { min-width: 0; width: 100%; }
   label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
   .notice { font-size: 12px; color: var(--warn); background: var(--warn-soft); padding: 8px 8px; border-radius: 4px; }
-  @media (max-width: 760px) { .picker { grid-template-columns: 1fr; padding: 32px 20px; } }
+  @media (max-width: 1040px) {
+    .picker { grid-template-columns: minmax(0, 1fr) minmax(320px, 380px); padding-top: var(--space-7); }
+    .intro { grid-column: 1 / -1; grid-template-columns: 180px minmax(0, 1fr); align-items: start; padding: 0 0 var(--space-4); border-right: 0; border-bottom: 1px solid var(--line-strong); }
+    .intro dl { grid-column: 2; grid-row: 1 / span 2; margin: 0; }
+  }
+  @media (max-width: 720px) {
+    .picker { grid-template-columns: minmax(0, 1fr); padding: var(--space-6) var(--space-3); }
+    .intro { display: grid; grid-template-columns: minmax(0, 1fr); }
+    .intro dl { grid-column: 1; grid-row: auto; }
+  }
 </style>

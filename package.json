@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
+    "qa:ui-contract": "node scripts/audit-ui-contract.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "tauri:dev": "tauri dev",

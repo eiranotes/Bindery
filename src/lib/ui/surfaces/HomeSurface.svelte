@@ -4,7 +4,7 @@
   import {
     ctx, mode, currentEpisode, pendingProposals, progress, episodes, withBusy,
     busy, activeRun, intentNote, autopilotKick, clearRunFeed, toast, project, refreshAll,
-    projectRefreshing
+    projectRefreshing, settings, usageSummary
   } from '$lib/stores/app';
   import { loadWorkflowSnapshot, computeNextStep, type NextStep } from '$lib/harness/workflow';
   import {
@@ -164,6 +164,8 @@
   }
 
   const lastFixed = $derived([...$episodes].reverse().find((e) => $progress[e]?.status === 'fixed') ?? null);
+  const foundationReady = $derived(Boolean(step && !['startProject', 'prepareStoryFoundation'].includes(step.action)));
+  const agentStatus = $derived($settings.offline ? '오프라인' : $settings.command ? '연결됨' : '미설정');
   // CTA 문구에 이미 실행 의미가 있으므로 홈은 버튼 하나만 크게 둔다.
   const showIntent = $derived(step?.action === 'startProject' || step?.action === 'writeNextEpisode' || step?.action === 'prepareStoryFoundation');
   const freshEpisode = $derived.by(() => {
@@ -306,12 +308,14 @@
   }
 </script>
 
-<div class="surface">
-  <div class="col">
+<div class="surface surface-frame">
+  <section class="workbench" aria-label="다음 작업">
+    <div class="col">
     {#if running}
       <LiveRunPanel title="작업 실행 중" />
     {:else if starterIdeas.length}
-      <span class="kicker">기획안 확인. 이 기획으로 세계관·플롯 기본 구성을 시작합니다</span>
+      <span class="kicker">기획안 확인</span>
+      <p class="section-note">이 기획으로 세계관과 플롯 기본 구성을 시작합니다.</p>
       <div class="ideas">
         {#each starterIdeas as idea (idea.seed.id)}
           <article class="idea">
@@ -335,9 +339,12 @@
       <span class="kicker">다음 작업</span>
       <h1>{step.title}</h1>
       <p class="lead">{step.detail}</p>
-      <div class="row ctarow">
+      <div class="cta-stack">
         {#if showIntent}
-          <input class="grow" bind:value={$intentNote} placeholder="원하는 방향이 있으면 한 줄로 (선택)" onkeydown={(e) => e.key === 'Enter' && go()} />
+          <label class="intent-field">
+            <span>방향 메모</span>
+            <input class="grow" bind:value={$intentNote} placeholder="원하는 방향이 있으면 한 줄로" onkeydown={(e) => e.key === 'Enter' && go()} />
+          </label>
         {/if}
         <button class="primary big" onclick={go} disabled={sourceReading}>{sourceReading ? '자료 읽는 중...' : step.cta}</button>
       </div>
@@ -378,8 +385,8 @@
             <div class="package-ready">
               <div>
                 <b>구조화 기획 패키지 감지</b>
-                <span>{planningPackage.archiveName} · {planningPackage.files.length}개 문서 · {planningPackage.totalChars.toLocaleString()}자</span>
-                <span>설정·인물·세계·플롯·재개 문서를 보존하고 플롯 구조만 정리합니다.</span>
+                <span>{planningPackage.archiveName} / {planningPackage.files.length}개 문서 / {planningPackage.totalChars.toLocaleString()}자</span>
+                <span>설정, 인물, 세계, 플롯, 재개 문서를 보존하고 플롯 구조만 정리합니다.</span>
               </div>
               <button class="primary" onclick={importStructuredPackage} disabled={running || sourceReading}>이 구조로 바로 시작</button>
             </div>
@@ -390,7 +397,7 @@
                 <div class="source-row">
                   <div class="source-meta">
                     <b>{file.name}</b>
-                    <span>{formatSourceBytes(file.size)} · {file.chars.toLocaleString()}자{file.truncated ? ' · 잘림' : ''}</span>
+                    <span>{formatSourceBytes(file.size)} / {file.chars.toLocaleString()}자{file.truncated ? ' / 잘림' : ''}</span>
                   </div>
                   <button class="quiet danger" onclick={() => removeSourceFile(file.id)}>삭제</button>
                 </div>
@@ -401,7 +408,7 @@
         </section>
       {/if}
 
-      <div class="aux">
+      <nav class="aux" aria-label="보조 작업">
         {#if $pendingProposals > 0}
           <button class="card" onclick={() => mode.set('pending')}>
             설정 변경 후보 <b>{$pendingProposals}건</b>이 보류 중입니다 <span class="go">검토 →</span>
@@ -420,23 +427,68 @@
             같은 작품에서 <b>{freshEpisode}</b> 처음부터 쓰기 <span class="go">시작 →</span>
           </button>
         {/if}
-      </div>
+      </nav>
     {:else}
       <p class="empty">프로젝트 상태를 읽는 중…</p>
     {/if}
-  </div>
+    </div>
+  </section>
+
+  <aside class="project-ledger" aria-label="프로젝트 상태">
+    <div class="ledger-head">
+      <h2>프로젝트 상태</h2>
+      {#if $projectRefreshing}<span class="chip muted">읽는 중</span>{/if}
+    </div>
+    <dl>
+      <div>
+        <dt>AI 실행기</dt>
+        <dd class:warn={agentStatus !== '연결됨'}>{agentStatus}</dd>
+      </div>
+      <div>
+        <dt>설정 바이블</dt>
+        <dd>{foundationReady ? '준비됨' : '준비 전'}</dd>
+      </div>
+      <div>
+        <dt>플롯</dt>
+        <dd>{foundationReady ? '준비됨' : '준비 전'}</dd>
+      </div>
+      <div>
+        <dt>현재 회차</dt>
+        <dd class="mono accent">{$currentEpisode}</dd>
+      </div>
+      <div>
+        <dt>보류</dt>
+        <dd>{$pendingProposals}건</dd>
+      </div>
+      <div>
+        <dt>이번 달 사용량</dt>
+        <dd class="mono">${$usageSummary.thisMonth.costUsd.toFixed(2)}</dd>
+      </div>
+    </dl>
+    <div class="ledger-actions">
+      <button class="ledger-link" onclick={() => mode.set('notes')}>
+        <span><b>작품노트</b><small>인물, 세계, 플롯, 떡밥</small></span><i>열기</i>
+      </button>
+      <button class="ledger-link" onclick={() => mode.set('settings')}>
+        <span><b>실행기 설정</b><small>{$settings.command || '연결 필요'}</small></span><i>열기</i>
+      </button>
+    </div>
+  </aside>
 </div>
 
 <style>
-  .surface { padding: 56px 32px 48px; }
-  .col { max-width: 680px; margin: 0 auto; display: grid; gap: 12px; align-content: start; }
-  .kicker { font-size: 10px; font-weight: 800; letter-spacing: 0.09em; text-transform: uppercase; color: var(--faint); }
-  h1 { margin: 0; font-size: 29px; line-height: 1.28; letter-spacing: -0.012em; font-weight: 750; }
-  .lead { margin: 0; color: var(--muted); font-size: 14.5px; line-height: 1.65; max-width: 56ch; }
+  .surface { display: grid; grid-template-columns: minmax(0, 1fr) 304px; gap: var(--space-7); align-items: start; }
+  .workbench { min-width: 0; }
+  .col { display: grid; gap: var(--space-3); align-content: start; }
+  .kicker { color: var(--faint); font-size: 11px; font-weight: 800; letter-spacing: .04em; }
+  .section-note { margin: calc(var(--space-2) * -1) 0 0; color: var(--muted); font-size: 12px; }
+  h1 { margin: 0; font-size: 26px; line-height: 1.28; letter-spacing: -0.012em; font-weight: 750; }
+  .lead { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.65; max-width: 56ch; }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .ctarow { margin-top: 8px; }
-  .grow { flex: 1; min-width: 220px; padding: 8px 12px; }
-  .big { padding: 8px 24px; font-size: 14px; }
+  .cta-stack { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2); align-items: end; margin-top: var(--space-2); }
+  .intent-field { display: grid; gap: var(--space-1); color: var(--muted); font-size: 11px; }
+  .grow { width: 100%; min-width: 220px; padding: var(--space-2) var(--space-3); }
+  .big { min-height: 40px; padding: var(--space-2) var(--space-6); font-size: 13.5px; }
 
   .source-intake {
     display: grid;
@@ -510,13 +562,13 @@
   }
   .danger { color: var(--bad); }
 
-  .aux { display: grid; gap: 8px; margin-top: 24px; }
+  .aux { display: grid; gap: 0; margin-top: var(--space-4); border-top: 1px solid var(--line); }
   .card {
     display: flex; gap: 8px; align-items: center;
     text-align: left;
-    border: 1px solid var(--line); border-radius: 4px;
-    background: var(--bg-1);
-    padding: 12px 12px;
+    border: 0; border-bottom: 1px solid var(--line); border-radius: 0;
+    background: transparent;
+    padding: var(--space-3) var(--space-2);
     color: var(--muted); font-size: 12.5px;
   }
   .card b { color: var(--text); }
@@ -538,10 +590,37 @@
   .idea .hook { margin: 0; font-size: 13px; line-height: 1.6; grid-column: 1 / -1; }
   .idea .dim { margin: 0; font-size: 12px; grid-column: 1 / -1; }
   .idea .risk { margin: 0; font-size: 11.5px; color: var(--warn); grid-column: 1 / -1; }
+
+  .project-ledger { min-width: 0; border-left: 1px solid var(--line); padding-left: var(--space-5); }
+  .ledger-head { display: flex; align-items: center; justify-content: space-between; min-height: 36px; border-bottom: 1px solid var(--line-strong); }
+  .ledger-head h2 { margin: 0; font-size: 16px; }
+  dl { margin: 0; }
+  dl > div { min-height: 52px; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); border-bottom: 1px solid var(--line); }
+  dt { color: var(--muted); font-size: 12px; }
+  dd { margin: 0; color: var(--text); font-size: 12.5px; font-weight: 700; text-align: right; }
+  dd.warn { color: var(--warn); }
+  dd.accent { color: var(--accent); }
+  .ledger-actions { display: grid; margin-top: var(--space-5); border-top: 1px solid var(--line); }
+  .ledger-link { min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: var(--space-2) 0; text-align: left; }
+  .ledger-link span { min-width: 0; display: grid; gap: var(--space-1); }
+  .ledger-link b { color: var(--text); font-size: 12.5px; }
+  .ledger-link small { overflow: hidden; color: var(--faint); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+  .ledger-link i { color: var(--accent); font-size: 11px; font-style: normal; }
+
+  @media (max-width: 1120px) {
+    .surface { grid-template-columns: minmax(0, 1fr) 264px; gap: var(--space-5); }
+  }
+  @media (max-width: 820px) {
+    .surface { grid-template-columns: minmax(0, 1fr); }
+    .project-ledger { border-top: 1px solid var(--line-strong); border-left: 0; padding-top: var(--space-4); padding-left: 0; }
+    .ledger-actions { grid-template-columns: 1fr 1fr; gap: var(--space-4); }
+  }
   @media (max-width: 560px) {
     .idea { grid-template-columns: minmax(0, 1fr); }
     .idea .act { grid-column: 1; grid-row: auto; }
     .package-ready { display: grid; }
     .package-ready button { width: 100%; }
+    .cta-stack, .ledger-actions { grid-template-columns: minmax(0, 1fr); }
+    .big { width: 100%; }
   }
 </style>
