@@ -5,7 +5,7 @@
     persistSettings, project, projectRefreshError, projectRefreshing, refreshAll,
     providerUsage, returnToProjectPicker, runDockOpen, runlog, settings, uiMode, usageSummary
   } from '$lib/stores/app';
-  import { formatUsd, isAgyCommand } from '$lib/harness/usage';
+  import { formatUsd, isAgyCommand, summarizeProviderQuota } from '$lib/harness/usage';
   import RunDock from './RunDock.svelte';
   import StatusBar from './StatusBar.svelte';
   import HomeSurface from './surfaces/HomeSurface.svelte';
@@ -47,9 +47,12 @@
   const agentLabel = $derived(
     $settings.offline ? '오프라인' : $settings.command ? `${$settings.command}${$settings.model ? ` · ${$settings.model}` : ''}` : '실행기 미설정'
   );
-  const agyFiveHourRemaining = $derived.by(() => {
-    if (!isAgyCommand($settings.command) || !$providerUsage?.ok) return null;
-    const values = $providerUsage.groups.flatMap((group) => group.fiveHour ? [group.fiveHour.remainingPercent] : []);
+  const agyQuota = $derived.by(() => {
+    if (!isAgyCommand($settings.command) || !$providerUsage?.ok) return { fiveHour: null, weekly: null };
+    return summarizeProviderQuota($providerUsage.groups);
+  });
+  const agyQuotaFloor = $derived.by(() => {
+    const values = [agyQuota.fiveHour, agyQuota.weekly].filter((value): value is number => value != null);
     return values.length ? Math.min(...values) : null;
   });
   const canSwitchProject = $derived(!$busy && !$activeRun);
@@ -174,15 +177,16 @@
           외부 변경 {$externalChanges.length}건
         </button>
       {/if}
-      {#if !$settings.offline && isAgyCommand($settings.command) && agyFiveHourRemaining != null}
+      {#if !$settings.offline && isAgyCommand($settings.command)}
         <button
-          class="quiet cost"
-          class:over={agyFiveHourRemaining <= 10}
-          class:near={agyFiveHourRemaining > 10 && agyFiveHourRemaining <= 25}
+          class="quiet quota-pair"
+          class:over={agyQuotaFloor != null && agyQuotaFloor <= 10}
+          class:near={agyQuotaFloor != null && agyQuotaFloor > 10 && agyQuotaFloor <= 25}
           onclick={() => mode.set('settings')}
-          title="Agy 5시간 잔여 한도"
+          title={`Agy 잔여 한도 · 5h ${agyQuota.fiveHour == null ? '조회 필요' : `${Math.round(agyQuota.fiveHour)}%`} · 1주 ${agyQuota.weekly == null ? '조회 필요' : `${Math.round(agyQuota.weekly)}%`}`}
         >
-          Agy {Math.round(agyFiveHourRemaining)}%
+          <span><small>5h</small><b>{agyQuota.fiveHour == null ? '--' : `${Math.round(agyQuota.fiveHour)}%`}</b></span>
+          <span><small>1주</small><b>{agyQuota.weekly == null ? '--' : `${Math.round(agyQuota.weekly)}%`}</b></span>
         </button>
       {:else if !$settings.offline && !isAgyCommand($settings.command) && $usageSummary.thisMonth.costUsd > 0}
         <button
@@ -322,6 +326,15 @@
   .cost { font-size: 11px; font-variant-numeric: tabular-nums; }
   .cost.near { color: var(--warn); }
   .cost.over { color: var(--bad); background: var(--bad-soft); }
+  .quota-pair { display: flex; align-items: center; gap: var(--space-2); font-variant-numeric: tabular-nums; }
+  .quota-pair span { display: flex; align-items: baseline; gap: var(--space-1); }
+  .quota-pair small { color: var(--faint); font-size: 9.5px; font-weight: 700; }
+  .quota-pair b { color: var(--text); font-size: 10.5px; }
+  .quota-pair.near small,
+  .quota-pair.near b { color: var(--warn); }
+  .quota-pair.over { background: var(--bad-soft); }
+  .quota-pair.over small,
+  .quota-pair.over b { color: var(--bad); }
   .agent { max-width: 220px; overflow: hidden; font-family: var(--mono); font-size: 10.5px; text-overflow: ellipsis; }
   .agent.warn { color: var(--warn); }
   .changes { color: var(--accent); background: var(--accent-soft); font-size: 11px; }
@@ -369,6 +382,7 @@
     .topbar { gap: var(--space-2); padding: 0 var(--space-2); }
     .context-hint, .runs, .cost, .changes { display: none; }
     .topbar-actions { margin-left: auto; }
-    .agent { max-width: 112px; }
+    .agent { max-width: 96px; }
+    .quota-pair { gap: var(--space-1); padding-inline: var(--space-1); }
   }
 </style>

@@ -9,6 +9,13 @@
   } from '$lib/stores/app';
   import { formatUsd, isAgyCommand } from '$lib/harness/usage';
   import {
+    loadPlanningInstruction,
+    normalizePlanningInstruction,
+    PLANNING_INSTRUCTION_MAX_CHARS,
+    PLANNING_INSTRUCTION_PATH,
+    savePlanningInstruction
+  } from '$lib/harness/planningInstruction';
+  import {
     runEpisodeAutopilot, runRevisionAutopilot, buildRevisionCandidate,
     runCloseEpisodeAutopilot, finalizeCloseEpisode, applyCandidateToManuscript,
     ensureEpisodeScaffold, ensureStoryFoundation,
@@ -49,6 +56,10 @@
   let softGaps = $state<string[]>([]);
   let packManifest = $state<ContextPackManifest | null>(null);
   let activeStyleName = $state<string | null>(null);
+  let planningPrompt = $state('');
+  let savedPlanningPrompt = $state('');
+  let candidatePlanningPrompt = $state('');
+  let loadedPromptEpisode = '';
 
   const ep = $derived($currentEpisode);
   const paths = $derived(episodePaths(ep));
@@ -58,6 +69,7 @@
   const epStatus = $derived($progress[ep]?.status ?? 'planned');
   const draftCards = $derived($candidates.filter((c) => c.kind === 'draft'));
   const running = $derived(Boolean($busy || $activeRun));
+  const planningPromptDirty = $derived(normalizePlanningInstruction(planningPrompt) !== candidatePlanningPrompt);
 
   type Phase = 'start' | 'candidates' | 'manuscript';
   const phase = $derived.by((): Phase => {
@@ -74,18 +86,25 @@
   async function load() {
     const c = ctx();
     summaryText = await readOptional(c, summaryPath(ep));
-    const [brief, scenePlan, epContext, manifest, activeStyle] = await Promise.all([
+    const [brief, scenePlan, epContext, manifest, activeStyle, initialPrompt] = await Promise.all([
       loadBrief(c, ep),
       loadScenePlan(c, ep),
       loadEpisodeContext(c, ep),
       loadContextPackManifest(c, ep),
-      loadActiveStylePreset(c).catch(() => null)
+      loadActiveStylePreset(c).catch(() => null),
+      loadPlanningInstruction(c)
     ]);
     manuscript = epContext.currentManuscript;
     manuscriptLoadedHash = contentHash(manuscript);
     contextSources = epContext.sources;
     packManifest = manifest;
     activeStyleName = activeStyle?.name ?? null;
+    planningPrompt = initialPrompt;
+    savedPlanningPrompt = initialPrompt;
+    if (loadedPromptEpisode !== ep) {
+      candidatePlanningPrompt = initialPrompt;
+      loadedPromptEpisode = ep;
+    }
     // hard gate(바이블·이번 화 플롯)와 soft gap(스타일·이전 요약 등)을 구분한다:
     // 전자는 집필을 막고 준비 CTA로, 후자는 알리되 AI 추정으로 계속 진행한다.
     foundationMissing = [
@@ -116,7 +135,7 @@
     else if (kick === 'candidates') showCandidates = true;
   });
 
-  async function write(regeneratePlan = false, keepFeed = false) {
+  async function write(regeneratePlan = false, keepFeed = false, promptOverride?: string) {
     if (foundationMissing.length) {
       toast('집필 전에 바이블과 플롯 준비가 필요합니다.', 'warn');
       return;
@@ -126,7 +145,14 @@
       toast(`이번 달 추정 요금이 예산(${formatUsd($usageSummary.budgetUsd)})을 넘었습니다. 계속 진행합니다 - 설정에서 예산을 확인하세요.`, 'warn');
     }
     if (!keepFeed) clearRunFeed();
-    const note = $intentNote.trim();
+    let note = normalizePlanningInstruction(promptOverride === undefined ? $intentNote : promptOverride);
+    if (promptOverride !== undefined) {
+      note = await savePlanningInstruction(ctx(), note);
+      planningPrompt = note;
+      savedPlanningPrompt = note;
+    } else if (!note && ep === 'ep001') {
+      note = savedPlanningPrompt || await loadPlanningInstruction(ctx());
+    }
     const r = await withBusy('이번 화 쓰기', () =>
       runEpisodeAutopilot(ctx(), { episode: ep, userNote: note, candidateCount: 1, regeneratePlan })
     );
@@ -144,6 +170,9 @@
       toast(`비어 있는 기초자료: ${r.contextMissing.join(', ')} - 작품노트에서 채우면 품질이 좋아집니다`, 'info');
     }
     await load();
+    if (!r.error && r.candidates.length) {
+      candidatePlanningPrompt = promptOverride === undefined ? savedPlanningPrompt : note;
+    }
     if (hasManuscript) showCandidates = true;
   }
 
@@ -161,10 +190,13 @@
 
   async function prepareThenWrite() {
     clearRunFeed();
+    const initialPrompt = await savePlanningInstruction(ctx(), planningPrompt || $intentNote);
+    planningPrompt = initialPrompt;
+    savedPlanningPrompt = initialPrompt;
     const r = await withBusy('작품 기준 준비', () =>
       ensureStoryFoundation(ctx(), {
         title: $project?.title ?? '작품',
-        startInstruction: $intentNote,
+        startInstruction: initialPrompt,
         episode: ep
       }), false
     );
@@ -172,7 +204,11 @@
     toast(`작품 기준 준비됨: 자산 ${r.assets}건, ${foundationLabel(r)}.`, r.bibleSource === 'fallback' || r.plotSource === 'fallback' ? 'warn' : 'ok');
     await refreshAll();
     await load();
-    await write(true, true);
+    await write(true, true, initialPrompt);
+  }
+
+  async function rewriteFromPlanningPrompt() {
+    await write(true, false, planningPrompt);
   }
 
   async function openPreview(c: CandidateFile) {
@@ -180,6 +216,10 @@
   }
 
   async function adopt(c: CandidateFile) {
+    if (planningPromptDirty) {
+      toast('수정한 프롬프트로 초안을 다시 만든 뒤 후보를 적용하세요.', 'warn');
+      return;
+    }
     await withBusy('후보 적용', async () => {
       await applyCandidateToManuscript(ctx(), c);
       toast(`${c.label}을(를) 원고에 반영했습니다 (이전본 스냅샷 보존).`, 'ok');
@@ -188,6 +228,10 @@
   }
 
   async function applyPartial(result: string, kind: 'all' | 'partial') {
+    if (planningPromptDirty) {
+      toast('수정한 프롬프트로 초안을 다시 만든 뒤 비교 결과를 적용하세요.', 'warn');
+      return;
+    }
     await withBusy('후보 적용', async () => {
       await applyToManuscript(ctx(), ep, result, `${preview?.candidate.label ?? '후보'} ${kind === 'all' ? '전체' : '일부'} 적용`);
       toast(`원고에 ${kind === 'all' ? '전체' : '선택 구간만'} 반영됨 (스냅샷 보존)`, 'ok');
@@ -368,6 +412,33 @@
       {/each}
     </div>
 
+    {#if !running && (phase === 'start' || phase === 'candidates' || showCandidates)}
+      <section class="planning-prompt" aria-label="초기 기획 프롬프트">
+        <div class="prompt-heading">
+          <div>
+            <span class="kicker">초기 기획 프롬프트</span>
+            <p>기획 시작 때 직접 입력한 작품 방향입니다. 수정 후 다시 쓰면 회차 설계와 초안 후보를 새로 만들며 현재 원고는 바꾸지 않습니다.</p>
+          </div>
+          <span class="mono dim">{PLANNING_INSTRUCTION_PATH}</span>
+        </div>
+        <textarea
+          bind:value={planningPrompt}
+          maxlength={PLANNING_INSTRUCTION_MAX_CHARS}
+          rows="4"
+          placeholder="초기 기획 프롬프트가 비어 있습니다. 작품 방향을 입력할 수 있습니다."
+        ></textarea>
+        <div class="prompt-footer">
+          <span class="dim">
+            {planningPromptDirty ? '현재 후보를 만든 프롬프트에서 수정됨' : savedPlanningPrompt ? '현재 후보에 사용한 프롬프트' : '아직 저장된 프롬프트 없음'}
+            · {planningPrompt.length}/{PLANNING_INSTRUCTION_MAX_CHARS}
+          </span>
+          <button class="primary" onclick={rewriteFromPlanningPrompt}>
+            {planningPromptDirty ? '수정한 프롬프트로 다시 쓰기' : '이 프롬프트로 설계부터 다시 쓰기'}
+          </button>
+        </div>
+      </section>
+    {/if}
+
     {#if running}
       <LiveRunPanel />
     {:else if closeCard}
@@ -429,12 +500,25 @@
         <div class="row headrow">
           <span class="kicker">{preview.candidate.label} 미리보기</span>
           <button class="quiet" class:on={!preview.showDiff} onclick={() => (preview = { ...preview!, showDiff: false })}>전문</button>
-          <button class="quiet" class:on={preview.showDiff} onclick={() => (preview = { ...preview!, showDiff: true })}>현재 원고와 비교</button>
+          <button
+            class="quiet"
+            class:on={preview.showDiff}
+            onclick={() => (preview = { ...preview!, showDiff: true })}
+            disabled={planningPromptDirty}
+            title={planningPromptDirty ? '수정한 프롬프트로 초안을 다시 만든 뒤 비교하세요' : '현재 원고와 비교'}
+          >현재 원고와 비교</button>
           <span class="grow"></span>
-          <button class="primary" onclick={() => adopt(preview!.candidate)}>이 후보 적용</button>
+          <button
+            class="primary"
+            onclick={() => adopt(preview!.candidate)}
+            disabled={planningPromptDirty}
+            title={planningPromptDirty ? '수정한 프롬프트로 초안을 다시 만든 뒤 적용하세요' : '이 후보 적용'}
+          >이 후보 적용</button>
           <button class="quiet" onclick={() => (preview = null)}>닫기</button>
         </div>
-        {#if preview.showDiff}
+        {#if preview.showDiff && planningPromptDirty}
+          <div class="fallback-warn">수정한 프롬프트로 초안을 다시 만든 뒤 비교하고 적용할 수 있습니다.</div>
+        {:else if preview.showDiff}
           <DiffView base={body} next={preview.body} onapply={applyPartial} />
         {:else}
           <div class="reader">{preview.body}</div>
@@ -505,14 +589,18 @@
               {/if}
               <div class="row">
                 <button class="quiet" onclick={() => openPreview(c)}>미리보기</button>
-                <button class="primary" onclick={() => adopt(c)}>이 후보 적용</button>
+                <button
+                  class="primary"
+                  onclick={() => adopt(c)}
+                  disabled={planningPromptDirty}
+                  title={planningPromptDirty ? '수정한 프롬프트로 초안을 다시 만든 뒤 적용하세요' : '이 후보 적용'}
+                >이 후보 적용</button>
               </div>
             </article>
           {/each}
         </div>
         <div class="row">
-          <button class="quiet" onclick={() => write()}>다시 만들기</button>
-          <button class="quiet" onclick={() => write(true)}>설계부터 다시</button>
+          <button class="quiet" onclick={() => write()}>현재 설계로 후보 다시 만들기</button>
         </div>
         {#if usedSources.length}
           <p class="srcline">
@@ -666,6 +754,20 @@
   .small { font-size: 11.5px; margin: 0; }
   .ctarow { margin-top: 4px; }
   .start { padding: 8px 0 4px; }
+  .planning-prompt {
+    display: grid;
+    gap: var(--space-2);
+    padding: var(--space-3) 0;
+    border-top: 1px solid var(--line-strong);
+    border-bottom: 1px solid var(--line);
+  }
+  .planning-prompt textarea { width: 100%; min-height: calc(var(--control-height) * 3); }
+  .prompt-heading,
+  .prompt-footer { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--space-3); flex-wrap: wrap; }
+  .prompt-heading > div { display: grid; gap: var(--space-1); }
+  .prompt-heading p { margin: 0; color: var(--muted); font-size: 12px; }
+  .prompt-heading > .mono { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .prompt-footer { align-items: center; }
 
   /* 후보는 좁은 세로 카드 대신 전폭 행으로 - 긴 요약이 세로로 늘어지지 않고
      후보 간 비교가 줄 단위로 읽힌다 (에디토리얼 리스트). */

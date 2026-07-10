@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { memoryBridge, resetMemoryBridge } from '../src/lib/bridge/memoryBridge';
 import {
   appendUsage, costOf, defaultModelRates, estimateTokens, loadUsageLedger,
-  parseAgyUsage, rateFor, summarizeUsage, usageEntryFromChars, type UsageEntry
+  parseAgyUsage, rateFor, summarizeProviderQuota, summarizeUsage, usageEntryFromChars, type UsageEntry
 } from '../src/lib/harness/usage';
 import type { Ctx } from '../src/lib/harness/types';
 
@@ -100,5 +100,6 @@ CLAUDE AND GPT MODELS
     expect(parsed.groups[0].fiveHour).toEqual({ remainingPercent: 96.8, refreshesIn: '4h 1m' });
     expect(parsed.groups[1].weekly?.remainingPercent).toBe(100);
     expect(parsed.groups[1].fiveHour?.remainingPercent).toBe(100);
+    expect(summarizeProviderQuota(parsed.groups)).toEqual({ fiveHour: 96.8, weekly: 90.27 });
   });
 });

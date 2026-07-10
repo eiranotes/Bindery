@@ -255,6 +255,27 @@ describe('autopilot — 최소 입력·자동 중간 처리·최종 선택', () 
     }
   });
 
+  it('기획 채택은 처음 작성한 프롬프트를 세계관과 플롯 설계까지 이어 보낸다', async () => {
+    const instruction = '주인공의 첫 승리보다 운영 실패와 채권자 압박을 먼저 보여준다.';
+    const prompts: Record<string, string> = {};
+    setAgentScript((prompt, label) => {
+      for (const stage of ['world-expansion', 'plot-plan']) {
+        if (label.includes(stage) && !prompts[stage]) prompts[stage] = prompt;
+      }
+      return scriptedAgent(prompt, label);
+    });
+
+    const starter = await runProjectStarterAutopilot(ctx, instruction);
+    expect(starter.ideas).toHaveLength(1);
+    await adoptStarterIdea(ctx, starter.ideas[0], '던전 머니볼', instruction);
+
+    expect(Object.keys(prompts).sort()).toEqual(['plot-plan', 'world-expansion']);
+    for (const prompt of Object.values(prompts)) {
+      expect(prompt).toContain('[사용자 추가 지시]');
+      expect(prompt).toContain(instruction);
+    }
+  });
+
   it('workflow: 상태에 따라 next action이 이동한다', async () => {
     // 빈 프로젝트 → startProject
     let step = computeNextStep(await loadWorkflowSnapshot(ctx));

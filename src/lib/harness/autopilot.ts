@@ -372,12 +372,14 @@ export async function ensureStoryFoundation(
 export async function adoptStarterIdea(
   ctx: Ctx,
   idea: IdeaFile,
-  title: string
+  title: string,
+  startInstruction = ''
 ): Promise<{ assets: number; plotEpisodes: number; bibleSource: 'agent' | 'fallback' | 'none' }> {
   const selected = idea.status === 'selected' ? idea : await moveIdea(ctx, idea, 'selected');
+  const planningInstruction = formatPlanningInstruction(startInstruction);
 
   // 세계관 확장 proposal — 채택이 곧 방향 확정이므로 전 항목 승인 후 반영(파일별 스냅샷 선행)
-  const { proposal } = await expandWorld(ctx, [selected], '');
+  const { proposal } = await expandWorld(ctx, [selected], planningInstruction);
   let approvedAssets = 0;
   let bibleSource: 'agent' | 'fallback' | 'none' = 'none';
   if (proposal.source !== 'fallback') {
@@ -396,6 +398,9 @@ export async function adoptStarterIdea(
   bibleSource = outcome.source;
 
   // 플롯 초안 — row는 draft 상태로 남는다 (진행 확정은 hard commit이므로 자동 승인하지 않음)
-  const plot = await proposePlot(ctx, 8, `채택 기획: ${selected.seed.title} — ${selected.seed.hook}`);
+  const plot = await proposePlot(ctx, 8, [
+    `채택 기획: ${selected.seed.title} - ${selected.seed.hook}`,
+    planningInstruction
+  ].filter(Boolean).join('\n\n'));
   return { assets: approvedAssets, plotEpisodes: plot.output.episodes.length, bibleSource };
 }

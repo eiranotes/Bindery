@@ -22,8 +22,12 @@
     restartPlanningAtEpisodeOne, type PlanningStartMode
   } from '$lib/harness/sourcePackage';
   import type { IdeaFile } from '$lib/harness/ideas';
-  import { isAgyCommand } from '$lib/harness/usage';
-  import { PLANNING_INSTRUCTION_MAX_CHARS } from '$lib/harness/planningInstruction';
+  import { isAgyCommand, summarizeProviderQuota } from '$lib/harness/usage';
+  import {
+    normalizePlanningInstruction,
+    PLANNING_INSTRUCTION_MAX_CHARS,
+    savePlanningInstruction
+  } from '$lib/harness/planningInstruction';
   import LiveRunPanel from '../LiveRunPanel.svelte';
 
   const SOURCE_PROMPT_MAX_CHARS = 18_000;
@@ -36,6 +40,7 @@
   let sourceReading = $state(false);
   let sourceProgress = $state<SourceUploadProgress | null>(null);
   let sourceAbort: AbortController | null = null;
+  let starterPromptUsed = $state('');
   let workflowRefreshToken = 0;
   const running = $derived(Boolean($busy || $activeRun));
   const planningPackage = $derived(detectPlanningPackage(sourceUploads));
@@ -47,16 +52,15 @@
     const chars = sourceUploads.reduce((sum, file) => sum + file.chars, 0);
     return `${sourceUploads.length}개 · ${chars.toLocaleString()}자`;
   });
-  const actualFiveHourRemaining = $derived.by(() => {
-    if (!isAgyCommand($settings.command) || !$providerUsage?.ok) return null;
-    const values = $providerUsage.groups.flatMap((group) => group.fiveHour ? [group.fiveHour.remainingPercent] : []);
-    return values.length ? Math.min(...values) : null;
+  const actualQuota = $derived.by(() => {
+    if (!isAgyCommand($settings.command) || !$providerUsage?.ok) return { fiveHour: null, weekly: null };
+    return summarizeProviderQuota($providerUsage.groups);
   });
-  const actualWeeklyRemaining = $derived.by(() => {
-    if (!isAgyCommand($settings.command) || !$providerUsage?.ok) return null;
-    const values = $providerUsage.groups.flatMap((group) => group.weekly ? [group.weekly.remainingPercent] : []);
-    return values.length ? Math.min(...values) : null;
-  });
+  const actualFiveHourRemaining = $derived(actualQuota.fiveHour);
+  const actualWeeklyRemaining = $derived(actualQuota.weekly);
+  const starterPromptDirty = $derived(Boolean(
+    starterIdeas.length && normalizePlanningInstruction($intentNote) !== starterPromptUsed
+  ));
 
   $effect(() => {
     void $progress;
@@ -85,7 +89,8 @@
     if (!step || sourceReading) return;
     if (step.action === 'startProject') {
       clearRunFeed();
-      const starterNote = [$intentNote.trim(), sourcePromptText()].filter(Boolean).join('\n\n');
+      const authoredPrompt = await savePlanningInstruction(ctx(), $intentNote);
+      const starterNote = [authoredPrompt, sourcePromptText()].filter(Boolean).join('\n\n');
       const sourceCount = sourceUploads.length;
       const r = await withBusy('기획 후보 생성', async () => {
         await saveSourceRawIfNeeded();
@@ -97,7 +102,7 @@
         return;
       }
       starterIdeas = r.ideas;
-      intentNote.set('');
+      starterPromptUsed = authoredPrompt;
       if (sourceCount) toast('업로드 자료 저장됨: notes/source-raw.md', 'ok');
       if (r.ideas.every((i) => i.seed.source === 'local')) {
         toast('AI 실행기가 연결되지 않아 뼈대만 만들었습니다. 설정을 확인하세요.', 'warn');
@@ -118,10 +123,13 @@
 
   async function adopt(idea: IdeaFile) {
     clearRunFeed();
-    const r = await withBusy('작품 기본 구성', () => adoptStarterIdea(ctx(), idea, $project?.title ?? '작품'));
+    const r = await withBusy('작품 기본 구성', () =>
+      adoptStarterIdea(ctx(), idea, $project?.title ?? '작품', starterPromptUsed)
+    );
     if (!r) return;
     starterIdeas = [];
     sourceUploads = [];
+    intentNote.set('');
     const bible = r.bibleSource === 'agent' ? 'AI 바이블' : r.bibleSource === 'fallback' ? '로컬 바이블' : '바이블 없음';
     toast(`기획 채택됨 - 세계관 자산 ${r.assets}건 → ${bible} → 플롯 초안 ${r.plotEpisodes}화가 준비됐습니다.`, 'ok');
     await refreshAll();
@@ -133,6 +141,7 @@
     if (!pkg || sourceReading) return;
     clearRunFeed();
     const r = await withBusy('구조화 기획 가져오기', async () => {
+      await savePlanningInstruction(ctx(), $intentNote);
       await saveSourceRawIfNeeded();
       const imported = await importPlanningPackage(ctx(), pkg, startMode);
       await ensureEpisodeScaffold(ctx(), imported.startEpisode);
@@ -173,6 +182,7 @@
     if (!step?.episode) return;
     clearRunFeed();
     currentEpisode.set(step.episode);
+    await savePlanningInstruction(ctx(), $intentNote);
     const r = await withBusy('작품 기준 준비', () =>
       ensureStoryFoundation(ctx(), {
         title: $project?.title ?? '작품',
@@ -209,6 +219,7 @@
     clearRunFeed();
     currentEpisode.set(target);
     const r = await withBusy('새 회차 준비', async () => {
+      await savePlanningInstruction(ctx(), $intentNote);
       await restartPlanningAtEpisodeOne(ctx(), $project?.title ?? '현재 프로젝트');
       await ensureEpisodeScaffold(ctx(), target);
       return ensureStoryFoundation(ctx(), {
@@ -354,7 +365,12 @@
               {#if idea.seed.source === 'agent'}<span class="chip ok">AI</span>{:else}<span class="chip warn">뼈대</span>{/if}
             </h3>
             <div class="row act">
-              <button class="primary" onclick={() => adopt(idea)}>이 기획으로 시작</button>
+              <button
+                class="primary"
+                onclick={() => adopt(idea)}
+                disabled={starterPromptDirty}
+                title={starterPromptDirty ? '수정한 프롬프트로 기획안을 다시 만든 뒤 채택하세요' : '이 기획으로 시작'}
+              >이 기획으로 시작</button>
             </div>
             <p class="hook">{idea.seed.hook}</p>
             <p class="dim">약속: {idea.seed.reader_promise || '(미정)'}</p>
@@ -362,9 +378,26 @@
           </article>
         {/each}
       </div>
-      <div class="row">
+      <div class="planning-prompt">
+        <label class="intent-field">
+          <span>이 기획에 사용한 초기 프롬프트</span>
+          <textarea
+            bind:value={$intentNote}
+            maxlength={PLANNING_INSTRUCTION_MAX_CHARS}
+            rows="3"
+            placeholder="기획 시작 때 입력한 작품 방향"
+          ></textarea>
+          <small>
+            프로젝트에 보존됩니다. 수정했다면 기획안을 다시 만든 뒤 채택하세요.
+            {$intentNote.length}/{PLANNING_INSTRUCTION_MAX_CHARS}
+          </small>
+        </label>
+      </div>
+      <div class="row prompt-actions">
         <button class="quiet" onclick={() => (starterIdeas = [])}>취소</button>
-        <button class="quiet" onclick={go}>다시 만들기</button>
+        <button class={starterPromptDirty ? 'primary' : 'quiet'} onclick={go}>
+          {starterPromptDirty ? '수정한 프롬프트로 다시 만들기' : '같은 프롬프트로 다시 만들기'}
+        </button>
       </div>
     {:else if step}
       <span class="kicker">다음 작업</span>
@@ -373,13 +406,14 @@
       <div class="cta-stack">
         {#if showPrimaryIntent}
           <label class="intent-field">
-            <span>추가 지시 (선택)</span>
-            <input
+            <span>{step.action === 'startProject' ? '초기 기획 프롬프트 (선택)' : '추가 지시 (선택)'}</span>
+            <textarea
               class="grow"
               bind:value={$intentNote}
               maxlength={PLANNING_INSTRUCTION_MAX_CHARS}
+              rows="3"
               placeholder="예: 1화는 현장 장면부터, 코믹 톤은 줄이기"
-            />
+            ></textarea>
             <small>{intentHelp} {$intentNote.length}/{PLANNING_INSTRUCTION_MAX_CHARS}</small>
           </label>
         {/if}
@@ -562,6 +596,9 @@
   .cta-stack { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2); align-items: end; margin-top: var(--space-2); }
   .intent-field { display: grid; gap: var(--space-1); color: var(--muted); font-size: 11px; }
   .intent-field small { color: var(--faint); font-size: inherit; }
+  .intent-field textarea { min-height: calc(var(--control-height) * 2); }
+  .planning-prompt { padding-top: var(--space-2); border-top: 1px solid var(--line); }
+  .prompt-actions { justify-content: flex-end; }
   .restart-intent { padding: var(--space-3) var(--space-2); }
   .grow { width: 100%; min-width: 220px; padding: var(--space-2) var(--space-3); }
   .big { min-height: 40px; padding: var(--space-2) var(--space-6); font-size: 13.5px; }

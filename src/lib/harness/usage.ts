@@ -236,6 +236,20 @@ export type ProviderUsage = {
   error?: string;
 };
 
+export type ProviderQuotaSummary = {
+  fiveHour: number | null;
+  weekly: number | null;
+};
+
+/** 여러 모델 그룹 중 가장 먼저 닿는 한도를 보수적으로 대표값으로 사용한다. */
+export function summarizeProviderQuota(groups: ProviderUsageGroup[]): ProviderQuotaSummary {
+  const minimum = (values: number[]): number | null => values.length ? Math.min(...values) : null;
+  return {
+    fiveHour: minimum(groups.flatMap((group) => group.fiveHour ? [group.fiveHour.remainingPercent] : [])),
+    weekly: minimum(groups.flatMap((group) => group.weekly ? [group.weekly.remainingPercent] : []))
+  };
+}
+
 const PROVIDER_USAGE_PATH = `${LAYOUT.bindery.root}/provider-usage.json`;
 
 function hasProviderQuota(groups: ProviderUsageGroup[]): boolean {

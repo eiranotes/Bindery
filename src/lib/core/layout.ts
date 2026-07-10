@@ -51,6 +51,7 @@ export const LAYOUT = {
     snapshots: '.bindery/snapshots',
     exchange: '.bindery/exchange',
     trace: '.bindery/trace',
+    planningPrompt: '.bindery/initial-planning-prompt.md',
     settings: '.bindery/settings.json'
   },
   promptsCopy: 'prompts'
