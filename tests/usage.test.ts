@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { memoryBridge, resetMemoryBridge } from '../src/lib/bridge/memoryBridge';
 import {
   appendUsage, costOf, defaultModelRates, estimateTokens, loadUsageLedger,
-  rateFor, summarizeUsage, usageEntryFromChars, type UsageEntry
+  parseAgyUsage, rateFor, summarizeUsage, usageEntryFromChars, type UsageEntry
 } from '../src/lib/harness/usage';
 import type { Ctx } from '../src/lib/harness/types';
 
@@ -69,5 +69,36 @@ describe('원장 누적·집계', () => {
     expect(s.byScope[0].scope).toBe('ep001');
     // fallback 실행도 run 수엔 잡히지만 요금은 0.
     expect(s.byScope.find((x) => x.scope === 'ep003')?.totals.costUsd).toBe(0);
+  });
+});
+
+describe('agy 실제 /usage 파싱', () => {
+  it('Gemini와 Claude/GPT 그룹의 5시간·주간 잔여량을 읽는다', () => {
+    const parsed = parseAgyUsage(`
+└ Models & Quota
+  Account: writer@example.com
+GEMINI MODELS
+  Models within this group: Gemini Flash, Gemini Pro
+  Weekly Limit
+    [█████████░] 90.27%
+    90% remaining · Refreshes in 18h 59m
+  Five Hour Limit
+    [██████████] 96.80%
+    97% remaining · Refreshes in 4h 1m
+CLAUDE AND GPT MODELS
+  Models within this group: Claude Opus, Claude Sonnet, GPT-OSS
+  Weekly Limit
+    [██████████] 100.00%
+    Quota available
+  Five Hour Limit
+    [██████████] 100.00%
+    Quota available
+`);
+    expect(parsed.account).toBe('writer@example.com');
+    expect(parsed.groups).toHaveLength(2);
+    expect(parsed.groups[0].weekly).toEqual({ remainingPercent: 90.27, refreshesIn: '18h 59m' });
+    expect(parsed.groups[0].fiveHour).toEqual({ remainingPercent: 96.8, refreshesIn: '4h 1m' });
+    expect(parsed.groups[1].weekly?.remainingPercent).toBe(100);
+    expect(parsed.groups[1].fiveHour?.remainingPercent).toBe(100);
   });
 });

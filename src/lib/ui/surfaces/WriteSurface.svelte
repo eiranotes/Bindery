@@ -5,9 +5,9 @@
   import {
     ctx, currentEpisode, episodes, progress, candidates, withBusy, toast,
     refreshAll, refreshCandidates, busy, activeRun, intentNote, autopilotKick,
-    clearRunFeed, uiMode, mode, project, snapshots, usageSummary
+    clearRunFeed, uiMode, mode, project, settings, snapshots, usageSummary
   } from '$lib/stores/app';
-  import { formatUsd } from '$lib/harness/usage';
+  import { formatUsd, isAgyCommand } from '$lib/harness/usage';
   import {
     runEpisodeAutopilot, runRevisionAutopilot, buildRevisionCandidate,
     runCloseEpisodeAutopilot, finalizeCloseEpisode, applyCandidateToManuscript,
@@ -122,7 +122,7 @@
       return;
     }
     // 월 예산 초과 시 실행 전에 알린다 (차단은 하지 않는다 - 사용자 판단).
-    if ($usageSummary.budgetUsd > 0 && $usageSummary.budgetRatio >= 1) {
+    if (!isAgyCommand($settings.command) && $usageSummary.budgetUsd > 0 && $usageSummary.budgetRatio >= 1) {
       toast(`이번 달 추정 요금이 예산(${formatUsd($usageSummary.budgetUsd)})을 넘었습니다. 계속 진행합니다 - 설정에서 예산을 확인하세요.`, 'warn');
     }
     if (!keepFeed) clearRunFeed();

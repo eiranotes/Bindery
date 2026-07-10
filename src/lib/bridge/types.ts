@@ -32,6 +32,15 @@ export type AgentStreamEvent =
   | { type: 'stdout' | 'stderr'; text: string }
   | { type: 'done'; result: AgentResult };
 
+export type ProviderUsageCommandResult = {
+  ok: boolean;
+  raw: string;
+  stderr: string;
+  durationMs: number;
+  /** tmux | unsupported | timeout | spawn-error */
+  mode: string;
+};
+
 export interface Bridge {
   readonly kind: 'dev' | 'memory' | 'tauri';
   readFile(root: string, path: string): Promise<string>;
@@ -43,6 +52,8 @@ export interface Bridge {
   /** 프로젝트 루트 폴더 생성. 반환값은 절대경로 루트. */
   scaffold(base: string, name: string): Promise<string>;
   runAgent(root: string, prompt: string, label: string, settings: AgentSettings): Promise<AgentResult>;
+  /** agy 같은 대화형 실행기의 /usage 화면을 실제 TTY에서 조회한다. */
+  runProviderUsage(root: string, command: string, timeoutMs?: number): Promise<ProviderUsageCommandResult>;
   runAgentStream?(
     root: string,
     prompt: string,

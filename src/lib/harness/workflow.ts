@@ -10,6 +10,7 @@ import { loadProposals, pendingCount } from './proposals';
 import { hasSubstance, nextEpisode } from './context';
 import { collectAssetFiles } from './bible';
 import { listIdeas } from './ideas';
+import { inferResumeNextEpisode } from './sourcePackage';
 import type { Ctx } from './types';
 
 /** 간단 모드가 노출하는 사용자 액션의 전부. 세부 stage는 여기 없다. */
@@ -53,18 +54,21 @@ export type NextStep = {
 };
 
 export async function loadWorkflowSnapshot(ctx: Ctx): Promise<WorkflowSnapshot> {
-  const [bible, plot, episodes, progress, proposals, assets, ideas] = await Promise.all([
+  const [bible, plot, episodes, progress, proposals, assets, ideas, resumeState] = await Promise.all([
     readOptional(ctx, LAYOUT.canon.bible),
     loadPlotPlan(ctx),
     listEpisodes(ctx),
     loadProgress(ctx),
     loadProposals(ctx),
     collectAssetFiles(ctx),
-    listIdeas(ctx)
+    listIdeas(ctx),
+    readOptional(ctx, LAYOUT.status.resume)
   ]);
   const eps = episodes.length ? episodes : ['ep001'];
   const lastFixed = [...eps].reverse().find((e) => progress[e]?.status === 'fixed') ?? null;
+  const resumeTarget = inferResumeNextEpisode(resumeState);
   const target =
+    (resumeTarget && progress[resumeTarget]?.status !== 'fixed' ? resumeTarget : null) ??
     eps.find((e) => progress[e]?.status !== 'fixed') ??
     (lastFixed ? nextEpisode(lastFixed) : eps[eps.length - 1]);
   const manuscript = await readOptional(ctx, episodePaths(target).manuscript);

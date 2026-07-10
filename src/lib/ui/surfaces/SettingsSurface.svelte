@@ -6,11 +6,13 @@
     PROVIDER_PRESETS, STAGE_GROUPS, applyPreset, toAgentSettings, toAgentSettingsForTier,
     type AgentTier, type TierProfile
   } from '$lib/harness/agentSettings';
-  import { fetchProviderUsage, formatTokens, formatUsd, type ModelRate } from '$lib/harness/usage';
+  import { fetchProviderUsage, formatTokens, formatUsd, isAgyCommand, type ModelRate } from '$lib/harness/usage';
 
   let argsText = $state('');
   let argsWithModelText = $state('');
   let testResult = $state('');
+  let usageLoading = $state(false);
+  let autoUsageCommand = $state('');
   // null: 이번 세션에 아직 테스트 안 함 · true/false: 마지막 기본 티어 테스트 결과
   let testOk = $state<boolean | null>(null);
 
@@ -107,6 +109,7 @@
   );
   const overBudget = $derived($usageSummary.budgetUsd > 0 && $usageSummary.budgetRatio >= 1);
   const nearBudget = $derived($usageSummary.budgetUsd > 0 && $usageSummary.budgetRatio >= 0.8 && $usageSummary.budgetRatio < 1);
+  const agyUsageEnabled = $derived(isAgyCommand($settings.command));
 
   function updateRate(i: number, patch: Partial<ModelRate>) {
     settings.update((s) => {
@@ -115,13 +118,41 @@
     });
   }
 
-  async function loadProviderUsage() {
-    await withBusy('실제 사용량 조회', async () => {
+  function groupLabel(label: string): string {
+    if (label === 'GEMINI MODELS') return 'Gemini 모델';
+    if (label === 'CLAUDE AND GPT MODELS') return 'Claude/GPT 모델';
+    return label;
+  }
+
+  function refreshLabel(value: string | null): string {
+    if (!value) return '현재 한도 사용 가능';
+    return value.replace(/(\d+)h/g, '$1시간').replace(/(\d+)m/g, '$1분') + ' 후 갱신';
+  }
+
+  function usageTone(remaining: number): 'normal' | 'near' | 'over' {
+    return remaining <= 5 ? 'over' : remaining <= 20 ? 'near' : 'normal';
+  }
+
+  async function loadProviderUsage(showToast = true) {
+    if (usageLoading) return;
+    usageLoading = true;
+    try {
       const u = await fetchProviderUsage(ctx());
       await refreshUsage();
-      toast(u.ok ? '실행기 사용량을 불러왔습니다.' : '사용량 응답이 비어 있습니다 - 실행기가 /usage를 지원하는지 확인하세요.', u.ok ? 'ok' : 'warn');
-    }, false);
+      if (showToast) toast(u.ok ? 'agy 실제 사용량을 불러왔습니다.' : `사용량 조회 실패: ${u.error ?? '응답 없음'}`, u.ok ? 'ok' : 'warn');
+    } finally {
+      usageLoading = false;
+    }
   }
+
+  $effect(() => {
+    const command = $settings.command.trim();
+    if (!isAgyCommand(command) || autoUsageCommand === command) return;
+    autoUsageCommand = command;
+    const cachedAt = Date.parse($providerUsage?.fetchedAt ?? '');
+    if ($providerUsage?.ok && Number.isFinite(cachedAt) && Date.now() - cachedAt < 5 * 60_000) return;
+    queueMicrotask(() => void loadProviderUsage(false));
+  });
 </script>
 
 <div class="surface">
@@ -276,96 +307,126 @@
   </section>
 
   <section>
-    <div class="usage-head">
-      <span class="label">AI 사용량 · 추정 요금</span>
-      <span class="dim">토큰·요금은 추정치입니다 (CLI가 실제 usage를 주지 않아 글자 수 기반 근사).</span>
-    </div>
-    <div class="usage-cards">
-      <div class="ucard">
-        <span class="ulabel">이번 달 ({$usageSummary.thisMonthKey})</span>
-        <b class="ucost" class:over={overBudget} class:near={nearBudget}>~{formatUsd($usageSummary.thisMonth.costUsd)}</b>
-        <span class="dim">{formatTokens($usageSummary.thisMonth.promptTokens + $usageSummary.thisMonth.outputTokens)} 토큰 · {$usageSummary.thisMonth.runs}회 실행</span>
-        {#if $usageSummary.budgetUsd > 0}
-          <div class="bar"><div class="fill" class:over={overBudget} class:near={nearBudget} style:width={`${Math.min(100, $usageSummary.budgetRatio * 100)}%`}></div></div>
-          <span class="dim">예산 {formatUsd($usageSummary.budgetUsd)}의 {Math.round($usageSummary.budgetRatio * 100)}%</span>
-        {/if}
-      </div>
-      <div class="ucard">
-        <span class="ulabel">전체 누적</span>
-        <b class="ucost">~{formatUsd($usageSummary.all.costUsd)}</b>
-        <span class="dim">{formatTokens($usageSummary.all.promptTokens + $usageSummary.all.outputTokens)} 토큰 · {$usageSummary.all.runs}회</span>
-      </div>
-    </div>
-
-    <label class="budget">월 예산 상한 (USD, 0이면 없음)
-      <input type="number" step="5" min="0" bind:value={$settings.monthlyBudgetUsd} onchange={save} />
-    </label>
-
-    <div class="provider-usage">
-      <div class="row">
-        <span class="label">실행기 실제 사용량</span>
+    {#if agyUsageEnabled}
+      <div class="row usage-title">
+        <div class="usage-head">
+          <span class="label">Agy 실제 사용량</span>
+          <span class="dim">대화형 <code class="mono">/usage</code>에서 5시간 및 주간 잔여 한도를 직접 가져옵니다.</span>
+        </div>
         <span class="grow"></span>
-        <button class="quiet" onclick={loadProviderUsage} disabled={$settings.offline || !$settings.command.trim()}>
-          /usage 불러오기
+        <button class="quiet" onclick={() => loadProviderUsage(true)} disabled={$settings.offline || usageLoading}>
+          {usageLoading ? '조회 중' : '지금 갱신'}
         </button>
       </div>
-      <p class="dim small">위 대시보드는 글자 수 기반 추정입니다. 실행기가 <code class="mono">/usage</code>를 지원하면
-        (예: <code class="mono">agy</code>) 실제 사용량을 그대로 불러옵니다.</p>
-      {#if $providerUsage}
-        <div class="pu-meta dim">
-          {$providerUsage.command} · {new Date($providerUsage.fetchedAt).toLocaleString()}
-          {#if !$providerUsage.ok}<span class="chip warn">응답 없음</span>{/if}
-        </div>
-        <pre class="pre panel pu-raw">{$providerUsage.raw || '(빈 응답)'}</pre>
-      {/if}
-    </div>
 
-    {#if $usageSummary.byScope.length}
-      <details class="usage-detail">
-        <summary>회차·월별 상세</summary>
-        <div class="cols2 usage-tables">
-          <div>
-            <span class="label">회차별 (요금 높은 순)</span>
-            <table class="grid">
-              <tbody>
+      {#if $providerUsage?.ok && $providerUsage.groups.length}
+        <div class="pu-meta dim">
+          {$providerUsage.account ?? $providerUsage.command}, {new Date($providerUsage.fetchedAt).toLocaleString()}
+        </div>
+        <div class="quota-list">
+          {#each $providerUsage.groups as group (group.id)}
+            <div class="quota-group">
+              <div class="quota-head">
+                <b>{groupLabel(group.label)}</b>
+                <span class="dim">{group.models.join(', ')}</span>
+              </div>
+              <div class="quota-windows">
+                {#if group.fiveHour}
+                  {@const tone = usageTone(group.fiveHour.remainingPercent)}
+                  <div class="quota-window">
+                    <div class="row"><span class="ulabel">5시간</span><b class:near={tone === 'near'} class:over={tone === 'over'}>{Math.round(group.fiveHour.remainingPercent)}%</b></div>
+                    <div class="bar"><div class="fill" class:near={tone === 'near'} class:over={tone === 'over'} style:width={`${group.fiveHour.remainingPercent}%`}></div></div>
+                    <span class="dim">{refreshLabel(group.fiveHour.refreshesIn)}</span>
+                  </div>
+                {/if}
+                {#if group.weekly}
+                  {@const tone = usageTone(group.weekly.remainingPercent)}
+                  <div class="quota-window">
+                    <div class="row"><span class="ulabel">주간</span><b class:near={tone === 'near'} class:over={tone === 'over'}>{Math.round(group.weekly.remainingPercent)}%</b></div>
+                    <div class="bar"><div class="fill" class:near={tone === 'near'} class:over={tone === 'over'} style:width={`${group.weekly.remainingPercent}%`}></div></div>
+                    <span class="dim">{refreshLabel(group.weekly.refreshesIn)}</span>
+                  </div>
+                {/if}
+              </div>
+            </div>
+          {/each}
+        </div>
+        <details class="usage-detail">
+          <summary>agy 원문 보기</summary>
+          <pre class="pre panel pu-raw">{$providerUsage.raw}</pre>
+        </details>
+      {:else if $providerUsage?.error}
+        <div class="usage-empty"><span class="chip warn">조회 실패</span><span>{$providerUsage.error}</span></div>
+      {:else}
+        <div class="usage-empty"><span>{usageLoading ? 'agy 사용량을 읽고 있습니다.' : '아직 가져온 실제 사용량이 없습니다.'}</span></div>
+      {/if}
+    {:else}
+      <div class="usage-head">
+        <span class="label">AI 사용량 · 추정 요금</span>
+        <span class="dim">현재 실행기는 실제 잔여 한도를 제공하지 않아 프로젝트 실행 기록으로 추정합니다.</span>
+      </div>
+      <div class="usage-cards">
+        <div class="ucard">
+          <span class="ulabel">이번 달 ({$usageSummary.thisMonthKey})</span>
+          <b class="ucost" class:over={overBudget} class:near={nearBudget}>~{formatUsd($usageSummary.thisMonth.costUsd)}</b>
+          <span class="dim">{formatTokens($usageSummary.thisMonth.promptTokens + $usageSummary.thisMonth.outputTokens)} 토큰 · {$usageSummary.thisMonth.runs}회 실행</span>
+          {#if $usageSummary.budgetUsd > 0}
+            <div class="bar"><div class="fill" class:over={overBudget} class:near={nearBudget} style:width={`${Math.min(100, $usageSummary.budgetRatio * 100)}%`}></div></div>
+            <span class="dim">예산 {formatUsd($usageSummary.budgetUsd)}의 {Math.round($usageSummary.budgetRatio * 100)}%</span>
+          {/if}
+        </div>
+        <div class="ucard">
+          <span class="ulabel">전체 누적</span>
+          <b class="ucost">~{formatUsd($usageSummary.all.costUsd)}</b>
+          <span class="dim">{formatTokens($usageSummary.all.promptTokens + $usageSummary.all.outputTokens)} 토큰 · {$usageSummary.all.runs}회</span>
+        </div>
+      </div>
+
+      <label class="budget">월 예산 상한 (USD, 0이면 없음)
+        <input type="number" step="5" min="0" bind:value={$settings.monthlyBudgetUsd} onchange={save} />
+      </label>
+
+      {#if $usageSummary.byScope.length}
+        <details class="usage-detail">
+          <summary>회차·월별 상세</summary>
+          <div class="cols2 usage-tables">
+            <div>
+              <span class="label">회차별 (요금 높은 순)</span>
+              <table class="grid"><tbody>
                 {#each $usageSummary.byScope.slice(0, 12) as row (row.scope)}
                   <tr><td>{row.scope}</td><td class="num">{formatTokens(row.totals.promptTokens + row.totals.outputTokens)}</td><td class="num">~{formatUsd(row.totals.costUsd)}</td></tr>
                 {/each}
-              </tbody>
-            </table>
-          </div>
-          <div>
-            <span class="label">월별</span>
-            <table class="grid">
-              <tbody>
+              </tbody></table>
+            </div>
+            <div>
+              <span class="label">월별</span>
+              <table class="grid"><tbody>
                 {#each $usageSummary.byMonth.slice(0, 12) as row (row.month)}
                   <tr><td>{row.month}</td><td class="num">{formatTokens(row.totals.promptTokens + row.totals.outputTokens)}</td><td class="num">~{formatUsd(row.totals.costUsd)}</td></tr>
                 {/each}
-              </tbody>
-            </table>
+              </tbody></table>
+            </div>
           </div>
-        </div>
+        </details>
+      {/if}
+
+      <details class="usage-detail">
+        <summary>모델 단가 (USD / 1M 토큰) - 자기 요금제에 맞게 조정</summary>
+        <table class="grid rates">
+          <thead><tr><th>모델 매칭</th><th>설명</th><th>입력</th><th>출력</th></tr></thead>
+          <tbody>
+            {#each $settings.modelRates as rate, i (i)}
+              <tr>
+                <td><input class="mono cell" value={rate.match} placeholder="(기본값)" oninput={(e) => updateRate(i, { match: (e.currentTarget as HTMLInputElement).value })} /></td>
+                <td><input class="cell" value={rate.label} oninput={(e) => updateRate(i, { label: (e.currentTarget as HTMLInputElement).value })} /></td>
+                <td><input class="cell num" type="number" step="0.1" min="0" value={rate.inputPerM} oninput={(e) => updateRate(i, { inputPerM: Number((e.currentTarget as HTMLInputElement).value) || 0 })} /></td>
+                <td><input class="cell num" type="number" step="0.1" min="0" value={rate.outputPerM} oninput={(e) => updateRate(i, { outputPerM: Number((e.currentTarget as HTMLInputElement).value) || 0 })} /></td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
       </details>
     {/if}
-
-    <details class="usage-detail">
-      <summary>모델 단가 (USD / 1M 토큰) - 자기 요금제에 맞게 조정</summary>
-      <table class="grid rates">
-        <thead><tr><th>모델 매칭</th><th>설명</th><th>입력</th><th>출력</th></tr></thead>
-        <tbody>
-          {#each $settings.modelRates as rate, i (i)}
-            <tr>
-              <td><input class="mono cell" value={rate.match} placeholder="(기본값)" oninput={(e) => updateRate(i, { match: (e.currentTarget as HTMLInputElement).value })} /></td>
-              <td><input class="cell" value={rate.label} oninput={(e) => updateRate(i, { label: (e.currentTarget as HTMLInputElement).value })} /></td>
-              <td><input class="cell num" type="number" step="0.1" min="0" value={rate.inputPerM} oninput={(e) => updateRate(i, { inputPerM: Number((e.currentTarget as HTMLInputElement).value) || 0 })} /></td>
-              <td><input class="cell num" type="number" step="0.1" min="0" value={rate.outputPerM} oninput={(e) => updateRate(i, { outputPerM: Number((e.currentTarget as HTMLInputElement).value) || 0 })} /></td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-      <p class="dim">모델 id에 매칭 문자열이 포함되면 해당 단가를 씁니다(위에서부터). 빈 매칭은 기본값입니다.
-        오프라인·로컬 뼈대 실행은 항상 $0으로 계산됩니다.</p>
-    </details>
   </section>
 
   <section>
@@ -373,7 +434,8 @@
     <p class="dim">
       모든 단계의 프롬프트 원본은 저장소의 <code>prompts/*.prompt.md</code> blueprint 파일이며,
       실제 전송된 프롬프트는 실행마다 프로젝트의 <code>.bindery/trace/</code>에 파일로 남습니다.
-      run 기록은 <code>.bindery/runs/</code>, 사용량 원장은 <code>.bindery/usage.json</code>에 있습니다.
+      run 기록은 <code>.bindery/runs/</code>, 추정 토큰 원장은 <code>.bindery/usage.json</code>,
+      agy 실제 쿼터 캐시는 <code>.bindery/provider-usage.json</code>에 있습니다.
     </p>
   </section>
 </div>
@@ -418,6 +480,7 @@
   .bad-text { color: var(--bad); }
 
   .usage-head { display: grid; gap: 4px; }
+  .usage-title { align-items: flex-start; }
   .usage-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .ucard { display: grid; gap: 4px; border: 1px solid var(--line); border-radius: 4px; padding: 12px 12px; background: var(--bg-1); }
   .ulabel { font-size: 11px; color: var(--faint); }
@@ -429,9 +492,19 @@
   .fill.near { background: var(--warn); }
   .fill.over { background: var(--bad); }
   .budget { display: grid; gap: 4px; font-size: 12px; color: var(--muted); max-width: 280px; }
-  .provider-usage { display: grid; gap: 8px; border-top: 1px dashed var(--line); padding-top: 8px; }
   .pu-meta { display: flex; gap: 8px; align-items: center; font-size: 11.5px; }
   .pu-raw { max-height: 220px; overflow: auto; font-size: 11.5px; white-space: pre-wrap; }
+  .quota-list { display: grid; border-top: 1px solid var(--line-strong); }
+  .quota-group { display: grid; gap: var(--space-2); padding: var(--space-3) var(--space-1); border-bottom: 1px solid var(--line); }
+  .quota-head { display: grid; gap: var(--space-1); }
+  .quota-head b { font-size: 13.5px; }
+  .quota-windows { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+  .quota-window { display: grid; gap: var(--space-1); min-width: 0; }
+  .quota-window .row { justify-content: space-between; }
+  .quota-window b { font-size: 22px; font-weight: 750; font-variant-numeric: tabular-nums; }
+  .quota-window b.near { color: var(--warn); }
+  .quota-window b.over { color: var(--bad); }
+  .usage-empty { display: flex; gap: var(--space-2); align-items: center; min-height: var(--control-height); color: var(--muted); }
   .usage-detail summary { cursor: pointer; color: var(--muted); font-size: 12.5px; padding: 4px 0; }
   .usage-tables { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .usage-tables .num, table.grid td.num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -442,6 +515,6 @@
   @media (max-width: 620px) {
     .stage { grid-template-columns: minmax(0, 1fr); }
     .form.grid2 { grid-template-columns: 1fr; }
-    .usage-cards, .usage-tables, .cols2 { grid-template-columns: 1fr; }
+    .usage-cards, .usage-tables, .quota-windows, .cols2 { grid-template-columns: 1fr; }
   }
 </style>

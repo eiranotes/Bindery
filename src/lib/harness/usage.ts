@@ -210,39 +210,128 @@ export function formatTokens(n: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// 실제 사용량 — 실행기(agy 등)의 /usage 명령 결과. 추정치가 아니라 제공자 집계.
+// 실제 사용량 — agy의 대화형 /usage 명령 결과. 추정치가 아니라 제공자 집계.
 // ---------------------------------------------------------------------------
+
+export type ProviderUsageWindow = {
+  remainingPercent: number;
+  refreshesIn: string | null;
+};
+
+export type ProviderUsageGroup = {
+  id: string;
+  label: string;
+  models: string[];
+  weekly: ProviderUsageWindow | null;
+  fiveHour: ProviderUsageWindow | null;
+};
 
 export type ProviderUsage = {
   fetchedAt: string;
   command: string;
   ok: boolean;
   raw: string;
+  account: string | null;
+  groups: ProviderUsageGroup[];
+  error?: string;
 };
 
 const PROVIDER_USAGE_PATH = `${LAYOUT.bindery.root}/provider-usage.json`;
 
+function hasProviderQuota(groups: ProviderUsageGroup[]): boolean {
+  return groups.some((group) => Boolean(group.fiveHour || group.weekly));
+}
+
 export async function loadProviderUsage(ctx: Ctx): Promise<ProviderUsage | null> {
   try {
     const raw = JSON.parse(await ctx.bridge.readFile(ctx.root, PROVIDER_USAGE_PATH)) as ProviderUsage;
-    return raw && typeof raw.raw === 'string' ? raw : null;
+    if (!raw || typeof raw.raw !== 'string') return null;
+    const parsed = parseAgyUsage(raw.raw);
+    return {
+      ...raw,
+      account: raw.account ?? parsed.account,
+      groups: Array.isArray(raw.groups) && raw.groups.length ? raw.groups : parsed.groups,
+      ok: Boolean(raw.ok && hasProviderQuota(Array.isArray(raw.groups) && raw.groups.length ? raw.groups : parsed.groups))
+    };
   } catch {
     return null;
   }
 }
 
+export function isAgyCommand(command: string): boolean {
+  return command.trim().split(/[\\/]/).pop()?.toLowerCase() === 'agy';
+}
+
+function parseUsageWindow(lines: string[], headingIndex: number, end: number): ProviderUsageWindow | null {
+  let remainingPercent: number | null = null;
+  let refreshesIn: string | null = null;
+  for (let index = headingIndex + 1; index < Math.min(end, headingIndex + 6); index++) {
+    const line = lines[index];
+    if (/^(Weekly|Five Hour) Limit$/i.test(line)) break;
+    const precise = /]\s*(\d+(?:\.\d+)?)%/.exec(line);
+    const rounded = /(\d+(?:\.\d+)?)%\s+remaining/i.exec(line);
+    if (precise) remainingPercent = Number(precise[1]);
+    else if (remainingPercent == null && rounded) remainingPercent = Number(rounded[1]);
+    if (/quota available/i.test(line)) remainingPercent = 100;
+    const refresh = /refreshes\s+in\s+(.+)$/i.exec(line);
+    if (refresh) refreshesIn = refresh[1].trim();
+  }
+  if (remainingPercent == null || !Number.isFinite(remainingPercent)) return null;
+  return { remainingPercent: Math.max(0, Math.min(100, remainingPercent)), refreshesIn };
+}
+
+/** tmux가 캡처한 agy Models & Quota 화면을 5시간·주간 창으로 구조화한다. */
+export function parseAgyUsage(raw: string): { account: string | null; groups: ProviderUsageGroup[] } {
+  const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const account = lines.map((line) => /^Account:\s*(.+)$/i.exec(line)?.[1] ?? null).find(Boolean) ?? null;
+  const groupIndexes = lines
+    .map((line, index) => (/^[A-Z][A-Z &]+ MODELS$/.test(line) ? index : -1))
+    .filter((index) => index >= 0);
+  const groups: ProviderUsageGroup[] = [];
+
+  for (let groupIndex = 0; groupIndex < groupIndexes.length; groupIndex++) {
+    const start = groupIndexes[groupIndex];
+    const end = groupIndexes[groupIndex + 1] ?? lines.length;
+    const label = lines[start];
+    const modelsLine = lines.slice(start + 1, end).find((line) => /^Models within this group:/i.test(line));
+    const models = modelsLine?.replace(/^Models within this group:\s*/i, '').split(',').map((model) => model.trim()).filter(Boolean) ?? [];
+    const weeklyIndex = lines.findIndex((line, index) => index > start && index < end && /^Weekly Limit$/i.test(line));
+    const fiveHourIndex = lines.findIndex((line, index) => index > start && index < end && /^Five Hour Limit$/i.test(line));
+    groups.push({
+      id: label.toLowerCase().replace(/\s+models$/, '').replace(/[^a-z0-9]+/g, '-'),
+      label,
+      models,
+      weekly: weeklyIndex >= 0 ? parseUsageWindow(lines, weeklyIndex, end) : null,
+      fiveHour: fiveHourIndex >= 0 ? parseUsageWindow(lines, fiveHourIndex, end) : null
+    });
+  }
+  return { account, groups };
+}
+
 /**
- * 실행기의 `/usage` 명령을 돌려 실제 사용량을 가져온다.
- * agy는 연결 후 `/usage`로 사용량을 조회할 수 있다 — 그 원문을 그대로 저장·표시한다.
- * (형식이 실행기마다 다르므로 파싱하지 않고 raw로 보여준다.)
+ * agy의 대화형 `/usage` 화면을 실제 TTY에서 열어 5시간·주간 사용량을 가져온다.
  */
 export async function fetchProviderUsage(ctx: Ctx): Promise<ProviderUsage> {
-  const result = await ctx.bridge.runAgent(ctx.root, '/usage', 'usage-check', ctx.agent);
+  if (!isAgyCommand(ctx.agent.command)) {
+    return {
+      fetchedAt: new Date().toISOString(), command: ctx.agent.command, ok: false, raw: '',
+      account: null, groups: [], error: '실제 사용량 조회는 현재 agy만 지원합니다.'
+    };
+  }
+  const result = await ctx.bridge.runProviderUsage(ctx.root, ctx.agent.command, 30_000);
+  const raw = result.raw.slice(0, 12_000).trim();
+  const parsed = parseAgyUsage(raw);
+  const hasQuota = hasProviderQuota(parsed.groups);
   const usage: ProviderUsage = {
     fetchedAt: new Date().toISOString(),
     command: ctx.agent.command,
-    ok: result.ok && result.text.trim().length > 0,
-    raw: (result.ok ? result.text : `${result.stderr || result.mode}`).slice(0, 8000).trim()
+    ok: result.ok && hasQuota,
+    raw,
+    account: parsed.account,
+    groups: parsed.groups,
+    error: result.ok && !hasQuota
+      ? 'agy /usage 화면에서 5시간 또는 주간 잔여 한도를 찾지 못했습니다.'
+      : result.ok ? undefined : result.stderr || result.mode
   };
   try {
     await ctx.bridge.writeFile(ctx.root, PROVIDER_USAGE_PATH, JSON.stringify(usage, null, 2));

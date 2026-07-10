@@ -67,6 +67,24 @@ struct AgentResult {
     prompt_file: Option<String>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProviderUsageRequest {
+    root: String,
+    command: String,
+    timeout_ms: Option<u64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProviderUsageCommandResult {
+    ok: bool,
+    raw: String,
+    stderr: String,
+    duration_ms: u128,
+    mode: String,
+}
+
 fn bad<T>(message: impl Into<String>) -> Result<T, String> {
     Err(message.into())
 }
@@ -319,6 +337,182 @@ fn send_agent_event(channel: &Option<Channel<Value>>, event: Value) {
     }
 }
 
+fn command_output(
+    command: &Path,
+    args: &[&str],
+    cwd: &Path,
+    path_env: &std::ffi::OsStr,
+) -> (i32, String, String) {
+    match Command::new(command)
+        .args(args)
+        .current_dir(cwd)
+        .env("PATH", path_env)
+        .output()
+    {
+        Ok(output) => (
+            output.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&output.stdout).to_string(),
+            String::from_utf8_lossy(&output.stderr).to_string(),
+        ),
+        Err(error) => (-1, String::new(), error.to_string()),
+    }
+}
+
+/** agy의 /usage는 print prompt가 아니라 대화형 TUI 명령이다. tmux pane을 실제 TTY로 사용한다. */
+fn run_provider_usage_blocking(
+    req: ProviderUsageRequest,
+) -> Result<ProviderUsageCommandResult, String> {
+    let root = resolve_root(&req.root)?;
+    let configured = req.command.trim();
+    if Path::new(configured)
+        .file_name()
+        .and_then(|name| name.to_str())
+        != Some("agy")
+    {
+        return bad("actual provider usage is currently supported only for agy");
+    }
+
+    let search_paths = agent_search_paths();
+    let search_path = std::env::join_paths(&search_paths).map_err(|error| error.to_string())?;
+    let tmux = resolve_agent_command("tmux", &search_paths);
+    if !tmux.is_file() {
+        return Ok(ProviderUsageCommandResult {
+            ok: false,
+            raw: String::new(),
+            stderr: "tmux not found".to_string(),
+            duration_ms: 0,
+            mode: "unsupported".to_string(),
+        });
+    }
+    let agy = resolve_agent_command(configured, &search_paths);
+    if !agy.is_file() {
+        return Ok(ProviderUsageCommandResult {
+            ok: false,
+            raw: String::new(),
+            stderr: format!("agy not found: {}", agy.to_string_lossy()),
+            duration_ms: 0,
+            mode: "spawn-error".to_string(),
+        });
+    }
+
+    let started = Instant::now();
+    let timeout_ms = req.timeout_ms.unwrap_or(30_000).clamp(8_000, 60_000);
+    let session = format!("bindery_usage_{}_{}", std::process::id(), now_millis());
+    let root_text = root.to_string_lossy().to_string();
+    let agy_text = agy.to_string_lossy().to_string();
+    let start_args = [
+        "new-session",
+        "-d",
+        "-x",
+        "160",
+        "-y",
+        "80",
+        "-s",
+        &session,
+        "-c",
+        &root_text,
+        &agy_text,
+    ];
+    let (start_code, _, start_stderr) = command_output(&tmux, &start_args, &root, &search_path);
+    if start_code != 0 {
+        return Ok(ProviderUsageCommandResult {
+            ok: false,
+            raw: String::new(),
+            stderr: if start_stderr.trim().is_empty() {
+                "failed to start agy TTY".to_string()
+            } else {
+                start_stderr
+            },
+            duration_ms: started.elapsed().as_millis(),
+            mode: "spawn-error".to_string(),
+        });
+    }
+
+    let mut sent_usage = false;
+    let mut trusted = false;
+    let mut raw = String::new();
+    let result = loop {
+        let capture_args = ["capture-pane", "-p", "-J", "-t", &session, "-S", "-120"];
+        let (capture_code, capture_stdout, capture_stderr) =
+            command_output(&tmux, &capture_args, &root, &search_path);
+        if capture_code != 0 {
+            break ProviderUsageCommandResult {
+                ok: false,
+                raw,
+                stderr: if capture_stderr.trim().is_empty() {
+                    "agy TTY ended before usage was ready".to_string()
+                } else {
+                    capture_stderr
+                },
+                duration_ms: started.elapsed().as_millis(),
+                mode: "spawn-error".to_string(),
+            };
+        }
+        raw = capture_stdout.trim().to_string();
+
+        if !trusted && raw.contains("Do you trust the contents of this project?") {
+            trusted = true;
+            let _ = command_output(
+                &tmux,
+                &["send-keys", "-t", &session, "Enter"],
+                &root,
+                &search_path,
+            );
+        }
+        if !sent_usage && raw.contains("? for shortcuts") {
+            sent_usage = true;
+            let _ = command_output(
+                &tmux,
+                &["send-keys", "-t", &session, "-l", "/usage"],
+                &root,
+                &search_path,
+            );
+            let _ = command_output(
+                &tmux,
+                &["send-keys", "-t", &session, "Enter"],
+                &root,
+                &search_path,
+            );
+        }
+        if sent_usage
+            && raw.contains("Models & Quota")
+            && raw.contains("Weekly Limit")
+            && raw.contains("Five Hour Limit")
+        {
+            thread::sleep(Duration::from_millis(250));
+            let (_, final_stdout, _) = command_output(&tmux, &capture_args, &root, &search_path);
+            if !final_stdout.trim().is_empty() {
+                raw = final_stdout.trim().to_string();
+            }
+            break ProviderUsageCommandResult {
+                ok: true,
+                raw,
+                stderr: String::new(),
+                duration_ms: started.elapsed().as_millis(),
+                mode: "tmux".to_string(),
+            };
+        }
+        if started.elapsed() > Duration::from_millis(timeout_ms) {
+            break ProviderUsageCommandResult {
+                ok: false,
+                raw,
+                stderr: format!("timeout after {timeout_ms}ms"),
+                duration_ms: started.elapsed().as_millis(),
+                mode: "timeout".to_string(),
+            };
+        }
+        thread::sleep(Duration::from_millis(120));
+    };
+
+    let _ = command_output(
+        &tmux,
+        &["kill-session", "-t", &session],
+        &root,
+        &search_path,
+    );
+    Ok(result)
+}
+
 fn stream_pipe<R: Read + Send + 'static>(
     reader: R,
     event_type: &'static str,
@@ -512,6 +706,13 @@ async fn run_agent_stream(
 }
 
 #[tauri::command]
+async fn provider_usage(req: ProviderUsageRequest) -> Result<ProviderUsageCommandResult, String> {
+    tauri::async_runtime::spawn_blocking(move || run_provider_usage_blocking(req))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
 fn cancel_agent(
     root: String,
     label: String,
@@ -584,6 +785,7 @@ fn main() {
             scaffold,
             run_agent,
             run_agent_stream,
+            provider_usage,
             cancel_agent,
             pick_folder,
             env_info

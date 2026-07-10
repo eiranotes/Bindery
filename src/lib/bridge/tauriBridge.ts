@@ -43,6 +43,9 @@ export const tauriBridge: Bridge = {
   async runAgent(root, prompt, label, settings: AgentSettings): Promise<AgentResult> {
     return invoke<AgentResult>('run_agent', { req: { root, prompt, label, settings } });
   },
+  async runProviderUsage(root, command, timeoutMs = 30_000) {
+    return invoke('provider_usage', { req: { root, command, timeoutMs } });
+  },
   async runAgentStream(root, prompt, label, settings, onEvent): Promise<AgentResult> {
     const channel = new Channel<AgentStreamEvent>();
     channel.onmessage = onEvent;

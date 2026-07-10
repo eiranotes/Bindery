@@ -80,6 +80,9 @@ export const devBridge: Bridge = {
   async runAgent(root, prompt, label, settings): Promise<AgentResult> {
     return call<AgentResult>('agent', { root, prompt, label, settings });
   },
+  async runProviderUsage(root, command, timeoutMs = 30_000) {
+    return call('provider-usage', { root, command, timeoutMs });
+  },
   async runAgentStream(root, prompt, label, settings, onEvent): Promise<AgentResult> {
     return callStream({ root, prompt, label, settings }, onEvent);
   },

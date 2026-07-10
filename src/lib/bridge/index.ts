@@ -5,7 +5,7 @@ import { devBridge } from './devBridge';
 import { tauriBridge } from './tauriBridge';
 import { memoryBridge } from './memoryBridge';
 
-export type { Bridge, FileNode, AgentResult, AgentSettings } from './types';
+export type { Bridge, FileNode, AgentResult, AgentSettings, ProviderUsageCommandResult } from './types';
 export { memoryBridge, setAgentScript, resetMemoryBridge } from './memoryBridge';
 export { devBridge } from './devBridge';
 export { tauriBridge } from './tauriBridge';

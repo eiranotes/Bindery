@@ -90,6 +90,9 @@ export const memoryBridge: Bridge = {
     if (scripted) return scripted;
     return { ok: false, text: '', stderr: 'memory bridge has no agent', exitCode: -1, durationMs: 0, mode: 'unavailable' };
   },
+  async runProviderUsage() {
+    return { ok: false, raw: '', stderr: 'memory bridge has no interactive provider', durationMs: 0, mode: 'unsupported' };
+  },
   async runAgentStream(_root, prompt, label, settings, onEvent): Promise<AgentResult> {
     onEvent({ type: 'status', text: 'memory bridge agent check' });
     const result = await memoryBridge.runAgent(_root, prompt, label, settings);

@@ -283,6 +283,32 @@ describe('autopilot — 최소 입력·자동 중간 처리·최종 선택', () 
     expect(step.detail).toContain('ep001 플롯');
   });
 
+  it('workflow: imported resume point can continue at ep015 instead of the blank ep001 scaffold', async () => {
+    await memoryBridge.writeFile(ctx.root, LAYOUT.canon.bible, [
+      '# 메달리온 설정 바이블', '',
+      '확정 설정과 인물 관계가 충분히 기록되어 있으며, 던전 진입 규칙과 구단 운영 원칙은 이후 회차에서도 변경하지 않는다.'
+    ].join('\n'));
+    await memoryBridge.writeFile(ctx.root, LAYOUT.plot.board, JSON.stringify({
+      schema_version: 'bindery.plot_plan.v1',
+      arcs: [{ id: 'arc1', label: '시즌 1', goal: '첫 공략', episodes: 'ep001-ep020' }],
+      episodes: [{
+        episode: 'ep015', arc: 'arc1', title: '콜러 공백', goal: '팀의 우선순위 충돌을 드러낸다',
+        beats: ['복합 훈련', '지시 충돌'], threads_open: ['콜러 후보'], threads_close: [], hook: '새 후보 조사', risk: '', status: 'draft'
+      }],
+      source: 'agent', updatedAt: '2026-07-10T00:00:00Z'
+    }, null, 2));
+    await memoryBridge.writeFile(ctx.root, LAYOUT.status.resume, [
+      '# Resume State v51',
+      '',
+      '## Next recommended episode',
+      '',
+      'Episode 15 should center on the caller gap.'
+    ].join('\n'));
+    const step = computeNextStep(await loadWorkflowSnapshot(ctx));
+    expect(step.action).toBe('writeNextEpisode');
+    expect(step.episode).toBe('ep015');
+  });
+
   it('workflow: 원고가 있어도 바이블이 없으면 준비를 먼저 요구한다', async () => {
     await memoryBridge.writeFile(ctx.root, episodePaths('ep001').manuscript, [
       '---',

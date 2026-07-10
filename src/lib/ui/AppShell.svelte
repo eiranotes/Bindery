@@ -3,9 +3,9 @@
   import {
     activeRun, busy, clearExternalChanges, externalChanges, modes, mode, pendingProposals,
     persistSettings, project, projectRefreshError, projectRefreshing, refreshAll,
-    returnToProjectPicker, runDockOpen, runlog, settings, uiMode, usageSummary
+    providerUsage, returnToProjectPicker, runDockOpen, runlog, settings, uiMode, usageSummary
   } from '$lib/stores/app';
-  import { formatUsd } from '$lib/harness/usage';
+  import { formatUsd, isAgyCommand } from '$lib/harness/usage';
   import RunDock from './RunDock.svelte';
   import StatusBar from './StatusBar.svelte';
   import HomeSurface from './surfaces/HomeSurface.svelte';
@@ -47,6 +47,11 @@
   const agentLabel = $derived(
     $settings.offline ? '오프라인' : $settings.command ? `${$settings.command}${$settings.model ? ` · ${$settings.model}` : ''}` : '실행기 미설정'
   );
+  const agyFiveHourRemaining = $derived.by(() => {
+    if (!isAgyCommand($settings.command) || !$providerUsage?.ok) return null;
+    const values = $providerUsage.groups.flatMap((group) => group.fiveHour ? [group.fiveHour.remainingPercent] : []);
+    return values.length ? Math.min(...values) : null;
+  });
   const canSwitchProject = $derived(!$busy && !$activeRun);
   const switchProjectTitle = $derived(
     canSwitchProject ? '작품 선택 화면으로 돌아가기' : '실행 중인 작업이 끝난 뒤 작품을 바꿀 수 있습니다'
@@ -169,7 +174,17 @@
           외부 변경 {$externalChanges.length}건
         </button>
       {/if}
-      {#if !$settings.offline && $usageSummary.thisMonth.costUsd > 0}
+      {#if !$settings.offline && isAgyCommand($settings.command) && agyFiveHourRemaining != null}
+        <button
+          class="quiet cost"
+          class:over={agyFiveHourRemaining <= 10}
+          class:near={agyFiveHourRemaining > 10 && agyFiveHourRemaining <= 25}
+          onclick={() => mode.set('settings')}
+          title="Agy 5시간 잔여 한도"
+        >
+          Agy {Math.round(agyFiveHourRemaining)}%
+        </button>
+      {:else if !$settings.offline && !isAgyCommand($settings.command) && $usageSummary.thisMonth.costUsd > 0}
         <button
           class="quiet cost"
           class:over={$usageSummary.budgetUsd > 0 && $usageSummary.budgetRatio >= 1}

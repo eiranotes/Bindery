@@ -5,12 +5,21 @@
 
 ## 2026-07-10 UI/CTA/성능 수용 결과
 
-- `npm run qa:ui-contract`: 22 Svelte 파일, button 175개, onclick 174개, form submit 1개,
+- 메달리온 resume가 `Episode 15`를 가리킬 때 홈의 주 동작은 `ep015 이어쓰기`, 보조 동작은
+  `같은 설정으로 ep001부터 다시 쓰기`로 분리된다. 재시작은 기존 설정·플롯·원고를 삭제하지 않고
+  resume만 snapshot 후 ep001로 갱신한다.
+- 구조화 ZIP도 가져오기 전에 원본 resume 이어쓰기와 ep001 재시작을 선택하며, 플롯의 최장 20화를
+  기본 8화로 줄이지 않고 보존한다.
+- dev 브리지의 실제 agy 대화형 `/usage` 조회에서 모델 그룹별 5시간·주간 잔여율을 파싱했다.
+  agy 선택 시 홈·상단바·설정은 실제 잔여 한도를 사용하며 추정 USD를 표시하지 않는다.
+- 새 standalone Tauri 번들에서도 `/usage` 조회가 완료되어 캐시 시각이 갱신됐고, strict codesign과
+  `/Applications/Bindery.app` 교체·실행을 확인했다.
+- `npm run qa:ui-contract`: 22 Svelte 파일, button 178개, onclick 177개, form submit 1개,
   연결 없는 CTA 0개.
 - dev 런타임: 간단/설계자 13화면 모두 진입, 현재 샘플 본문 CTA 86개, 이름 없는 버튼 0,
   콘솔 오류 0.
 - 390/768/1280px: 13화면 전체 문서/작업면 수평 overflow 0.
-- 초기 production JS: 883.40kB → 234.06kB. 모든 청크 205kB 이하, 500kB warning 제거.
+- 초기 production JS: 883.40kB → 240.82kB. 지연 로드 청크는 모두 205kB 이하, 500kB warning 제거.
 - agy 직접 호출: `gemini-3.5-flash`, exit 0, 8.46초, 지정 JSON 정확히 반환.
 - 앱 내 Gemini CLI (agy) 연결 테스트: exit 0, 7.525초, `BINDERY-OK`.
 - 최종 `/Applications/Bindery.app` 연결 테스트: exit 0, 9.394초, `BINDERY-OK`.
@@ -71,7 +80,7 @@
   (추적 대상 필터, tree flatten, created/modified/deleted digest diff).
 - `npx vitest run tests/sourceUploads.test.ts tests/sourcePackage.test.ts` — 8/8 통과
   (`DecompressionStream` 없는 macOS WebView형 fallback, 진행률/취소/500엔트리 제한, 구조화 기획 가져오기).
-- `npm test` — 73/73 통과 (코어 단위 + 시나리오 E2E + 자료 업로드/구조화 zip + 사용량/문체/백업/품질/외부변경).
+- `npm test` — 77/77 통과 (코어 단위 + 시나리오 E2E + 자료 업로드/구조화 zip + 실제 agy 사용량 파싱 + 사용량/문체/백업/품질/외부변경).
 - `cargo test --manifest-path src-tauri/Cargo.toml` — 3/3 통과
   (`run_agent_stream` stdout event와 최종 결과 일치, Finder PATH 보강, 파일 경로 가드/텍스트 왕복).
 - `npm run check` — svelte-check 0 errors / 0 warnings.
@@ -95,8 +104,8 @@
 - 우측 고정 인스펙터 제거, 2단 레이아웃 + 하단 1줄 상태바 적용. 상태바는 설정에서 숨김 가능.
 - 상단바 [작품 선택]으로 열린 작품에서 시작 화면(ProjectPicker)으로 돌아갈 수 있음. 실행 중인
   작업이 있을 때는 복귀를 막고 안내함.
-- 홈 [같은 작품에서 epXXX 처음부터 쓰기]와 집필 [처음부터 새 후보 만들기]로 동일 프로젝트 안에서
-  새 회차 또는 새 초안 후보를 시작할 수 있음. 기존 원고는 자동으로 덮지 않음.
+- 홈 [epXXX 이어쓰기]와 [같은 설정으로 ep001부터 다시 쓰기], 집필 [처음부터 새 후보 만들기]로
+  동일 프로젝트 안에서 이어쓰기·작품 재시작·새 초안 후보를 구분한다. 기존 원고는 자동으로 덮지 않음.
 - 최초 [AI에게 기획 맡기기]에서 텍스트 자료 파일과 zip 묶음 자료를 업로드할 수 있음. zip은
   내부 텍스트 엔트리를 펼쳐 읽고, 별도 파일 업로드도 앱 차원의 개수 제한 없이 추가할 수 있음.
   실행 시 원문은 `notes/source-raw.md`에 저장되고, 기획 후보 생성 입력에는 제한된 자료 요약이
@@ -144,5 +153,5 @@
 - **병렬 QA**: 문체/연속성/정사 3종을 동시에 실행하고, run index와 usage 원장은 큐 저장으로
   3건 모두 보존한다(`tests/autopilot.test.ts`, 관측 동시성 3).
 
-최신 검증: `npm run check` 0 오류 · `npm test` 73/73 · `npm run build` OK · 실제 agy 후보 1개
+최신 검증: `npm run check` 0 오류 · `npm test` 77/77 · `npm run build` OK · 실제 agy 후보 1개
 스트리밍 검증. 과거 홈 CTA→후보 적용→다음 action→설계자 모드 클릭스루도 유지한다.

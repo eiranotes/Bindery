@@ -34,6 +34,12 @@ type AgentRequest = {
   };
 };
 
+type ProviderUsageRequest = {
+  root: string;
+  command: string;
+  timeoutMs?: number;
+};
+
 export type FileNode = { name: string; path: string; kind: 'file' | 'directory'; children?: FileNode[] };
 
 const TEXT_EXT = /\.(md|ya?ml|json|txt|prompt\.md)$/i;
@@ -153,6 +159,88 @@ function activeKey(root: string, label: string): string {
 
 function writeSse(res: NodeJS.WritableStream, event: unknown): void {
   res.write(`data: ${JSON.stringify(event)}\n\n`);
+}
+
+async function commandOutput(command: string, args: string[], cwd: string): Promise<{
+  code: number;
+  stdout: string;
+  stderr: string;
+}> {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { cwd, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (data) => (stdout += String(data)));
+    child.stderr.on('data', (data) => (stderr += String(data)));
+    child.on('error', (error) => resolve({ code: -1, stdout, stderr: String(error) }));
+    child.on('close', (code) => resolve({ code: code ?? -1, stdout, stderr }));
+  });
+}
+
+async function tmuxPath(): Promise<string | null> {
+  const candidates = [
+    '/opt/homebrew/bin/tmux',
+    '/usr/local/bin/tmux',
+    '/usr/bin/tmux',
+    ...(process.env.PATH?.split(path.delimiter).map((dir) => path.join(dir, 'tmux')) ?? [])
+  ];
+  for (const candidate of candidates) {
+    if (await fs.access(candidate).then(() => true, () => false)) return candidate;
+  }
+  return null;
+}
+
+/** agy의 /usage는 print prompt가 아니라 대화형 TUI 명령이다. tmux pane을 실제 TTY로 사용한다. */
+async function handleProviderUsage(req: ProviderUsageRequest): Promise<unknown> {
+  const root = await resolveRoot(req.root);
+  const configured = req.command.trim();
+  if (path.basename(configured) !== 'agy') bad('actual provider usage is currently supported only for agy');
+  const tmux = await tmuxPath();
+  if (!tmux) return { ok: false, raw: '', stderr: 'tmux not found', durationMs: 0, mode: 'unsupported' };
+
+  const started = Date.now();
+  const timeoutMs = Math.min(Math.max(req.timeoutMs ?? 30_000, 8_000), 60_000);
+  const session = `bindery_usage_${process.pid}_${Date.now()}`;
+  const start = await commandOutput(tmux, [
+    'new-session', '-d', '-x', '160', '-y', '80', '-s', session, '-c', root, configured
+  ], root);
+  if (start.code !== 0) {
+    return { ok: false, raw: '', stderr: start.stderr || 'failed to start agy TTY', durationMs: Date.now() - started, mode: 'spawn-error' };
+  }
+
+  let raw = '';
+  let sentUsage = false;
+  let trusted = false;
+  try {
+    while (Date.now() - started < timeoutMs) {
+      const capture = await commandOutput(tmux, ['capture-pane', '-p', '-J', '-t', session, '-S', '-120'], root);
+      if (capture.code !== 0) {
+        return { ok: false, raw, stderr: capture.stderr || 'agy TTY ended before usage was ready', durationMs: Date.now() - started, mode: 'spawn-error' };
+      }
+      raw = capture.stdout.trim();
+      if (!trusted && raw.includes('Do you trust the contents of this project?')) {
+        trusted = true;
+        await commandOutput(tmux, ['send-keys', '-t', session, 'Enter'], root);
+      }
+      if (!sentUsage && raw.includes('? for shortcuts')) {
+        sentUsage = true;
+        await commandOutput(tmux, ['send-keys', '-t', session, '-l', '/usage'], root);
+        await commandOutput(tmux, ['send-keys', '-t', session, 'Enter'], root);
+      }
+      if (sentUsage && raw.includes('Models & Quota') && raw.includes('Weekly Limit') && raw.includes('Five Hour Limit')) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        const finalCapture = await commandOutput(tmux, ['capture-pane', '-p', '-J', '-t', session, '-S', '-120'], root);
+        raw = finalCapture.stdout.trim() || raw;
+        return { ok: true, raw, stderr: '', durationMs: Date.now() - started, mode: 'tmux' };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    }
+    return { ok: false, raw, stderr: `timeout after ${timeoutMs}ms`, durationMs: Date.now() - started, mode: 'timeout' };
+  } finally {
+    await commandOutput(tmux, ['kill-session', '-t', session], root);
+  }
 }
 
 async function handleAgent(req: AgentRequest): Promise<unknown> {
@@ -367,6 +455,7 @@ export function harnessBridge(): Plugin {
               return;
             }
             else if (req.url === '/agent/cancel') result = await handleAgentCancel(payload as { root: string; label: string });
+            else if (req.url === '/provider-usage') result = await handleProviderUsage(payload as ProviderUsageRequest);
             else if (req.url === '/scaffold') result = await handleScaffold(payload as { base: string; name: string });
             else {
               res.statusCode = 404;

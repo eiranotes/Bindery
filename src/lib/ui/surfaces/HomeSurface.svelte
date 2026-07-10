@@ -4,22 +4,25 @@
   import {
     ctx, mode, currentEpisode, pendingProposals, progress, episodes, withBusy,
     busy, activeRun, intentNote, autopilotKick, clearRunFeed, toast, project, refreshAll,
-    projectRefreshing, settings, usageSummary
+    projectRefreshing, settings, usageSummary, providerUsage
   } from '$lib/stores/app';
   import { loadWorkflowSnapshot, computeNextStep, type NextStep } from '$lib/harness/workflow';
   import {
     runProjectStarterAutopilot, adoptStarterIdea, ensureStoryFoundation,
     ensureEpisodeScaffold, type FoundationResult
   } from '$lib/harness/autopilot';
-  import { nextEpisode } from '$lib/harness/episode';
   import { clip, nowIso } from '$lib/core/text';
   import {
     SOURCE_FILE_ACCEPT, SOURCE_UPLOAD_MAX_TOTAL_CHARS,
     formatSourceBytes, readSourceUploads
   } from '$lib/harness/sourceUploads';
   import type { SourceUpload, SourceUploadProgress } from '$lib/harness/sourceUploads';
-  import { detectPlanningPackage, importPlanningPackage } from '$lib/harness/sourcePackage';
+  import {
+    detectPlanningPackage, importPlanningPackage, inferResumeNextEpisode,
+    restartPlanningAtEpisodeOne, type PlanningStartMode
+  } from '$lib/harness/sourcePackage';
   import type { IdeaFile } from '$lib/harness/ideas';
+  import { isAgyCommand } from '$lib/harness/usage';
   import LiveRunPanel from '../LiveRunPanel.svelte';
 
   const SOURCE_PROMPT_MAX_CHARS = 18_000;
@@ -34,10 +37,23 @@
   let workflowRefreshToken = 0;
   const running = $derived(Boolean($busy || $activeRun));
   const planningPackage = $derived(detectPlanningPackage(sourceUploads));
+  const packageResumeEpisode = $derived(
+    planningPackage ? inferResumeNextEpisode(planningPackage.resume?.content ?? '') : null
+  );
   const sourceSummary = $derived.by(() => {
     if (!sourceUploads.length) return '선택한 자료 없음';
     const chars = sourceUploads.reduce((sum, file) => sum + file.chars, 0);
     return `${sourceUploads.length}개 · ${chars.toLocaleString()}자`;
+  });
+  const actualFiveHourRemaining = $derived.by(() => {
+    if (!isAgyCommand($settings.command) || !$providerUsage?.ok) return null;
+    const values = $providerUsage.groups.flatMap((group) => group.fiveHour ? [group.fiveHour.remainingPercent] : []);
+    return values.length ? Math.min(...values) : null;
+  });
+  const actualWeeklyRemaining = $derived.by(() => {
+    if (!isAgyCommand($settings.command) || !$providerUsage?.ok) return null;
+    const values = $providerUsage.groups.flatMap((group) => group.weekly ? [group.weekly.remainingPercent] : []);
+    return values.length ? Math.min(...values) : null;
   });
 
   $effect(() => {
@@ -55,6 +71,7 @@
   async function refresh() {
     try {
       step = computeNextStep(await loadWorkflowSnapshot(ctx()));
+      if (step.episode) currentEpisode.set(step.episode);
     } catch {
       step = null;
     }
@@ -107,25 +124,28 @@
     await refresh();
   }
 
-  async function importStructuredPackage() {
+  async function importStructuredPackage(startMode: PlanningStartMode) {
     const pkg = planningPackage;
     if (!pkg || sourceReading) return;
     clearRunFeed();
     const r = await withBusy('구조화 기획 가져오기', async () => {
       await saveSourceRawIfNeeded();
-      const imported = await importPlanningPackage(ctx(), pkg);
+      const imported = await importPlanningPackage(ctx(), pkg, startMode);
+      await ensureEpisodeScaffold(ctx(), imported.startEpisode);
       const foundation = await ensureStoryFoundation(ctx(), {
         title: $project?.title ?? '작품',
         notes: imported.plotPrompt,
-        episode: 'ep001',
+        episode: imported.startEpisode,
+        episodeCount: imported.episodeCount,
         forcePlot: true
       });
       return { imported, foundation };
     }, false);
     if (!r) return;
     sourceUploads = [];
+    currentEpisode.set(r.imported.startEpisode);
     toast(
-      `기획 패키지 적용: 기준 파일 ${r.imported.writtenPaths.length}개, ${foundationLabel(r.foundation)}.`,
+      `기획 패키지 적용: ${r.imported.startEpisode}${r.imported.startMode === 'continue' ? '부터 이어쓰기' : '부터 다시 쓰기'}, 기준 파일 ${r.imported.writtenPaths.length}개, ${foundationLabel(r.foundation)}.`,
       r.foundation.plotSource === 'fallback' ? 'warn' : 'ok'
     );
     await refreshAll();
@@ -168,10 +188,7 @@
   const agentStatus = $derived($settings.offline ? '오프라인' : $settings.command ? '연결됨' : '미설정');
   // CTA 문구에 이미 실행 의미가 있으므로 홈은 버튼 하나만 크게 둔다.
   const showIntent = $derived(step?.action === 'startProject' || step?.action === 'writeNextEpisode' || step?.action === 'prepareStoryFoundation');
-  const freshEpisode = $derived.by(() => {
-    if (step?.episode && ['prepareStoryFoundation', 'writeNextEpisode', 'applyCandidate'].includes(step.action)) return step.episode;
-    return nextEpisode($episodes[$episodes.length - 1] ?? 'ep000');
-  });
+  const freshEpisode = 'ep001';
 
   async function startFreshEpisode() {
     if (running) return;
@@ -179,6 +196,7 @@
     clearRunFeed();
     currentEpisode.set(target);
     const r = await withBusy('새 회차 준비', async () => {
+      await restartPlanningAtEpisodeOne(ctx(), $project?.title ?? '현재 프로젝트');
       await ensureEpisodeScaffold(ctx(), target);
       return ensureStoryFoundation(ctx(), {
         title: $project?.title ?? '작품',
@@ -388,7 +406,20 @@
                 <span>{planningPackage.archiveName} / {planningPackage.files.length}개 문서 / {planningPackage.totalChars.toLocaleString()}자</span>
                 <span>설정, 인물, 세계, 플롯, 재개 문서를 보존하고 플롯 구조만 정리합니다.</span>
               </div>
-              <button class="primary" onclick={importStructuredPackage} disabled={running || sourceReading}>이 구조로 바로 시작</button>
+              <div class="package-actions">
+                {#if packageResumeEpisode && packageResumeEpisode !== 'ep001'}
+                  <button class="primary" onclick={() => importStructuredPackage('continue')} disabled={running || sourceReading}>
+                    {packageResumeEpisode}부터 이어쓰기
+                  </button>
+                  <button class="quiet" onclick={() => importStructuredPackage('restart')} disabled={running || sourceReading}>
+                    ep001부터 다시 쓰기
+                  </button>
+                {:else}
+                  <button class="primary" onclick={() => importStructuredPackage('restart')} disabled={running || sourceReading}>
+                    이 구조로 시작
+                  </button>
+                {/if}
+              </div>
             </div>
           {/if}
           {#if sourceUploads.length}
@@ -424,7 +455,7 @@
         </button>
         {#if step.action !== 'startProject'}
           <button class="card" onclick={startFreshEpisode} disabled={running}>
-            같은 작품에서 <b>{freshEpisode}</b> 처음부터 쓰기 <span class="go">시작 →</span>
+            같은 설정으로 <b>ep001</b>부터 다시 쓰기 <span class="go">시작 →</span>
           </button>
         {/if}
       </nav>
@@ -460,10 +491,21 @@
         <dt>보류</dt>
         <dd>{$pendingProposals}건</dd>
       </div>
-      <div>
-        <dt>이번 달 사용량</dt>
-        <dd class="mono">${$usageSummary.thisMonth.costUsd.toFixed(2)}</dd>
-      </div>
+      {#if isAgyCommand($settings.command)}
+        <div>
+          <dt>Agy 5시간</dt>
+          <dd class="mono">{actualFiveHourRemaining == null ? '조회 필요' : `${Math.round(actualFiveHourRemaining)}% 남음`}</dd>
+        </div>
+        <div>
+          <dt>Agy 주간</dt>
+          <dd class="mono">{actualWeeklyRemaining == null ? '조회 필요' : `${Math.round(actualWeeklyRemaining)}% 남음`}</dd>
+        </div>
+      {:else}
+        <div>
+          <dt>이번 달 사용량</dt>
+          <dd class="mono">${$usageSummary.thisMonth.costUsd.toFixed(2)}</dd>
+        </div>
+      {/if}
     </dl>
     <div class="ledger-actions">
       <button class="ledger-link" onclick={() => mode.set('notes')}>
@@ -538,6 +580,7 @@
   .package-ready b { color: var(--accent); }
   .package-ready span { color: var(--muted); font-size: 11.5px; }
   .package-ready button { flex: 0 0 auto; }
+  .package-actions { min-width: calc(var(--control-height) * 6); }
   .source-row {
     display: flex;
     gap: var(--space-2);

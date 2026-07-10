@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createProject, readOptional } from '../src/lib/harness/project';
-import { detectPlanningPackage, importPlanningPackage } from '../src/lib/harness/sourcePackage';
+import {
+  detectPlanningPackage, importPlanningPackage, inferPlanningEpisodeCount, inferResumeNextEpisode,
+  restartPlanningAtEpisodeOne
+} from '../src/lib/harness/sourcePackage';
 import { memoryBridge, resetMemoryBridge } from '../src/lib/bridge/memoryBridge';
 import type { SourceUpload } from '../src/lib/harness/sourceUploads';
 import type { Ctx } from '../src/lib/harness/types';
+import { LAYOUT } from '../src/lib/core/layout';
 
 function upload(path: string, content: string): SourceUpload {
   return {
@@ -54,6 +58,40 @@ describe('structured planning package', () => {
     expect(await readOptional(ctx, 'canon/setting-bible.md')).toContain('확정 세계 규칙');
     expect(await readOptional(ctx, 'plot/imported-plot-bible.md')).toContain('1화 상속');
     expect(result.plotPrompt).toContain('새 사건을 추가하지 말고');
+    expect(result.startEpisode).toBe('ep001');
+    expect(result.startMode).toBe('continue');
+  });
+
+  it('separates continuing from the imported resume point and restarting at ep001', async () => {
+    const files = [
+      upload('canon/setting-bible-v51.md', '# 설정 바이블\n\n확정 세계 규칙과 장기 전제가 충분히 들어 있다.'),
+      upload('world/dungeon-industry-bible-v51.md', '# 던전 산업\n\n리그와 계약 규칙.'),
+      upload('plot/season1-plot-bible-v51.md', '# 시즌 플롯\n\n### 1화\n시작\n\n### 20화\n첫 공식 공략.'),
+      upload('status/resume-state-v51.md', '# Resume State\n\n## Next recommended episode\n\nEpisode 15 should center on the caller gap.')
+    ];
+    const pkg = detectPlanningPackage(files)!;
+
+    const continued = await importPlanningPackage(ctx, pkg, 'continue');
+    expect(continued.startEpisode).toBe('ep015');
+    expect(continued.episodeCount).toBe(20);
+    expect(await readOptional(ctx, LAYOUT.status.resume)).toContain('Episode 15');
+
+    const restarted = await importPlanningPackage(ctx, pkg, 'restart');
+    expect(restarted.startEpisode).toBe('ep001');
+    expect(restarted.episodeCount).toBe(20);
+    expect(await readOptional(ctx, LAYOUT.status.resume)).toContain('다음 회차: ep001');
+    expect(await readOptional(ctx, LAYOUT.status.resume)).toContain('실제 원고는 ep001부터 새로 작성합니다');
+
+    await importPlanningPackage(ctx, pkg, 'continue');
+    await restartPlanningAtEpisodeOne(ctx, '패키지 작품');
+    expect(await readOptional(ctx, LAYOUT.status.resume)).toContain('다음 회차: ep001');
+  });
+
+  it('infers English and Korean resume positions and preserves the furthest plot episode', () => {
+    expect(inferResumeNextEpisode('## Next recommended episode\n\nEpisode 15 should continue the mainline.')).toBe('ep015');
+    expect(inferResumeNextEpisode('- 다음 회차: ep007')).toBe('ep007');
+    expect(inferResumeNextEpisode('Mainline continues from episode 14')).toBe('ep015');
+    expect(inferPlanningEpisodeCount('1~14화 진행\n### 20화 권장')).toBe(20);
   });
 
   it('does not misclassify an ordinary text zip as a structured package', () => {
