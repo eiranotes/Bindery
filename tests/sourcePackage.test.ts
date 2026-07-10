@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createProject, readOptional } from '../src/lib/harness/project';
 import {
   detectPlanningPackage, importPlanningPackage, inferPlanningEpisodeCount, inferResumeNextEpisode,
-  restartPlanningAtEpisodeOne
+  isPlanningRestartState, restartPlanningAtEpisodeOne
 } from '../src/lib/harness/sourcePackage';
 import { memoryBridge, resetMemoryBridge } from '../src/lib/bridge/memoryBridge';
 import type { SourceUpload } from '../src/lib/harness/sourceUploads';
 import type { Ctx } from '../src/lib/harness/types';
-import { LAYOUT } from '../src/lib/core/layout';
+import { LAYOUT, candidatePath, episodePaths } from '../src/lib/core/layout';
 
 function upload(path: string, content: string): SourceUpload {
   return {
@@ -83,8 +83,18 @@ describe('structured planning package', () => {
     expect(await readOptional(ctx, LAYOUT.status.resume)).toContain('실제 원고는 ep001부터 새로 작성합니다');
 
     await importPlanningPackage(ctx, pkg, 'continue');
+    await memoryBridge.writeFile(ctx.root, episodePaths('ep001').manuscript, '기존 ep001 원고');
+    await memoryBridge.writeFile(ctx.root, episodePaths('ep001').brief, '기존 ep001 브리프');
+    await memoryBridge.writeFile(ctx.root, `${LAYOUT.bindery.root}/episodes.json`, JSON.stringify({ ep001: { status: 'fixed' } }));
+    await memoryBridge.writeFile(ctx.root, candidatePath('ep001', 'index.json'), JSON.stringify([{ id: 'old' }]));
     await restartPlanningAtEpisodeOne(ctx, '패키지 작품');
-    expect(await readOptional(ctx, LAYOUT.status.resume)).toContain('다음 회차: ep001');
+    const restartedResume = await readOptional(ctx, LAYOUT.status.resume);
+    expect(restartedResume).toContain('다음 회차: ep001');
+    expect(isPlanningRestartState(restartedResume)).toBe(true);
+    expect(await readOptional(ctx, episodePaths('ep001').manuscript)).toContain('원고가 아직 없습니다');
+    expect(await memoryBridge.exists(ctx.root, episodePaths('ep001').brief)).toBe(false);
+    expect(JSON.parse(await readOptional(ctx, `${LAYOUT.bindery.root}/episodes.json`))).toEqual({});
+    expect(JSON.parse(await readOptional(ctx, candidatePath('ep001', 'index.json')))).toEqual([]);
   });
 
   it('infers English and Korean resume positions and preserves the furthest plot episode', () => {

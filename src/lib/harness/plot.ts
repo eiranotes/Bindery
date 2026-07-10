@@ -7,7 +7,15 @@ import { readOptional } from './project';
 import { LAYOUT, episodeId } from '$lib/core/layout';
 import { clip, nowIso } from '$lib/core/text';
 import { parsePlotPlan, type PlotPlan, type PlotEpisodeRow } from '$lib/schemas/contracts';
+import { snapshotFile } from './snapshots';
 import type { Ctx, StageOutcome } from './types';
+
+export type PlotProposalOptions = {
+  /** 기존 활성 플롯을 연장하지 않고 새 연재선으로 교체한다. */
+  reset?: boolean;
+  /** 결과에 반드시 포함되어야 하는 회차. 재작성 플롯의 범위 누락을 막는다. */
+  requiredEpisodes?: string[];
+};
 
 export async function loadPlotPlan(ctx: Ctx): Promise<PlotPlan | null> {
   try {
@@ -87,31 +95,56 @@ function localPlotFallback(count: number, previous: PlotPlan | null): PlotPlan {
 }
 
 /** 플롯 계획 제안 — 기존 승인 회차는 보존한다. */
-export async function proposePlot(ctx: Ctx, episodeCount: number, notes: string): Promise<StageOutcome<PlotPlan>> {
+export async function proposePlot(
+  ctx: Ctx,
+  episodeCount: number,
+  notes: string,
+  options: PlotProposalOptions = {}
+): Promise<StageOutcome<PlotPlan>> {
   const previous = await loadPlotPlan(ctx);
+  const requiredEpisodes = options.requiredEpisodes ?? [];
   const outcome = await runStage(ctx, {
     stage: 'plot-plan',
     scope: 'work',
     blueprint: BLUEPRINTS.plotPlan,
     vars: {
       episodeCount: String(episodeCount),
+      planningMode: options.reset
+        ? `ep001 재작성. 이전 활성 플롯을 이어 쓰지 않는다. ep001부터 ep${String(episodeCount).padStart(3, '0')}까지 정확히 다시 설계한다.`
+        : '기존 승인 회차가 있으면 보존하고 현재 연재선을 이어서 보강한다.',
       bible: clip(await readOptional(ctx, LAYOUT.canon.bible), 8000) || '(바이블 없음 — 보수적으로 제안하고 risk에 명시)',
       openThreads: clip(await readOptional(ctx, LAYOUT.plot.openThreads), 2000) || '(없음)',
-      existingPlot: previous ? clip(JSON.stringify(previous.episodes.filter((e) => e.status === 'approved'), null, 1), 6000) : '(없음)',
+      existingPlot: options.reset
+        ? '(재작성 모드: 기존 활성 플롯은 이어쓰기 입력에서 제외됨)'
+        : previous ? clip(JSON.stringify(previous.episodes.filter((e) => e.status === 'approved'), null, 1), 6000) : '(없음)',
       notes: notes || '(없음)'
     },
-    parse: (text) => parsePlotPlan(text, nowIso()),
-    fallback: () => localPlotFallback(episodeCount, previous),
-    repairHint: '{"schema_version":"bindery.plot_plan.v1","arcs":[{"id":"arc1","label":"1부","goal":"...","episodes":"ep001-ep008"}],"episodes":[{"episode":"ep001","arc":"arc1","title":"...","goal":"...","beats":["..."],"threads_open":[],"threads_close":[],"hook":"...","risk":""}]}'
+    parse: (text) => {
+      const parsed = parsePlotPlan(text, nowIso());
+      if (!parsed) return null;
+      const received = new Set(parsed.episodes.map((row) => row.episode));
+      if (requiredEpisodes.some((episode) => !received.has(episode))) return null;
+      if (options.reset) parsed.episodes = requiredEpisodes.map((episode) => parsed.episodes.find((row) => row.episode === episode)!);
+      return parsed;
+    },
+    fallback: () => localPlotFallback(episodeCount, options.reset ? null : previous),
+    repairHint: [
+      '{"schema_version":"bindery.plot_plan.v1","arcs":[{"id":"arc1","label":"1부","goal":"...","episodes":"ep001-ep008"}],"episodes":[{"episode":"ep001","arc":"arc1","title":"...","goal":"...","beats":["..."],"threads_open":[],"threads_close":[],"hook":"...","risk":""}]}',
+      requiredEpisodes.length ? `필수 회차 범위: ${requiredEpisodes.join(', ')}. 하나도 빠뜨리지 않는다.` : ''
+    ].filter(Boolean).join('\n')
   });
 
   // 사람이 승인한 회차는 재제안이 덮지 못한다.
   const plan = outcome.output;
-  if (previous) {
+  if (previous && !options.reset) {
     for (let i = 0; i < plan.episodes.length; i++) {
       const before = previous.episodes.find((e) => e.episode === plan.episodes[i].episode);
       if (before?.status === 'approved') plan.episodes[i] = before;
     }
+  }
+  if (options.reset && previous) {
+    await snapshotFile(ctx, LAYOUT.plot.board, 'ep001 재시작 전: 활성 플롯');
+    await snapshotFile(ctx, LAYOUT.plot.seriesOutline, 'ep001 재시작 전: 시리즈 아웃라인');
   }
   await savePlotPlan(ctx, plan);
   await writeArtifact(ctx, 'work', 'plot-plan', `플롯 계획 ${plan.episodes.length}화`, renderPlotOutline(plan), outcome.source);

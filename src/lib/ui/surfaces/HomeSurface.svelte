@@ -6,7 +6,7 @@
     busy, activeRun, intentNote, autopilotKick, clearRunFeed, toast, project, refreshAll,
     projectRefreshing, settings, usageSummary, providerUsage
   } from '$lib/stores/app';
-  import { loadWorkflowSnapshot, computeNextStep, type NextStep } from '$lib/harness/workflow';
+  import { loadWorkflowSnapshot, computeNextStep, type NextStep, type WorkflowSnapshot } from '$lib/harness/workflow';
   import {
     runProjectStarterAutopilot, adoptStarterIdea, ensureStoryFoundation,
     ensureEpisodeScaffold, type FoundationResult
@@ -28,6 +28,7 @@
   const SOURCE_PROMPT_MAX_CHARS = 18_000;
 
   let step = $state<NextStep | null>(null);
+  let workflowSnapshot = $state<WorkflowSnapshot | null>(null);
   let starterIdeas = $state<IdeaFile[]>([]);
   let sourceUploads = $state<SourceUpload[]>([]);
   let sourceInput = $state<HTMLInputElement | null>(null);
@@ -70,9 +71,11 @@
 
   async function refresh() {
     try {
-      step = computeNextStep(await loadWorkflowSnapshot(ctx()));
+      workflowSnapshot = await loadWorkflowSnapshot(ctx());
+      step = computeNextStep(workflowSnapshot);
       if (step.episode) currentEpisode.set(step.episode);
     } catch {
+      workflowSnapshot = null;
       step = null;
     }
   }
@@ -184,7 +187,8 @@
   }
 
   const lastFixed = $derived([...$episodes].reverse().find((e) => $progress[e]?.status === 'fixed') ?? null);
-  const foundationReady = $derived(Boolean(step && !['startProject', 'prepareStoryFoundation'].includes(step.action)));
+  const bibleReady = $derived(Boolean(workflowSnapshot?.hasBible));
+  const targetPlotReady = $derived(Boolean(workflowSnapshot?.targetHasPlotRow));
   const agentStatus = $derived($settings.offline ? '오프라인' : $settings.command ? '연결됨' : '미설정');
   // CTA 문구에 이미 실행 의미가 있으므로 홈은 버튼 하나만 크게 둔다.
   const showIntent = $derived(step?.action === 'startProject' || step?.action === 'writeNextEpisode' || step?.action === 'prepareStoryFoundation');
@@ -477,11 +481,11 @@
       </div>
       <div>
         <dt>설정 바이블</dt>
-        <dd>{foundationReady ? '준비됨' : '준비 전'}</dd>
+        <dd>{bibleReady ? '준비됨' : '준비 전'}</dd>
       </div>
       <div>
-        <dt>플롯</dt>
-        <dd>{foundationReady ? '준비됨' : '준비 전'}</dd>
+        <dt>현재 회차 플롯</dt>
+        <dd>{targetPlotReady ? '준비됨' : '준비 전'}</dd>
       </div>
       <div>
         <dt>현재 회차</dt>

@@ -309,6 +309,68 @@ describe('autopilot — 최소 입력·자동 중간 처리·최종 선택', () 
     expect(step.episode).toBe('ep015');
   });
 
+  it('workflow: ep001 재작성은 ep015 활성 플롯을 이어 쓰지 않고 회차 설계부터 다시 만든다', async () => {
+    const restartCtx: Ctx = { ...ctx };
+    let restartPlotPrompt = '';
+    setAgentScript((prompt, label) => {
+      if (label.includes('plot-plan')) {
+        if (!restartPlotPrompt) restartPlotPrompt = prompt;
+        return reply(JSON.stringify({
+          schema_version: 'bindery.plot_plan.v1',
+          arcs: [{ id: 'old', label: '잘못된 이어쓰기', goal: '15화 이후', episodes: 'ep015-ep022' }],
+          episodes: [{
+            episode: 'ep015', arc: 'old', title: '콜러 공백', goal: '기존 진행을 잇는다',
+            beats: ['훈련 로그 분석'], threads_open: [], threads_close: [], hook: '콜러를 찾는다', risk: ''
+          }]
+        }));
+      }
+      return scriptedAgent(prompt, label);
+    });
+    await memoryBridge.writeFile(ctx.root, LAYOUT.canon.bible, [
+      '# 메달리온 설정 바이블', '',
+      '던전 산업과 구단 계약, 인물 관계, 마력 규칙을 확정 기준으로 유지한다. 기존 사건은 새 연재선에서 처음부터 다시 배치할 수 있다.'
+    ].join('\n'));
+    await memoryBridge.writeFile(ctx.root, LAYOUT.plot.board, JSON.stringify({
+      schema_version: 'bindery.plot_plan.v1',
+      arcs: [{ id: 'old', label: '기존 이어쓰기', goal: '15화 이후', episodes: 'ep015-ep022' }],
+      episodes: [{
+        episode: 'ep015', arc: 'old', title: '콜러 공백', goal: '기존 진행을 잇는다',
+        beats: ['훈련 로그 분석'], threads_open: [], threads_close: [], hook: '콜러를 찾는다', risk: '', status: 'draft'
+      }],
+      source: 'agent', updatedAt: '2026-07-10T00:00:00Z'
+    }, null, 2));
+    await memoryBridge.writeFile(ctx.root, 'plot/imported-plot-bible.md', [
+      '# 시즌 플롯', '### 1화: 성공한 공략', '창단의 원인이 되는 사건.', '### 20화: 첫 공식 공략', '시즌 전반의 도착점.'
+    ].join('\n'));
+    await memoryBridge.writeFile(ctx.root, LAYOUT.status.resume, [
+      '# 재개 상태', '> planning_start_mode: restart', '- 다음 회차: ep001', '- 실제 원고는 ep001부터 새로 작성합니다.'
+    ].join('\n'));
+
+    const foundation = await ensureStoryFoundation(restartCtx, { title: '메달리온', episode: 'ep001' });
+    const replanned = await loadPlotPlan(restartCtx);
+    expect(foundation.plotCreated).toBe(true);
+    expect(foundation.plotEpisodes).toBe(20);
+    expect(foundation.plotSource).toBe('fallback');
+    expect(restartPlotPrompt).toContain('[ep001 재작성 모드]');
+    expect(restartPlotPrompt).toContain('[원본 플롯 바이블]');
+    expect(restartPlotPrompt).toContain('1화: 성공한 공략');
+    expect(replanned?.episodes[0].episode).toBe('ep001');
+    expect(replanned?.episodes.at(-1)?.episode).toBe('ep020');
+    const snapshotIndex = JSON.parse(await readOptional(restartCtx, `${LAYOUT.bindery.snapshots}/index.json`)) as Array<{ targetPath: string }>;
+    expect(snapshotIndex.some((snapshot) => snapshot.targetPath === LAYOUT.plot.board)).toBe(true);
+    const runIndex = JSON.parse(await readOptional(restartCtx, `${LAYOUT.bindery.runs}/index.json`)) as Array<{ stage: string; repairUsed: boolean }>;
+    expect(runIndex.find((run) => run.stage === 'plot-plan')?.repairUsed).toBe(true);
+
+    const step = computeNextStep(await loadWorkflowSnapshot(restartCtx));
+    expect(step.action).toBe('writeNextEpisode');
+    expect(step.episode).toBe('ep001');
+
+    const written = await runEpisodeAutopilot(restartCtx, { episode: 'ep001', regeneratePlan: true });
+    expect(written.error).toBeUndefined();
+    expect(await loadBrief(restartCtx, 'ep001')).not.toBeNull();
+    expect(await loadScenePlan(restartCtx, 'ep001')).not.toBeNull();
+  });
+
   it('workflow: 원고가 있어도 바이블이 없으면 준비를 먼저 요구한다', async () => {
     await memoryBridge.writeFile(ctx.root, episodePaths('ep001').manuscript, [
       '---',

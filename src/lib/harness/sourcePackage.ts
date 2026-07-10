@@ -1,7 +1,7 @@
 // 구조화 기획 패키지 가져오기.
 // canon/world/plot/status 경로가 있는 zip은 단순 참고자료가 아니라 사람이 승인해
 // 프로젝트 기준 문서로 보존할 수 있다. plot-board.json만 기존 AI/로컬 플롯 단계가 정규화한다.
-import { LAYOUT, episodeId } from '$lib/core/layout';
+import { LAYOUT, candidatePath, episodeId, episodePaths, summaryPath } from '$lib/core/layout';
 import { clip, slugify } from '$lib/core/text';
 import { writeArtifact } from './artifacts';
 import { snapshotFile } from './snapshots';
@@ -91,12 +91,19 @@ export function inferPlanningEpisodeCount(content: string): number {
   return values.length ? Math.max(...values) : 8;
 }
 
+/** resume가 같은 설정을 보존한 ep001 재작성 분기인지 판별한다. */
+export function isPlanningRestartState(content: string): boolean {
+  return /실제\s*원고는\s*ep0*1부터\s*새로\s*작성/i.test(content) ||
+    /planning[_ -]?start[_ -]?mode\s*:\s*restart/i.test(content);
+}
+
 function restartResumeState(archiveName: string): string {
   return [
     '# 재개 상태',
     '',
-    '> 구조화 기획 패키지의 설정·인물·세계·플롯은 유지하고 원고 진행점만 초기화했습니다.',
+    '> 구조화 기획 패키지의 설정·인물·세계 규칙은 유지하고 활성 플롯과 집필 진행을 ep001 기준으로 초기화했습니다.',
     `> 원본 패키지: ${archiveName}`,
+    '> planning_start_mode: restart',
     '',
     '## 위치',
     '- 마지막 픽스: 없음',
@@ -110,9 +117,43 @@ function restartResumeState(archiveName: string): string {
   ].join('\n');
 }
 
-/** 이미 가져온 작품에서도 원본 바이블·플롯은 유지하고 활성 집필점만 ep001로 바꾼다. */
+async function resetEpisodeOneWorkspace(ctx: Ctx): Promise<number> {
+  const ep = episodePaths('ep001');
+  let snapshots = 0;
+  const writeReset = async (path: string, content: string, label: string, episode: string | null = null) => {
+    if (await snapshotFile(ctx, path, label, episode)) snapshots++;
+    await ctx.bridge.writeFile(ctx.root, path, content);
+  };
+  const deleteReset = async (path: string, label: string, episode: string | null = null) => {
+    if (!(await ctx.bridge.exists(ctx.root, path))) return;
+    if (await snapshotFile(ctx, path, label, episode)) snapshots++;
+    await ctx.bridge.deleteFile(ctx.root, path);
+  };
+
+  await writeReset(
+    ep.manuscript,
+    `---\nepisode: ep001\nstatus: planned\n---\n\n# ep001\n\n(원고가 아직 없습니다. 초안 후보를 생성해 diff로 적용하거나 직접 쓰세요.)\n`,
+    'ep001 재시작 전: 원고',
+    'ep001'
+  );
+  await writeReset(
+    ep.index,
+    '# ep001 작업 노트\n\n- 상태: 기획\n- 원고: manuscript.md\n- 브리프: brief.md (회차 브리프 단계가 생성)\n- 장면 계획: scene-plan.md\n',
+    'ep001 재시작 전: 작업 노트',
+    'ep001'
+  );
+  await deleteReset(ep.brief, 'ep001 재시작 전: 회차 브리프', 'ep001');
+  await deleteReset(ep.scenePlan, 'ep001 재시작 전: 장면 계획', 'ep001');
+  await deleteReset(summaryPath('ep001'), 'ep001 재시작 전: 회차 요약', 'ep001');
+  await writeReset(`${LAYOUT.bindery.root}/episodes.json`, '{}\n', 'ep001 재시작 전: 진행 상태');
+  await writeReset(candidatePath('ep001', 'index.json'), '[]\n', 'ep001 재시작 전: 후보 목록', 'ep001');
+  return snapshots;
+}
+
+/** 이미 가져온 작품에서도 원본 바이블·플롯 자료는 유지하고 활성 집필점을 ep001로 재설정한다. */
 export async function restartPlanningAtEpisodeOne(ctx: Ctx, sourceLabel = '현재 프로젝트'): Promise<void> {
   await writeWithSnapshot(ctx, LAYOUT.status.resume, restartResumeState(sourceLabel), 'ep001 재시작 전: 재개 상태');
+  await resetEpisodeOneWorkspace(ctx);
 }
 
 /** canon 설정 문서와 plot/world 문서가 같이 있는 zip만 구조화 패키지로 판정한다. */
@@ -219,6 +260,7 @@ export async function importPlanningPackage(
     }
     writtenPaths.push(LAYOUT.status.resume);
   }
+  if (startMode === 'restart') snapshotCount += await resetEpisodeOneWorkspace(ctx);
 
   const episodeCount = inferPlanningEpisodeCount(pkg.plot?.content ?? '');
 

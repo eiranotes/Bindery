@@ -31,15 +31,18 @@ function emitLive(event: RunLiveEvent): void {
   for (const l of liveListeners) l(event);
 }
 
-function repairPrompt(hint: string, invalidOutput: string, reason: string): string {
+function repairPrompt(hint: string, invalidOutput: string, reason: string, originalRequest: string): string {
   return [
     '직전 출력이 스키마 검증에 실패했다.',
     `실패 이유: ${reason}`,
-    '새 내용을 창작하지 말고, 직전 출력에서 복구 가능한 정보만 사용해 요구 형식의 JSON object 하나만 다시 출력하라.',
+    '원래 작업 요구의 사실 입력과 직전 출력에서 복구 가능한 정보만 사용해 요구 형식의 JSON object 하나만 다시 출력하라.',
     '설명·사과·코드펜스 밖 텍스트를 붙이지 않는다.',
     '',
     '## 요구 형식',
     hint,
+    '',
+    '## 원래 작업 요구',
+    originalRequest.slice(0, 24_000),
     '',
     '## 직전 출력',
     invalidOutput.slice(0, 12000)
@@ -133,7 +136,7 @@ export async function runStage<T>(ctx: Ctx, spec: StageRunSpec<T>): Promise<Stag
         parseFailReason = '1차 출력 스키마 검증 실패';
         repairUsed = true;
         const repair = await runAgent(
-          repairPrompt(spec.repairHint, agentResult.text, parseFailReason),
+          repairPrompt(spec.repairHint, agentResult.text, parseFailReason, prompt),
           `${runId}-repair`
         );
         agentResult = repair;

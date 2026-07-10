@@ -6,7 +6,7 @@
 //   후보/제안/체크리스트를 만들어 돌려주고, 확정은 UI의 명시적 버튼이 한다.
 // - 모든 중간 산출물은 기존 stage가 만드는 파일로 그대로 남는다 (근거 보기에서 열람).
 import { LAYOUT, episodePaths } from '$lib/core/layout';
-import { parseFrontmatter } from '$lib/core/text';
+import { clip, parseFrontmatter } from '$lib/core/text';
 import {
   generateBrief, generateScenePlan, generateDraftCandidates, generateRevisionCandidate,
   loadBrief, loadScenePlan, setPlanningApproval, approvalStatus, runQA,
@@ -21,6 +21,7 @@ import { loadPlotPlan, proposePlot } from './plot';
 import { applyProposal, decideItem, type CanonDeltaRecord, type ItemDecision } from './proposals';
 import { hasSubstance, loadEpisodeContext, nextEpisode } from './context';
 import { readOptional } from './project';
+import { inferPlanningEpisodeCount, isPlanningRestartState } from './sourcePackage';
 import type { QAAspect, QAReport, RevisionPlan } from '$lib/schemas/contracts';
 import type { Ctx } from './types';
 
@@ -283,11 +284,13 @@ export async function ensureStoryFoundation(
   ctx: Ctx,
   opts: { title: string; notes?: string; episode?: string; episodeCount?: number; forcePlot?: boolean }
 ): Promise<FoundationResult> {
-  const [assets, ideas, bibleRaw, existingPlot] = await Promise.all([
+  const [assets, ideas, bibleRaw, existingPlot, resumeState, importedPlot] = await Promise.all([
     collectAssetFiles(ctx),
     listIdeas(ctx),
     readOptional(ctx, LAYOUT.canon.bible),
-    loadPlotPlan(ctx)
+    loadPlotPlan(ctx),
+    readOptional(ctx, LAYOUT.status.resume),
+    readOptional(ctx, 'plot/imported-plot-bible.md')
   ]);
   const selectedIdeas = ideas.filter((i) => i.status === 'selected');
   let bibleSource: FoundationResult['bibleSource'] = hasSubstance(bibleRaw) ? 'existing' : 'none';
@@ -301,11 +304,13 @@ export async function ensureStoryFoundation(
   }
 
   const targetEpisode = opts.episode;
+  const restartFromEpisodeOne = targetEpisode === 'ep001' && isPlanningRestartState(resumeState);
   const targetHasPlotRow = targetEpisode
     ? Boolean(existingPlot?.episodes.some((row) => row.episode === targetEpisode))
     : true;
   const shouldPlan =
     opts.forcePlot ||
+    restartFromEpisodeOne ||
     bibleCreated ||
     !existingPlot?.episodes.length ||
     !targetHasPlotRow;
@@ -313,13 +318,32 @@ export async function ensureStoryFoundation(
   let plotSource: FoundationResult['plotSource'] = existingPlot?.episodes.length ? 'existing' : 'none';
   let plotEpisodes = existingPlot?.episodes.length ?? 0;
   if (shouldPlan) {
-    const count = Math.max(opts.episodeCount ?? 8, episodeNumber(targetEpisode), plotEpisodes || 0);
+    const importedEpisodeCount = importedPlot.trim() ? inferPlanningEpisodeCount(importedPlot) : 0;
+    const count = restartFromEpisodeOne
+      ? Math.max(opts.episodeCount ?? (importedEpisodeCount || 8), episodeNumber(targetEpisode))
+      : Math.max(opts.episodeCount ?? 8, episodeNumber(targetEpisode), plotEpisodes || 0);
+    const restartEndEpisode = `ep${String(count).padStart(3, '0')}`;
     const notes = [
+      restartFromEpisodeOne ? [
+        '[ep001 재작성 모드]',
+        `이 작업은 ${targetEpisode}부터 새 연재선을 만드는 재작성이다. 기존 문서가 1~14화를 완료 이력처럼 서술해도 이어쓰지 않는다.`,
+        `설정·인물·세계 규칙은 고정하되, 원본의 사건 구조를 ep001~${restartEndEpisode}의 새 활성 플롯으로 다시 배치한다.`,
+        '반드시 ep001 행을 포함하고, 원본의 1화 사건부터 새 회차 설계의 출발점으로 취급한다.',
+        importedPlot.trim() ? `\n[원본 플롯 바이블]\n${clip(importedPlot, 12_000)}` : ''
+      ].filter(Boolean).join('\n') : '',
       opts.notes?.trim(),
       selectedIdeas.length ? `채택 기획: ${selectedIdeas.map((i) => `${i.seed.title} - ${i.seed.hook}`).join(' / ')}` : '',
       bibleCreated ? '바이블을 방금 조립했으므로 이 바이블을 기준으로 플롯을 정렬한다.' : ''
     ].filter(Boolean).join('\n');
-    const plot = await proposePlot(ctx, count || 8, notes || '라이트모드 준비: 현재 바이블을 기준으로 플롯을 구성한다.');
+    const requiredEpisodes = restartFromEpisodeOne
+      ? Array.from({ length: count }, (_, index) => `ep${String(index + 1).padStart(3, '0')}`)
+      : undefined;
+    const plot = await proposePlot(
+      ctx,
+      count || 8,
+      notes || '라이트모드 준비: 현재 바이블을 기준으로 플롯을 구성한다.',
+      { reset: restartFromEpisodeOne, requiredEpisodes }
+    );
     plotSource = plot.source;
     plotEpisodes = plot.output.episodes.length;
   }
