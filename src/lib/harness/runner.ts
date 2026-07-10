@@ -5,11 +5,13 @@
 import { renderBlueprint } from '$lib/core/blueprint';
 import { nowIso, stamp } from '$lib/core/text';
 import { runPath, LAYOUT } from '$lib/core/layout';
+import { appendUsage, usageEntryFromChars } from './usage';
 import type { Ctx, RunListener, RunLiveEvent, RunLiveListener, RunRecord, StageOutcome, StageRunSpec } from './types';
 import type { AgentResult } from '$lib/bridge';
 
 const listeners = new Set<RunListener>();
 const liveListeners = new Set<RunLiveListener>();
+let persistQueue: Promise<void> = Promise.resolve();
 
 export function onRun(listener: RunListener): () => void {
   listeners.add(listener);
@@ -59,6 +61,25 @@ async function persistRun(ctx: Ctx, record: RunRecord): Promise<void> {
   } catch {
     /* run 기록 실패는 흐름을 막지 않는다 */
   }
+  // 비용 원장 — run 인덱스는 200개만 유지하므로 월 누적용 원장을 별도로 쌓는다.
+  await appendUsage(ctx, usageEntryFromChars({
+    at: record.finishedAt,
+    stage: record.stage,
+    scope: record.scope,
+    model: record.model,
+    source: record.source,
+    promptChars: record.promptChars,
+    outputChars: record.outputChars
+  }));
+}
+
+/** 병렬 stage는 AI 실행만 겹치고 index/usage read-modify-write는 순서대로 반영한다. */
+function enqueuePersist(ctx: Ctx, record: RunRecord): Promise<void> {
+  const task = persistQueue.then(() => persistRun(ctx, record));
+  persistQueue = task.catch(() => {
+    /* 다음 기록이 앞선 기록 실패에 묶이지 않게 큐를 복구한다 */
+  });
+  return task;
 }
 
 export async function loadRunIndex(ctx: Ctx): Promise<RunRecord[]> {
@@ -83,18 +104,25 @@ export async function runStage<T>(ctx: Ctx, spec: StageRunSpec<T>): Promise<Stag
   let source: 'agent' | 'fallback' = 'fallback';
   let repairUsed = false;
   let parseFailReason: string | undefined;
+  let executedPromptChars = 0;
+  let executedOutputChars = 0;
 
-  const runAgent = (promptText: string, label: string): Promise<AgentResult> => {
+  const runAgent = async (promptText: string, label: string): Promise<AgentResult> => {
+    executedPromptChars += promptText.length;
     emitLive({ type: 'start', runId: label, stage: spec.stage, scope: spec.scope, startedAt: nowIso() });
     if (ctx.bridge.runAgentStream) {
-      return ctx.bridge.runAgentStream(ctx.root, promptText, label, agent, (event) => {
+      const result = await ctx.bridge.runAgentStream(ctx.root, promptText, label, agent, (event) => {
         if (event.type === 'status' || event.type === 'stdout' || event.type === 'stderr') {
           emitLive({ type: event.type, runId: label, stage: spec.stage, scope: spec.scope, text: event.text });
         }
       });
+      executedOutputChars += result.text.length;
+      return result;
     }
     emitLive({ type: 'status', runId: label, stage: spec.stage, scope: spec.scope, text: 'CLI 실행 중' });
-    return ctx.bridge.runAgent(ctx.root, promptText, label, agent);
+    const result = await ctx.bridge.runAgent(ctx.root, promptText, label, agent);
+    executedOutputChars += result.text.length;
+    return result;
   };
 
   if (!ctx.offline && agent.command.trim()) {
@@ -108,6 +136,7 @@ export async function runStage<T>(ctx: Ctx, spec: StageRunSpec<T>): Promise<Stag
           repairPrompt(spec.repairHint, agentResult.text, parseFailReason),
           `${runId}-repair`
         );
+        agentResult = repair;
         if (repair.ok) output = spec.parse(repair.text);
         if (output == null) parseFailReason = 'repair 후에도 검증 실패';
       } else if (output == null) {
@@ -133,8 +162,8 @@ export async function runStage<T>(ctx: Ctx, spec: StageRunSpec<T>): Promise<Stag
     finishedAt: nowIso(),
     durationMs: Date.now() - t0,
     source,
-    promptChars: prompt.length,
-    outputChars: agentResult?.text.length ?? 0,
+    promptChars: executedPromptChars || prompt.length,
+    outputChars: executedOutputChars,
     exitCode: agentResult?.exitCode ?? null,
     agentMode: agentResult?.mode ?? null,
     stderrTail: (agentResult?.stderr ?? '').slice(-1200),
@@ -144,7 +173,7 @@ export async function runStage<T>(ctx: Ctx, spec: StageRunSpec<T>): Promise<Stag
     command: agent.command,
     model: agent.model ?? ''
   };
-  await persistRun(ctx, record);
+  await enqueuePersist(ctx, record);
   emit(record);
   emitLive({ type: 'finish', runId, stage: spec.stage, scope: spec.scope, record });
   return { output, source, prompt, run: record, agentResult };

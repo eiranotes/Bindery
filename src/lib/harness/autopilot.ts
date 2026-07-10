@@ -24,10 +24,10 @@ import { readOptional } from './project';
 import type { QAAspect, QAReport, RevisionPlan } from '$lib/schemas/contracts';
 import type { Ctx } from './types';
 
-export const DEFAULT_CANDIDATE_LABELS = ['정석안', '추진안', '감정안'] as const;
+export const DEFAULT_CANDIDATE_LABELS = ['집필안'] as const;
 
 // ---------------------------------------------------------------------------
-// 회차 autopilot — 설계(브리프·장면 계획) 자동 + 초안 후보 2~3개
+// 회차 autopilot — 설계(브리프·장면 계획) 자동 + 초안 후보 1개
 // ---------------------------------------------------------------------------
 
 export type EpisodeAutopilotResult = {
@@ -74,7 +74,7 @@ export async function ensureEpisodeScaffold(ctx: Ctx, episode: string): Promise<
  */
 export async function runEpisodeAutopilot(
   ctx: Ctx,
-  opts: { episode: string; userNote?: string; candidateCount?: 2 | 3; targetLength?: number; regeneratePlan?: boolean }
+  opts: { episode: string; userNote?: string; candidateCount?: 1; targetLength?: number; regeneratePlan?: boolean }
 ): Promise<EpisodeAutopilotResult> {
   const { episode } = opts;
   const note = opts.userNote?.trim() ?? '';
@@ -115,8 +115,8 @@ export async function runEpisodeAutopilot(
     await setPlanningApproval(ctx, episode, 'scene-plan', 'approved', 'autopilot');
   }
 
-  // 2) 초안 후보 — 의미 라벨 2~3개, 승인 게이트는 위에서 충족됨
-  const labels = [...DEFAULT_CANDIDATE_LABELS].slice(0, opts.candidateCount ?? 3);
+  // 2) 간단 모드는 초안 후보 1개가 기본이다. 필요하면 설계자 모드에서 추가 후보를 만든다.
+  const labels = [...DEFAULT_CANDIDATE_LABELS].slice(0, opts.candidateCount ?? 1);
   const { candidates, error } = await generateDraftCandidates(ctx, episode, labels.length, note, {
     labels,
     skipApprovalGate: true
@@ -150,7 +150,7 @@ export async function applyCandidateToManuscript(ctx: Ctx, candidate: CandidateF
 }
 
 // ---------------------------------------------------------------------------
-// 검토·수정 autopilot — QA 3종 묶음 실행 + 체크리스트
+// 검토·수정 autopilot — QA 3종 병렬 실행 + 체크리스트
 // ---------------------------------------------------------------------------
 
 export type RevisionAutopilotResult = {
@@ -160,7 +160,7 @@ export type RevisionAutopilotResult = {
   error?: string;
 };
 
-/** QA 3종(문체·연속성·정사)을 묶어 실행하고 체크박스형 수정 계획을 돌려준다.
+/** QA 3종(문체·연속성·정사)을 병렬 실행하고 체크박스형 수정 계획을 돌려준다.
  *  AI 추천 항목은 기본 체크(accepted: true) 상태다. 원고는 건드리지 않는다. */
 export async function runRevisionAutopilot(
   ctx: Ctx,
@@ -171,11 +171,13 @@ export async function runRevisionAutopilot(
   if (!parseFrontmatter(content).body.trim()) {
     return { episode, reports: [], plan: null, error: '검토할 원고가 없습니다.' };
   }
-  const reports: QAReport[] = [];
-  for (const aspect of ['style', 'continuity', 'canon'] as QAAspect[]) {
+  // 세 관점은 같은 원고를 읽고 서로의 출력을 소비하지 않으므로 병렬 실행한다.
+  // run/usage 영속화는 runner의 큐가 직렬화해 index read-modify-write 경합을 막는다.
+  const aspects = ['style', 'continuity', 'canon'] as QAAspect[];
+  const reports = await Promise.all(aspects.map(async (aspect) => {
     const r = await runQA(ctx, episode, aspect, { label: '현재 원고', content });
-    reports.push(r.output as QAReport);
-  }
+    return r.output as QAReport;
+  }));
   const planOutcome = await generateRevisionPlanStage(
     ctx, episode, reports,
     opts.userNote?.trim() ? [`작가 지시: ${opts.userNote.trim()}`] : []
@@ -255,7 +257,7 @@ export async function finalizeCloseEpisode(
 }
 
 // ---------------------------------------------------------------------------
-// 작품 시작 autopilot — 기획 후보 3개 → 채택 시 세계관·바이블·플롯 자동 구성
+// 작품 시작 autopilot — 기획 후보 1개 → 채택 시 세계관·바이블·플롯 자동 구성
 // ---------------------------------------------------------------------------
 
 export type StarterResult = {
@@ -268,7 +270,7 @@ export async function runProjectStarterAutopilot(ctx: Ctx, userNote: string): Pr
   const { files } = await discoverIdeas(ctx, {
     genres: '', mood: '', cliches: '', readerExperience: '', avoid: '',
     notes: userNote.trim() || '(자유 기획 — 장기 연재에 강한 소재를 제안하라)',
-    count: 3
+    count: 1
   }, []);
   if (!files.length) return { ideas: [], error: '기획 후보를 만들지 못했습니다.' };
   return { ideas: files };
@@ -356,14 +358,13 @@ export async function adoptStarterIdea(
       approvedAssets++;
     }
     await applyProposal(ctx, decided);
-    // 바이블 조립 — 후보 생성 후 교체(교체 전 스냅샷). AI 조립이 실패해도
-    // 승인 자산 기반 로컬 조립본을 적용해 이후 플롯/회차가 빈 템플릿을 보지 않게 한다.
-    const { candidatePath: biblePath, outcome } = await assembleBible(ctx, title, [selected]);
-    if (approvedAssets > 0) {
-      await applyBibleCandidate(ctx, biblePath);
-      bibleSource = outcome.source;
-    }
   }
+
+  // 세계관 확장이 실패해도 채택 기획 자체로 로컬 바이블을 조립한다.
+  // 빈 템플릿을 근거로 플롯을 생성하는 경로를 허용하지 않는다.
+  const { candidatePath: biblePath, outcome } = await assembleBible(ctx, title, [selected]);
+  await applyBibleCandidate(ctx, biblePath);
+  bibleSource = outcome.source;
 
   // 플롯 초안 — row는 draft 상태로 남는다 (진행 확정은 hard commit이므로 자동 승인하지 않음)
   const plot = await proposePlot(ctx, 8, `채택 기획: ${selected.seed.title} — ${selected.seed.hook}`);

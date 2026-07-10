@@ -20,7 +20,7 @@ export async function snapshotFile(ctx: Ctx, targetPath: string, label: string, 
   } catch {
     return null;
   }
-  const id = `${stamp()}-${targetPath.split('/').pop()}`;
+  const id = `${stamp()}-${contentHash(targetPath).slice(0, 8)}-${targetPath.split('/').pop()}`;
   const dest = snapshotPath(episode, id);
   await ctx.bridge.writeFile(ctx.root, dest, content);
   const meta: SnapshotMeta = {

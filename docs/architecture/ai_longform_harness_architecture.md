@@ -17,7 +17,7 @@ UI (src/lib/ui)                 화면·상호작용만. 도메인 로직 없음
           └ bridge (src/lib/bridge)  로컬 접근 인터페이스
               ├ devBridge  → server/bridge.ts (Vite 미들웨어: Node fs + CLI spawn + SSE stream/cancel)
               ├ memoryBridge (테스트·데모)
-              └ tauriBridge → src-tauri Rust commands (fs/scaffold/run_agent/cancel_agent/env)
+              └ tauriBridge → src-tauri Rust commands (fs/scaffold/run_agent_stream/cancel_agent/pick_folder/env)
 ```
 
 의존 방향은 위→아래 단방향. harness는 Svelte를 import하지 않으므로 vitest에서 그대로 돈다

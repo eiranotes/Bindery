@@ -1,5 +1,5 @@
 <script lang="ts">
-  // 작품노트 — 인물·세계·플롯·떡밥·스타일을 한 화면에서 본다.
+  // 작품노트 - 인물·세계·플롯·떡밥·스타일을 한 화면에서 본다.
   // 유일하게 2단(목록+뷰어)을 쓰는 화면. 모든 내용은 Markdown 파일이 진실이다.
   import { ctx, tree, withBusy, toast, uiMode, mode } from '$lib/stores/app';
   import { readOptional } from '$lib/harness/project';
@@ -74,7 +74,7 @@
     if (!selectedPath) return;
     await withBusy('노트 저장', async () => {
       await ctx().bridge.writeFile(ctx().root, selectedPath!, content);
-      toast(`저장됨 — ${selectedPath}`, 'ok');
+      toast(`저장됨 - ${selectedPath}`, 'ok');
     }, false);
     dirty = false;
   }

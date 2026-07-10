@@ -10,6 +10,7 @@ import episodeBrief from '$prompts/episode_brief.prompt.md?raw';
 import scenePlan from '$prompts/scene_plan.prompt.md?raw';
 import draftCandidate from '$prompts/draft_candidate.prompt.md?raw';
 import contextDistill from '$prompts/context_distill.prompt.md?raw';
+import styleAnalysis from '$prompts/style_analysis.prompt.md?raw';
 import qaStyle from '$prompts/qa_style.prompt.md?raw';
 import qaContinuity from '$prompts/qa_continuity.prompt.md?raw';
 import qaCanon from '$prompts/qa_canon.prompt.md?raw';
@@ -33,6 +34,7 @@ export const BLUEPRINTS = {
   scenePlan: bp('scene-plan', 'prompts/scene_plan.prompt.md', scenePlan),
   draftCandidate: bp('draft-candidate', 'prompts/draft_candidate.prompt.md', draftCandidate),
   contextDistill: bp('context-distill', 'prompts/context_distill.prompt.md', contextDistill),
+  styleAnalysis: bp('style-analysis', 'prompts/style_analysis.prompt.md', styleAnalysis),
   qaStyle: bp('qa-style', 'prompts/qa_style.prompt.md', qaStyle),
   qaContinuity: bp('qa-continuity', 'prompts/qa_continuity.prompt.md', qaContinuity),
   qaCanon: bp('qa-canon', 'prompts/qa_canon.prompt.md', qaCanon),

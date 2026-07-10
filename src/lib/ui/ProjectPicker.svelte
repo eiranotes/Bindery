@@ -2,7 +2,10 @@
   // 시작 화면 - 최근 작품, 폴더 열기, 새 작품. 조용한 목록형 (히어로 카드 금지).
   import { onMount } from 'svelte';
   import { bridge } from '$lib/bridge';
-  import { openProjectByPath, createProjectAt, recentProjects, toast } from '$lib/stores/app';
+  import {
+    cancelPendingProjectOpen, createProjectAt, forgetRecentProject,
+    openProjectByPath, recentProjects, toast
+  } from '$lib/stores/app';
 
   let { bridgeKind }: { bridgeKind: string } = $props();
 
@@ -28,20 +31,44 @@
   async function open(path: string) {
     if (!path.trim()) return;
     opening = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       // 파일 접근이 OS 권한(예: macOS의 문서 폴더 접근 차단)으로 응답 없이 매달릴 수
-      // 있다 — 조용히 영원히 기다리지 않고 원인 후보와 함께 실패를 알린다.
+      // 있다 - marker 확인부터 실제 열기까지 전체 요청에 timeout을 건다.
       await Promise.race([
-        openProjectByPath(path.trim()),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('폴더 응답이 없습니다. macOS 폴더 접근 권한(문서/데스크톱)을 확인하거나 다른 위치의 폴더를 열어보세요.')), 15_000)
-        )
+        (async () => {
+          const marker = await bridge().exists(path.trim(), 'project.yaml').catch(() => false);
+          if (!marker && !confirm('project.yaml이 없는 폴더입니다. 일반 폴더를 Bindery 프로젝트로 열까요?')) return;
+          await openProjectByPath(path.trim());
+        })(),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => {
+            cancelPendingProjectOpen();
+            reject(new Error('폴더 응답이 없습니다. macOS 폴더 접근 권한(문서/데스크톱)을 확인하거나 다른 위치의 폴더를 열어보세요.'));
+          }, 15_000);
+        })
       ]);
     } catch (err) {
       toast(`열기 실패: ${err instanceof Error ? err.message : String(err)}`, 'bad');
     } finally {
+      if (timer) clearTimeout(timer);
       opening = false;
     }
+  }
+
+  async function chooseFolder(target: 'open' | 'base') {
+    const result = await bridge().pickFolder?.(target === 'open' ? '열 작품 폴더를 선택하세요' : '새 작품을 저장할 폴더를 선택하세요');
+    if (!result || result.cancelled || !result.path) return;
+    if (target === 'base') base = result.path;
+    else {
+      openPath = result.path;
+      await open(result.path);
+    }
+  }
+
+  function removeRecent(path: string) {
+    forgetRecentProject(path);
+    recents = recentProjects();
   }
 
   async function create() {
@@ -74,7 +101,10 @@
     {:else}
       <ul class="recent">
         {#each recents as r}
-          <li><button class="quiet" onclick={() => open(r)} disabled={working}>{r}</button></li>
+          <li>
+            <button class="quiet recent-path" onclick={() => open(r)} disabled={working} title={r}>{r}</button>
+            <button class="quiet recent-remove" onclick={() => removeRecent(r)} disabled={working} aria-label={`${r} 최근 목록에서 제거`}>제거</button>
+          </li>
         {/each}
       </ul>
     {/if}
@@ -82,6 +112,7 @@
     <span class="label">폴더 열기</span>
     <div class="row">
       <input bind:value={openPath} placeholder="/절대/경로/작품폴더" onkeydown={(e) => e.key === 'Enter' && open(openPath)} />
+      {#if bridgeKind === 'tauri'}<button onclick={() => chooseFolder('open')} disabled={working}>폴더 선택</button>{/if}
       <button onclick={() => open(openPath)} disabled={working}>{opening ? '여는 중...' : '열기'}</button>
     </div>
   </div>
@@ -89,7 +120,9 @@
   <div class="col">
     <span class="label">새 작품</span>
     <div class="form">
-      <label>저장 위치<input bind:value={base} /></label>
+      <label>저장 위치
+        <span class="row"><input bind:value={base} />{#if bridgeKind === 'tauri'}<button type="button" onclick={() => chooseFolder('base')} disabled={working}>선택</button>{/if}</span>
+      </label>
       <label>작품 제목<input bind:value={title} placeholder="무제여도 됩니다" /></label>
       <label>작가명<input bind:value={author} /></label>
       <button class="primary" onclick={create} disabled={working}>{creating ? '생성 중...' : '작품 폴더 만들기'}</button>
@@ -104,19 +137,20 @@
     max-width: 880px; margin: 0 auto; padding: 72px 32px; align-content: start;
   }
   h1 { font-size: 28px; margin: 0 0 4px; }
-  .col { display: grid; gap: 10px; align-content: start; }
+  .col { display: grid; gap: 8px; align-content: start; }
   .col, .recent, .form { min-width: 0; }
   .recent { list-style: none; margin: 0; padding: 0; }
-  .recent li { border-bottom: 1px solid var(--line); }
-  .recent button {
-    width: 100%; text-align: left; font-family: var(--mono); font-size: 12px; padding: 7px 4px;
+  .recent li { display: flex; gap: var(--space-2); align-items: center; border-bottom: 1px solid var(--line); }
+  .recent-path {
+    flex: 1; min-width: 0; text-align: left; font-family: var(--mono); font-size: 12px; padding: 8px 4px;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .row { display: flex; gap: 6px; min-width: 0; }
+  .recent-remove { flex: 0 0 auto; color: var(--faint); font-size: 11px; }
+  .row { display: flex; gap: 8px; min-width: 0; }
   .row input { flex: 1; min-width: 0; }
-  .form { display: grid; gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .form { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
   .form input { min-width: 0; width: 100%; }
-  label { display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
-  .notice { font-size: 12px; color: var(--warn); background: var(--warn-soft); padding: 6px 10px; border-radius: 4px; }
+  label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+  .notice { font-size: 12px; color: var(--warn); background: var(--warn-soft); padding: 8px 8px; border-radius: 4px; }
   @media (max-width: 760px) { .picker { grid-template-columns: 1fr; padding: 32px 20px; } }
 </style>

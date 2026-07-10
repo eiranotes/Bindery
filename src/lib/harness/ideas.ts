@@ -7,6 +7,7 @@ import { LAYOUT, ideaDir, type IdeaStatus } from '$lib/core/layout';
 import { nowIso, slugify, stamp, parseFrontmatter, renderFrontmatter } from '$lib/core/text';
 import { parseIdeaSeedBatch, type IdeaSeed } from '$lib/schemas/contracts';
 import type { Ctx, StageOutcome } from './types';
+import type { FileNode } from '$lib/bridge';
 
 export type IdeaCriteria = {
   genres: string;
@@ -83,8 +84,8 @@ export function parseIdeaSeedFile(content: string, path: string): IdeaFile | nul
 }
 
 /** 프로젝트의 모든 소재 파일을 읽는다. */
-export async function listIdeas(ctx: Ctx): Promise<IdeaFile[]> {
-  const nodes = await ctx.bridge.listTree(ctx.root);
+export async function listIdeas(ctx: Ctx, tree?: FileNode[]): Promise<IdeaFile[]> {
+  const nodes = tree ?? await ctx.bridge.listTree(ctx.root);
   const ideasDir = nodes.find((n) => n.path === 'ideas');
   const out: IdeaFile[] = [];
   for (const statusNode of ideasDir?.children ?? []) {
@@ -103,12 +104,15 @@ export async function listIdeas(ctx: Ctx): Promise<IdeaFile[]> {
 
 function localIdeaFallback(criteria: IdeaCriteria): Omit<IdeaSeed, 'id' | 'source' | 'createdAt'>[] {
   // 정직한 오프라인 뼈대 — AI 흉내를 내지 않고, 작가가 채울 틀만 만든다.
+  const uploadAttached = criteria.notes.includes('[업로드 기획 자료]');
   return [
     {
       schema_version: 'bindery.idea_seed.v1',
       title: `(오프라인 뼈대) ${criteria.genres || '장르 미정'} 소재 초안`,
       genre_tags: criteria.genres.split(/[,\s]+/).filter(Boolean).slice(0, 4),
-      hook: criteria.notes || '(훅을 직접 적어 주세요 — AI 실행기 연결 후 다시 실행하면 후보가 채워집니다)',
+      hook: uploadAttached
+        ? '업로드 자료는 notes/source-raw.md에 보존했습니다. AI 실행기를 연결해 기획 후보를 다시 만들거나 구조화 기획 가져오기를 사용하세요.'
+        : criteria.notes.slice(0, 360) || '(훅을 직접 적어 주세요. AI 실행기 연결 후 다시 실행하면 후보가 채워집니다)',
       emotional_engine: criteria.mood || '(미정)',
       reader_promise: criteria.readerExperience || '(미정)',
       longform_potential: '(미정)',

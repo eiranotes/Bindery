@@ -29,7 +29,10 @@ export const LAYOUT = {
     openThreads: 'plot/open-threads.md'
   },
   style: {
-    guide: 'style/style-guide.md'
+    guide: 'style/style-guide.md',
+    presets: 'style/presets',
+    presetIndex: 'style/presets/index.json',
+    history: 'style/history.json'
   },
   status: {
     resume: 'status/resume-state.md',
@@ -38,6 +41,7 @@ export const LAYOUT = {
   story: {
     chapters: 'story/chapters'
   },
+  exports: 'exports',
   bindery: {
     root: '.bindery',
     artifacts: '.bindery/artifacts',

@@ -15,12 +15,13 @@
   import { summarizeEpisode, proposeCanonDelta, fixEpisode } from '$lib/harness/closeout';
   import { readOptional } from '$lib/harness/project';
   import { episodePaths, LAYOUT, summaryPath } from '$lib/core/layout';
-  import { clip, parseFrontmatter } from '$lib/core/text';
+  import { clip, contentHash, parseFrontmatter } from '$lib/core/text';
   import { exportPacket, recordImport } from '$lib/harness/exchange';
   import { previewPrompt } from '$lib/harness/runner';
   import { BLUEPRINTS } from '$lib/prompts';
   import { writeArtifact } from '$lib/harness/artifacts';
   import { registerCanonDelta, saveProposal } from '$lib/harness/proposals';
+  import { snapshotFile } from '$lib/harness/snapshots';
   import type { QAReport, QAAspect, RevisionPlan } from '$lib/schemas/contracts';
   import { parseCanonDeltaProposal, parseDraftCandidate, parseEpisodeBrief, parseScenePlan } from '$lib/schemas/contracts';
   import DiffView from '../DiffView.svelte';
@@ -32,9 +33,10 @@
   let brief = $state<ApprovedEpisodeBrief | null>(null);
   let scenePlan = $state<ApprovedScenePlan | null>(null);
   let manuscript = $state('');
+  let manuscriptLoadedHash = $state('');
   let notes = $state('');
   let targetLength = $state(5000);
-  let candidateCount = $state(2);
+  let candidateCount = $state(1);
   let activeCandidate = $state<CandidateFile | null>(null);
   let candidateBody = $state('');
   let qaReports = $state<QAReport[]>([]);
@@ -72,6 +74,7 @@
     brief = await loadBrief(c, ep);
     scenePlan = await loadScenePlan(c, ep);
     manuscript = await readOptional(c, paths.manuscript);
+    manuscriptLoadedHash = contentHash(manuscript);
     summaryText = await readOptional(c, summaryPath(ep));
     await refreshCandidates();
     activeCandidate = null;
@@ -283,7 +286,34 @@
     await withBusy('후보 적용', async () => {
       await applyToManuscript(ctx(), ep, result, `${activeCandidate?.label ?? '후보'} ${kind === 'all' ? '전체' : '일부'} 적용`);
       manuscript = await readOptional(ctx(), paths.manuscript);
+      manuscriptLoadedHash = contentHash(manuscript);
       toast(`원고에 ${kind === 'all' ? '전체' : '선택 구간만'} 반영됨 (이전본 스냅샷 보존)`, 'ok');
+    }, false);
+  }
+
+  async function saveManuscript() {
+    const c = ctx();
+    let diskContent: string | null = null;
+    try {
+      diskContent = await c.bridge.readFile(c.root, paths.manuscript);
+    } catch {
+      diskContent = null;
+    }
+    const changedOutside = diskContent == null || contentHash(diskContent) !== manuscriptLoadedHash;
+    if (changedOutside && diskContent !== manuscript) {
+      const ok = confirm(`${paths.manuscript} 파일이 열어둔 뒤 외부에서 변경되었습니다. 현재 편집본으로 덮어쓸까요? 외부 변경본은 스냅샷으로 남깁니다.`);
+      if (!ok) {
+        toast('원고 저장을 취소했습니다. 새로고침 후 다시 확인하세요.', 'warn');
+        return;
+      }
+    }
+    await withBusy('원고 저장', async () => {
+      if (changedOutside && diskContent != null) {
+        await snapshotFile(c, paths.manuscript, `${ep} 외부 변경 덮어쓰기 전`, ep);
+      }
+      await c.bridge.writeFile(c.root, paths.manuscript, manuscript);
+      manuscriptLoadedHash = contentHash(manuscript);
+      toast('원고 저장됨', 'ok');
     }, false);
   }
 
@@ -462,8 +492,10 @@
                 <button class="quiet" class:on={activeCandidate?.id === c.id} onclick={() => selectCandidate(c)}>
                   <b>{c.label}</b>
                   <span class="chip {c.source === 'agent' ? 'ok' : c.source === 'web-import' ? 'info' : 'warn'}">{c.source === 'agent' ? 'AI' : c.source === 'web-import' ? '웹' : '뼈대'}</span>
+                  {#if c.qualityStatus}<span class="chip {c.qualityStatus === 'pass' ? 'ok' : c.qualityStatus === 'warn' ? 'warn' : 'bad'}">품질 {c.qualityStatus}</span>{/if}
                   <span class="dim">{c.kind === 'revision' ? '수정' : '초안'} · {new Date(c.createdAt).toLocaleTimeString()}</span>
                   {#if c.changeSummary}<p class="dim sum">{c.changeSummary}</p>{/if}
+                  {#if c.qualityIssues?.length}<p class="dim sum">품질: {c.qualityIssues.join(' · ')}</p>{/if}
                 </button>
               </li>
             {/each}
@@ -495,10 +527,7 @@
           <MarkdownEditor bind:value={manuscript} compact />
         </div>
         <div class="row">
-          <button class="primary" onclick={() => withBusy('원고 저장', async () => {
-            await ctx().bridge.writeFile(ctx().root, paths.manuscript, manuscript);
-            toast('원고 저장됨', 'ok');
-          }, false)}>저장</button>
+          <button class="primary" onclick={saveManuscript}>저장</button>
         </div>
       </details>
     </section>
@@ -573,32 +602,32 @@
 </div>
 
 <style>
-  .surface { padding: 18px 26px; display: grid; gap: 14px; align-content: start; }
+  .surface { padding: 20px 24px; display: grid; gap: 12px; align-content: start; }
   .head { display: flex; justify-content: space-between; align-items: start; gap: 12px; flex-wrap: wrap; }
   .head h1 { margin: 0; font-size: 22px; }
   .head p { margin: 4px 0 0; display: flex; gap: 8px; align-items: center; }
-  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
   .tabs button { font-size: 12.5px; }
   .tabs button.on { background: var(--accent-soft); color: var(--text); font-weight: 650; }
-  section { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
+  section { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 8px; }
   section:first-of-type { border-top: 0; }
   .exchange-line { grid-template-columns: auto minmax(120px, 180px) auto auto; align-items: center; justify-content: start; }
-  .exchange { border: 1px dashed var(--line-strong); border-radius: 4px; padding: 10px; background: var(--bg-1); }
+  .exchange { border: 1px dashed var(--line-strong); border-radius: 4px; padding: 8px; background: var(--bg-1); }
   .exchange textarea { min-height: 120px; }
   .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .headrow { justify-content: space-between; }
-  .inline { display: flex; gap: 5px; align-items: center; font-size: 11.5px; color: var(--muted); }
+  .inline { display: flex; gap: 4px; align-items: center; font-size: 11.5px; color: var(--muted); }
   .inline input { width: 76px; }
   .grow { flex: 1; min-width: 200px; }
-  .big { padding: 7px 16px; }
-  .panel { border: 1px solid var(--line); border-radius: 4px; padding: 10px; background: var(--bg-1); max-height: 380px; overflow: auto; }
+  .big { padding: 8px 16px; }
+  .panel { border: 1px solid var(--line); border-radius: 4px; padding: 8px; background: var(--bg-1); max-height: 380px; overflow: auto; }
   .cands { list-style: none; margin: 0; padding: 0; display: grid; }
-  .cands button { display: block; width: 100%; text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); border-radius: 0; }
+  .cands button { display: block; width: 100%; text-align: left; padding: 8px 8px; border-bottom: 1px solid var(--line); border-radius: 0; }
   .cands button.on { background: var(--accent-soft); }
-  .cands b { margin-right: 6px; }
-  .cands .sum { margin: 3px 0 0; font-size: 11.5px; }
-  .deltas { border: 1px dashed var(--line-strong); border-radius: 4px; padding: 8px 10px; display: grid; gap: 3px; }
+  .cands b { margin-right: 8px; }
+  .cands .sum { margin: 4px 0 0; font-size: 11.5px; }
+  .deltas { border: 1px dashed var(--line-strong); border-radius: 4px; padding: 8px 8px; display: grid; gap: 4px; }
   .deltas p { margin: 0; }
   .manuscript-editor { height: 420px; min-height: 0; }
   .qa-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }

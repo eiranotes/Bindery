@@ -38,6 +38,24 @@ export type FileNode = { name: string; path: string; kind: 'file' | 'directory';
 
 const TEXT_EXT = /\.(md|ya?ml|json|txt|prompt\.md)$/i;
 const activeAgents = new Map<string, ChildProcess>();
+const IGNORED_WALK_DIRS = new Set([
+  'node_modules',
+  '.git',
+  '.DS_Store',
+  '.superloopy',
+  '.svelte-kit',
+  'dist',
+  'build',
+  'target'
+]);
+const IGNORED_WALK_PATHS = new Set([
+  '.bindery/artifacts',
+  '.bindery/backups',
+  '.bindery/runs',
+  '.bindery/snapshots',
+  '.bindery/trace',
+  'exports'
+]);
 
 function bad(msg: string): never {
   const err = new Error(msg) as Error & { status?: number };
@@ -63,10 +81,10 @@ async function walk(dir: string, base: string, depth: number): Promise<FileNode[
   const out: FileNode[] = [];
   const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
   for (const entry of entries) {
-    if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === '.DS_Store') continue;
     const abs = path.join(dir, entry.name);
     const rel = path.relative(base, abs).split(path.sep).join('/');
     if (entry.isDirectory()) {
+      if (IGNORED_WALK_DIRS.has(entry.name) || IGNORED_WALK_PATHS.has(rel)) continue;
       out.push({ name: entry.name, path: rel, kind: 'directory', children: await walk(abs, base, depth + 1) });
     } else if (TEXT_EXT.test(entry.name)) {
       out.push({ name: entry.name, path: rel, kind: 'file' });
@@ -118,6 +136,8 @@ async function handleScaffold(req: { base: string; name: string }): Promise<{ ro
   const safe = req.name.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
   if (!safe) bad('empty project name');
   const root = path.join(req.base, safe);
+  const existing = await fs.readdir(root).catch(() => [] as string[]);
+  if (existing.length) bad(`project folder is not empty: ${root}`);
   await fs.mkdir(root, { recursive: true });
   return { root };
 }

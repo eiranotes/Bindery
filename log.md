@@ -1,5 +1,49 @@
 # log.md — 작업 로그
 
+## 2026-07-10 — 생성 지연 축소와 전체 파이프라인 제품화 보강
+
+1. **후보 1개**: 간단 모드의 기획/집필 기본 후보를 `집필안` 1개로 축소했다. 한 회차에서
+   같은 긴 프롬프트를 3번 실행하던 비용·대기를 없앴고 설계자 모드의 수동 후보 수 조절은 유지했다.
+2. **병렬 QA와 안전한 기록**: 문체/연속성/정사 QA를 병렬 실행하고 run index/usage 원장 저장만
+   큐로 직렬화했다. 병렬 3건이 모두 남는 회귀 테스트와 동시성 3 관측을 추가했다.
+3. **패키지 스트리밍**: Tauri에 비동기 `run_agent_stream` + `Channel<Value>`을 추가했다.
+   stdout/stderr pipe를 별도 thread로 동시에 비우고 status/stdout/stderr/done event를 내보낸다.
+   다중 실행 패널, 실제 경과 시간, 전체 취소, 프로젝트별 실행 key를 함께 반영했다.
+4. **실 AI**: 테스트 실행기는 `agy`, 모델은 `gemini-3.5-flash`를 사용했다. 아이디어 blueprint에
+   `count=1`을 넣어 13.7초에 정확히 한 후보를 받았고 status 1/stdout 6/done 1을 확인했다.
+   Codex 프리셋에는 비-Git 작품 폴더용 `--skip-git-repo-check`를 추가했다.
+5. **ZIP과 기획 연결**: 읽기 진행률/취소/이벤트 루프 양보, 압축·엔트리·해제 총량·전체 원문
+   안전 한도를 추가했다. canon/world/plot 구조가 있는 ZIP은 역할을 인식해 snapshot을 남기고
+   설정 바이블·인물/세계관·플롯·resume 문서로 가져온 뒤 플롯 준비에 연결한다.
+6. **프로젝트 열기**: Tauri 네이티브 폴더 선택, 최근 프로젝트 삭제, 일반 폴더 확인,
+   stale timeout 결과 무시, 새로고침 오류 재시도 배너, 비어 있지 않은 폴더 scaffold 거부를 추가했다.
+7. **UI 정리**: 실행 패널/ZIP 진행 카드/구조화 패키지 카드/열기 오류 배너를 추가하고 이번에
+   수정한 화면들의 여백을 DESIGN.md 4px 스케일에 맞췄다.
+
+검증: `npm run check` 0 errors/0 warnings, `npm test` 73/73, Rust stream/PATH test 2/2,
+`npm run build` OK(기존 500KB chunk warning), standalone app build + ad-hoc codesign strict verify OK,
+새 앱 launch process 확인. 앱 내 브라우저 대상이 없고 Mac이 잠겨 신규 시각 캡처는 미완료로 기록했다.
+
+## 2026-07-07 — 프로젝트 열기 성능 패치와 standalone 재빌드
+
+증상: 빌드된 `Bindery.app`에서 프로젝트를 여는 동안 전체 파일 해시 계산과 홈 workflow 계산이 겹쳐
+작은 `~/Documents/Bindery/*` 작품도 첫 접근 시 수 초 이상 멈춘 것처럼 보였다. 저장소 루트를 작품으로
+열면 `src-tauri/target` 빌드 산출물까지 tree walk 대상이 되어 비용이 더 커질 수 있었다.
+
+조치:
+1. `openProjectByPath`/`createProjectAt`는 프로젝트 메타·설정을 먼저 set하고 즉시 홈 셸로 진입한다.
+   초기 `refreshAll`은 후행 작업으로 실행한다.
+2. `refreshAll({ deferDigest: true })`를 추가해 UI 데이터 로딩과 외부 변경 감지 digest 기준선 계산을
+   분리했다. 포커스 복귀 새로고침은 기존처럼 digest 비교를 수행한다.
+3. `listIdeas`/`listEpisodes`가 이미 읽은 tree를 재사용하게 해 초기 refresh의 중복 tree walk를 줄였다.
+4. `loadProjectFileDigest`는 파일-provider/TCC 지연을 줄이기 위해 한 번에 4개 파일만 읽는다.
+5. Rust Tauri walker와 Vite dev bridge walker가 `target`, `dist`, `build`, `.superloopy`, `.svelte-kit`,
+   `.bindery` 변동성 출력, `exports`를 제외한다. `projectChanges` 필터도 같은 빌드 산출물 경로를 추적하지 않는다.
+
+검증: projectChanges 3/3, `npm run check` 0 오류, `cargo check` OK, `npm test` 67/67,
+`npm run tauri:build:mac:standalone` OK, `codesign --verify --deep --strict` OK, 새 standalone 앱 launch
+process 확인 후 종료.
+
 ## 2026-07-05 — AI 장기 집필 하네스 신규 구축 세션
 
 1. **레거시 감사**: HermesWorkspace/project/Bindery 코드·문서·파이프라인 정밀 감사
@@ -9,7 +53,7 @@
    Open Design MCP로 와이어프레임 생성(bindery-harness-ui).
 3. **스캐폴드**: Vite+Svelte5+TS, git init, dev 브리지(server/bridge.ts: fs 앵커·경로 탈출 거부·
    CLI spawn·trace 저장·timeout), memory 브리지.
-4. **코어**: layout/text/diff/blueprint 유틸 → 프롬프트 blueprint 16종 → contracts 검증기 →
+4. **코어**: layout/text/diff/blueprint 유틸 → 프롬프트 blueprint 초기 16종(현재 18종) → contracts 검증기 →
    runner(단일 경로) → artifacts/snapshots/proposals → ideas/world/bible/plot/episode/closeout/
    exchange 서비스. 커밋 `00e17c6`.
 5. **검증 우선**: UI 전에 지시서 §11 전체 루프를 vitest E2E로 작성해 통과시킴 (12/12).
@@ -190,3 +234,165 @@ dev 클릭스루: 설정 모델 라우팅/티어 폼/배정 UI, ep002 근거 보
 미구현(설계안 대비, 다음 후보): SQLite FTS/벡터 인덱스(현재 키워드 스코어링으로 대체),
 branch/lineage 거버넌스, Detail 그래프 스튜디오. 현 구조는 contextPack.ts의 스코어러를
 교체하는 것만으로 업그레이드 가능하게 분리돼 있다.
+
+## 2026-07-07 — 문체 재현: 한/일 원문 분석 → 프리셋 → 장면별 집필 주입 (신규 「문체」 탭)
+
+레거시(project/Bindery)의 style_system에서 핵심 아이디어를 준용했다: 장면 후보 분할과
+유형 분류(로컬 결정적), 전역 규칙 + 장면 유형별 오버레이의 2층 구조, content term
+누출 방지(원문 고유명사 복제 금지), 짧은 인용 fewshot(형태 참고용). 규칙 기반 풀스택
+(라우터/스택 병합/스코어러/SQLite)은 신 하네스 방식으로 대체했다:
+로컬 분해 → AI 종합 분석 1회 → 프리셋 파일 진실 → 집필 시 장면 매칭 캡슐 주입.
+
+흐름: 한/일 텍스트 입력 → 장면별 분해(로컬: 구분선·헤딩·soft max, 최대 10장면 균등
+샘플링, 대화율·마커 기반 유형 분류) → `style-analysis` 스테이지가 한국어 문체 프로필
+JSON 종합(전역 분위기·전역 규칙·장면 유형별 특징+인용·대화 처리·금지·content_terms)
+→ 프리셋 저장 → 적용 시 style-guide.md 렌더(스냅샷 선행) → 집필 시 전역 분위기 +
+이번 화 장면 계획을 유형 매칭해 필요한 오버레이만 캡슐로 주입 → 한국어 아웃풋.
+
+조치:
+1. `src/lib/harness/styleTransfer.ts` — 언어 감지(한/일), 장면 분해/분류,
+   조사 스트리핑 고유명사 추출(복제 금지 시드), AI 분석(`prompts/style_analysis.prompt.md`,
+   오프라인 시 로컬 통계 뼈대 폴백), 프리셋 저장/적용/해제/삭제
+   (`style/presets/*.json` + index, 적용은 style-guide.md 덮어쓰기 전 스냅샷),
+   이력(`style/history.json`, 분석/저장/적용/해제/삭제 100건),
+   `buildStyleCapsule(episode, scenePlan)` — 장면 계획을 유형으로 근사 매칭해
+   이번 화에 나오는 유형의 오버레이만 골라 ≤2,400자 캡슐 생성,
+   `.bindery/artifacts/<ep>/style-capsule.md`로 감사 기록.
+2. 집필 주입: `generateDraftCandidates`와 `generateRevisionCandidate`의 `{{styleGuide}}`
+   슬롯이 활성 프리셋 캡슐을 우선 사용(없으면 기존 style-guide.md). 수정 후보도 같은
+   라우팅을 타서 수정 과정에서 결이 흔들리지 않는다.
+3. UI: 「문체」 탭 신설(간단/설계자 모드 공통, 작품노트 옆). 적용 상태 카드(적용 해제),
+   원문 입력(붙여넣기 + .txt/.md 파일, 언어·글자수 표시) → LiveRunPanel 스트리밍 →
+   분석 결과(전역 요약/규칙/대화 처리/금지 2단 + 장면 유형별 특징 행 + 복제 금지 목록)
+   → 이름 지정 프리셋 저장. 프리셋 행 리스트(적용/삭제/상세 펼침), 이력 행 리스트.
+   집필 화면 후보 근거 라인에 "문체: <프리셋명> (장면별 자동 적용)" 표시.
+4. `style-analysis` 스테이지는 티어 라우팅에서 기획·설계 그룹으로 실행된다.
+
+검증: `npm run check` 0오류 · `npm test` 41/41 (신규 tests/styleTransfer.test.ts 9건:
+언어 감지, 장면 분해/분류, 조사 스트리핑 추출, 오프라인 뼈대+이력, AI 프로필 저장→
+style-guide 렌더→이력 순서, 해제/삭제, 장면 매칭, 비활성 null 폴백, 캡슐 선별 주입+감사
+기록) · `npm run build` OK · dev 실 CLI(gemini-3.5-flash) 클릭스루: 한국어 샘플 499자
+분석 → 전역 규칙 6·대화 4·금지 4·장면 특징 추출 → 「축축한 서점 미니멀」 저장·적용 →
+style-guide.md/presets/history.json 파일 확인.
+
+## 2026-07-07 — 제품화 냉정 점검 문서
+
+- `docs/PRODUCT_READINESS_REVIEW_20260707.md` 작성. 코드 사실 확인 후 작성:
+  결제/토큰비용/updater/telemetry 의존성·코드 0, 원고 내보내기(합본/EPUB/docx) 부재,
+  RunRecord에 char는 있으나 토큰·요금 환산/표시 없음, macOS ad-hoc 서명만.
+- 구성: 수익화 공백(BYOK vs 관리형, 비용 가시성 0), 기능 미비(내보내기·온보딩·편집 깊이·
+  대규모 미검증·백업), 제품 일관성(모드 개념 누수·용어·i18n), 기술 성숙도(업데이트·서명·
+  품질 회귀 부재), 경쟁 분석(Novelcrafter/Sudowrite/Scrivener/챗봇 직접), P0~P2 로드맵.
+- 결론: 엔진은 경쟁력 있으나 제품은 프로토타입. P0 3종(비용 가시성·완성물 내보내기·
+  CLI 온보딩)으로 최소 완결 루프부터 닫아야 한다.
+
+## 2026-07-07 — 제품화 P0 반영: 비용 가시성 · 완성물 내보내기 · CLI 온보딩
+
+점검 문서(PRODUCT_READINESS_REVIEW)의 P0 3종을 구현했다.
+
+### P0-1 비용 가시성 (`src/lib/harness/usage.ts`)
+- 글자 수 기반 토큰 추정(CJK 1.35·기타 0.28 토큰/자), 모델별 단가 테이블(기본값 제공,
+  설정에서 편집), 요금은 표시 시점에 단가로 곱해 소급 반영(원장은 토큰만 저장).
+- `.bindery/usage.json` 원장에 실행마다 append(러너 persistRun 훅). run 인덱스는 200개만
+  유지하므로 월 누적은 원장이 담당.
+- `summarizeUsage`: 이번 달/전체/회차별/월별 집계 + 예산 비율. fallback·오프라인은 $0.
+- UI: 상단바 게이지("이번 달 ~$1.58/$5.00", 80%↑ 경고색, 100%↑ 위험색), 설정에
+  대시보드(이번 달/누적 카드 + 예산 바) · 월 예산 입력 · 회차/월별 표 · 단가 편집 표.
+  집필 실행 전 예산 초과 시 경고 토스트(차단은 안 함).
+
+### P0-2 완성물 내보내기 (`src/lib/harness/exportManuscript.ts` + 신규 「내보내기」 탭)
+- 회차 원고 수집(원고 없는 회차 제외, 픽스분만 옵션) → Markdown 합본 / 플레인 TXT /
+  EPUB2. 합본·TXT는 `exports/`에 저장 + 브라우저 다운로드, EPUB은 브라우저 다운로드.
+  이후 DOCX 다운로드까지 확장됨.
+- EPUB은 외부 의존성 없이 store(무압축) zip + CRC32를 직접 구현. 실제 `unzip -t`로
+  6개 엔트리 CRC 검증 통과(mimetype 첫 엔트리·무압축, container/opf/ncx/xhtml).
+- 회차별 "본문 복사"(클립보드) — 연재 플랫폼 붙여넣기용, 마크다운 기호 제거.
+
+### P0-3 CLI 온보딩 + 실패 인과 (`SettingsSurface`, `WriteSurface`)
+- 설정 상단에 연결 상태 배너 4단계(없음/미확인/연결됨/실패). 미연결·실패 시 설치·로그인·
+  테스트 3단계 가이드와 "연결 전엔 로컬 뼈대로만 돌아 결과가 성의 없어 보인다" 경고.
+- 연결 테스트 실패 모드를 원인 후보로 번역(spawn-error→미설치/경로, timeout→로그인/느림).
+- 집필 후보가 전부 fallback이면 후보 위에 "AI 아님 — 로컬 뼈대" 붉은 배너 + 설정 링크로
+  원인과 결과를 직접 연결.
+
+검증: `npm run check` 0오류 · `npm test` 55/55 (신규 usage 6 + export 8) · `npm run build` OK ·
+실제 EPUB unzip CRC 검증 · dev 클릭스루(내보내기 3형식/회차복사, 설정 사용량 대시보드·게이지·
+예산 바·단가표·온보딩 배너 시드 데이터로 확인).
+
+미반영(P1 이후, 문서에 남김): 자동 업데이트·공증/배포, 네이티브 수준 다파일 트랜잭션,
+실제 AI 출력 품질 골든셋, 네이티브 파일 watch, 벡터 RAG. 관리형 수익화(크레딧·미터링·정산)는 별도 백엔드.
+
+## 2026-07-07 — gemini 프리셋(agy/-model) · /usage 실제 사용량 · P1(백업·포커스 새로고침)
+
+### 요청 반영
+- Gemini 프리셋 기본값을 이 머신 실환경에 맞춤: command `gemini`→`agy`, 모델 플래그 `-m`→`-model`
+  (`agentSettings.ts` PROVIDER_PRESETS). 라벨도 "Gemini CLI (agy)".
+- 실제 사용량 조회 `usage.ts::fetchProviderUsage` — 기본 실행기로 `/usage`를 돌려 결과 원문을
+  `.bindery/provider-usage.json`에 저장·표시. 설정 사용량 섹션에 [/usage 불러오기] 버튼 + raw 패널
+  (실행기·시각 표시). 형식이 실행기마다 달라 파싱하지 않고 raw로 보여준다.
+  주의: agy는 대화형 슬래시 명령이라 `-p "/usage"` 비대화 호출에서는 실제 수치 대신 도움말을
+  반환할 수 있다 — 받은 응답을 그대로(정직하게) 표시한다. 실행기가 비대화 /usage를 지원하면
+  실수치가 그대로 들어온다.
+
+### P1 이어서
+- 프로젝트 백업 `backup.ts::buildProjectBackup` — 진실 텍스트 파일(원고·설정·바이블·프리셋·
+  usage 등) 전체를 store-zip으로 묶어 다운로드. 재생성 캐시(runs/trace/candidates/snapshots/
+  exchange)는 제외. 「내보내기」 탭에 [전체 백업 (.zip)]. zipStore를 export로 공유.
+- 파일 watch 대체: 창 포커스 시 자동 새로고침(App.svelte) — 파인더/외부 에디터 편집 후 상태
+  어긋남 방지, 1.5초 디바운스, 실행 중이면 스킵.
+
+검증: `npm run check` 0오류 · `npm test` 57/57 (신규 backup 2) · `npm run build` OK ·
+백업 zip 실제 `unzip -t` 중첩 경로/한글 통과 · dev 실 CLI(agy) 클릭스루: gemini 프리셋 agy 반영,
+/usage 실행·응답 원문 표시, 백업 다운로드.
+
+## 2026-07-07 — readiness 잔여 반영: DOCX · 백업 복원 · 품질 게이트
+
+기준: `docs/PRODUCT_READINESS_REVIEW_20260707.md`의 남은 제품화 항목을 현재 구현 기준으로
+재점검하고, 로컬에서 닫을 수 있는 부분을 추가 반영했다.
+
+### 완성물 내보내기 확장
+- `exportManuscript.ts::buildDocx` 추가. 최소 유효 Office Open XML 패키지를 store-zip으로 만들고,
+  제목/저자/회차 헤딩/본문을 XML escape해 담는다.
+- 「내보내기」 탭에 [Word 문서 (.docx)] 버튼 추가. EPUB과 동일하게 바이너리 브리지 없이
+  Blob 다운로드로만 내보낸다.
+
+### 프로젝트 백업 복원
+- `backup.ts::readProjectBackup` / `restoreProjectBackup` 추가. Bindery 백업 zip의 store 엔트리 중
+  안전한 텍스트 파일만 현재 프로젝트에 덮어쓴다.
+- 경로 탈출(`..`, 절대 경로), `__MACOSX`, `.DS_Store`, 재생성 캐시, 비텍스트 엔트리는 복원하지 않는다.
+- 「내보내기」 탭에 [백업 복원 (.zip)] 버튼 추가. 백업 파일 선택 시 새 파일/덮어쓰기/동일/건너뜀
+  preview를 보여주고, [복원 실행]을 눌러야 적용한다.
+- 복원 직전 덮어쓸 파일은 기존 snapshot 시스템에 남기고, 새로 생긴 파일은 restore point에 기록한다.
+  [방금 복원 되돌리기]는 snapshot 복구 + 새 파일 삭제로 직전 복원을 되돌린다.
+
+### AI 출력 품질 회귀 안전장치
+- `quality.ts` 추가. 후보 원고의 빈 본문, 짧은 본문, placeholder, fallback 문구, 금지어,
+  필수어 누락, 반복 문단을 결정적으로 점검한다.
+- 초안/수정/웹-import 후보 메타에 `qualityStatus` / `qualityIssues`를 저장하고, 집필/설계자 후보 UI에 표시.
+- 의미 품질 전체를 자동 판정하는 장치가 아니라, 제품에 새면 안 되는 흔적을 잡는 좁은 회귀 게이트다.
+
+검증: `npx vitest run tests/backup.test.ts tests/exportManuscript.test.ts` 14/14 ·
+`npm run check` 0오류/0경고 · `npm test` 67/67 · `npm run build` OK(기존 chunk-size warning 유지) ·
+`npm run tauri:build:mac:standalone` OK ·
+`codesign --verify --deep --strict --verbose=2 src-tauri/target/release/bundle/macos/Bindery.app` OK.
+당시 내보내기 화면 visual QA: `.superloopy/evidence/frontend/20260707T2048-restore-preview-export/VISUAL_QA.md`
+(1280/768/390 viewport PASS, overflow 0, 버튼 겹침 0).
+
+## 2026-07-07 — readiness 잔여 추가 반영: 외부 변경 감지와 저장 전 충돌 가드
+
+기준: 제품화 리뷰의 "네이티브 file watcher와 충돌 처리" 항목 중, 네이티브 watcher 없이도 로컬에서
+즉시 닫을 수 있는 신뢰성 레이어를 추가했다.
+
+- `projectChanges.ts` 추가: source-of-truth 텍스트 파일만 해시 digest로 추적하고,
+  `.bindery/runs`, `trace`, `snapshots`, `exports` 같은 변동성 출력은 제외.
+- 창 포커스 복귀 시 `refreshAll({ reportExternalChanges: true })`가 created/modified/deleted를 비교해
+  상단바 [외부 변경 N건] 칩과 toast로 알림.
+- 파일 화면 저장, 집필 화면 원고 저장, 설계자 회차 화면 원고 저장은 열어둔 뒤 디스크 파일이 바뀐 경우
+  확인을 요구한다. 덮어쓰기로 진행하면 외부 변경본을 먼저 snapshot에 남긴다.
+- `tests/projectChanges.test.ts` 3건 추가: 추적 대상 필터, tree flatten, created/modified/deleted diff.
+
+검증: `npx vitest run tests/projectChanges.test.ts tests/backup.test.ts tests/exportManuscript.test.ts tests/quality.test.ts`
+20/20 · `npm run check` 0오류/0경고 · `npm test` 67/67 · `npm run build` OK ·
+`npm run tauri:build:mac:standalone` OK · codesign verify OK · visual QA PASS
+(`.superloopy/evidence/frontend/20260707T2105-external-change-guard/VISUAL_QA.md`,
+1280/768/390 overflow 0, 버튼 겹침 0, 외부 변경 칩 표시).

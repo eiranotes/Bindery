@@ -1,9 +1,10 @@
 <script lang="ts">
-  // 홈 — 다음 작업 센터. 설명 화면이 아니라 실행 화면이다.
+  // 홈 - 다음 작업 센터. 설명 화면이 아니라 실행 화면이다.
   // 상태에서 계산된 CTA 하나를 크게 보여주고, 보조 정보는 작은 카드로만 둔다.
   import {
     ctx, mode, currentEpisode, pendingProposals, progress, episodes, withBusy,
-    busy, activeRun, intentNote, autopilotKick, clearRunFeed, toast, project, refreshAll
+    busy, activeRun, intentNote, autopilotKick, clearRunFeed, toast, project, refreshAll,
+    projectRefreshing
   } from '$lib/stores/app';
   import { loadWorkflowSnapshot, computeNextStep, type NextStep } from '$lib/harness/workflow';
   import {
@@ -12,8 +13,12 @@
   } from '$lib/harness/autopilot';
   import { nextEpisode } from '$lib/harness/episode';
   import { clip, nowIso } from '$lib/core/text';
-  import { SOURCE_FILE_ACCEPT, formatSourceBytes, readSourceUploads } from '$lib/harness/sourceUploads';
-  import type { SourceUpload } from '$lib/harness/sourceUploads';
+  import {
+    SOURCE_FILE_ACCEPT, SOURCE_UPLOAD_MAX_TOTAL_CHARS,
+    formatSourceBytes, readSourceUploads
+  } from '$lib/harness/sourceUploads';
+  import type { SourceUpload, SourceUploadProgress } from '$lib/harness/sourceUploads';
+  import { detectPlanningPackage, importPlanningPackage } from '$lib/harness/sourcePackage';
   import type { IdeaFile } from '$lib/harness/ideas';
   import LiveRunPanel from '../LiveRunPanel.svelte';
 
@@ -23,7 +28,12 @@
   let starterIdeas = $state<IdeaFile[]>([]);
   let sourceUploads = $state<SourceUpload[]>([]);
   let sourceInput = $state<HTMLInputElement | null>(null);
+  let sourceReading = $state(false);
+  let sourceProgress = $state<SourceUploadProgress | null>(null);
+  let sourceAbort: AbortController | null = null;
+  let workflowRefreshToken = 0;
   const running = $derived(Boolean($busy || $activeRun));
+  const planningPackage = $derived(detectPlanningPackage(sourceUploads));
   const sourceSummary = $derived.by(() => {
     if (!sourceUploads.length) return '선택한 자료 없음';
     const chars = sourceUploads.reduce((sum, file) => sum + file.chars, 0);
@@ -34,7 +44,12 @@
     void $progress;
     void $episodes;
     void $pendingProposals;
-    void refresh();
+    void $projectRefreshing;
+    const token = ++workflowRefreshToken;
+    if ($projectRefreshing) return;
+    queueMicrotask(() => {
+      if (token === workflowRefreshToken) void refresh();
+    });
   });
 
   async function refresh() {
@@ -46,7 +61,7 @@
   }
 
   async function go() {
-    if (!step) return;
+    if (!step || sourceReading) return;
     if (step.action === 'startProject') {
       clearRunFeed();
       const starterNote = [$intentNote.trim(), sourcePromptText()].filter(Boolean).join('\n\n');
@@ -87,7 +102,32 @@
     starterIdeas = [];
     sourceUploads = [];
     const bible = r.bibleSource === 'agent' ? 'AI 바이블' : r.bibleSource === 'fallback' ? '로컬 바이블' : '바이블 없음';
-    toast(`기획 채택됨 — 세계관 자산 ${r.assets}건 → ${bible} → 플롯 초안 ${r.plotEpisodes}화가 준비됐습니다.`, 'ok');
+    toast(`기획 채택됨 - 세계관 자산 ${r.assets}건 → ${bible} → 플롯 초안 ${r.plotEpisodes}화가 준비됐습니다.`, 'ok');
+    await refreshAll();
+    await refresh();
+  }
+
+  async function importStructuredPackage() {
+    const pkg = planningPackage;
+    if (!pkg || sourceReading) return;
+    clearRunFeed();
+    const r = await withBusy('구조화 기획 가져오기', async () => {
+      await saveSourceRawIfNeeded();
+      const imported = await importPlanningPackage(ctx(), pkg);
+      const foundation = await ensureStoryFoundation(ctx(), {
+        title: $project?.title ?? '작품',
+        notes: imported.plotPrompt,
+        episode: 'ep001',
+        forcePlot: true
+      });
+      return { imported, foundation };
+    }, false);
+    if (!r) return;
+    sourceUploads = [];
+    toast(
+      `기획 패키지 적용: 기준 파일 ${r.imported.writtenPaths.length}개, ${foundationLabel(r.foundation)}.`,
+      r.foundation.plotSource === 'fallback' ? 'warn' : 'ok'
+    );
     await refreshAll();
     await refresh();
   }
@@ -154,8 +194,14 @@
 
   function sourcePromptText(): string {
     if (!sourceUploads.length) return '';
-    const perFileBudget = Math.max(2500, Math.floor(SOURCE_PROMPT_MAX_CHARS / sourceUploads.length));
-    const body = sourceUploads.map((file) => [
+    // 경로 역할이 뚜렷한 문서를 먼저 넣고, 파일별 예산을 공평하게 나눈다.
+    const priority = (file: SourceUpload) => /\/(canon|plot|world|status|active)\//i.test(file.name) ? 0 : 1;
+    const selected = [...sourceUploads]
+      .sort((a, b) => priority(a) - priority(b))
+      .slice(0, 40);
+    const metadataBudget = selected.length * 150;
+    const perFileBudget = Math.max(80, Math.floor(Math.max(0, SOURCE_PROMPT_MAX_CHARS - 1200 - metadataBudget) / selected.length));
+    const body = selected.map((file) => [
       `## ${file.name}`,
       `크기: ${formatSourceBytes(file.size)}, 읽은 글자: ${file.chars.toLocaleString()}자${file.truncated ? ', 앱 입력 한도에서 잘림' : ''}`,
       '',
@@ -164,6 +210,7 @@
     return clip([
       '[업로드 기획 자료]',
       '아래 자료를 우선 근거로 삼아 기획 후보를 만들어라. 원문 저장 위치: notes/source-raw.md.',
+      `프롬프트 포함: ${selected.length}/${sourceUploads.length}개 파일, 파일당 최대 ${perFileBudget.toLocaleString()}자.`,
       '',
       body
     ].join('\n'), SOURCE_PROMPT_MAX_CHARS);
@@ -206,16 +253,52 @@
     input.value = '';
     if (!files.length) return;
 
-    const { uploads, skipped, zipEntries } = await readSourceUploads(files);
-    sourceUploads = [...sourceUploads, ...uploads];
+    sourceAbort?.abort();
+    sourceAbort = new AbortController();
+    sourceReading = true;
+    sourceProgress = { phase: 'reading', name: files[0].name, current: 0, total: files.length };
+    try {
+      const { uploads, skipped, zipEntries } = await readSourceUploads(files, {
+        signal: sourceAbort.signal,
+        onProgress: (progress) => (sourceProgress = progress)
+      });
+      const combined = [...sourceUploads, ...uploads];
+      const seen = new Set<string>();
+      let keptChars = 0;
+      let limitDropped = 0;
+      sourceUploads = combined.filter((file) => {
+        const key = `${file.name}\0${file.chars}\0${file.content.slice(0, 120)}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        if (keptChars + file.chars > SOURCE_UPLOAD_MAX_TOTAL_CHARS) {
+          limitDropped++;
+          return false;
+        }
+        keptChars += file.chars;
+        return true;
+      });
 
-    if (uploads.length > 0) {
-      const zipPart = zipEntries > 0 ? ` (zip에서 ${zipEntries}개 펼침)` : '';
-      toast(`자료 파일 ${uploads.length}개를 불러왔습니다${zipPart}`, 'ok');
+      if (uploads.length > 0) {
+        const zipPart = zipEntries > 0 ? ` (zip에서 ${zipEntries}개 펼침)` : '';
+        toast(`자료 파일 ${uploads.length}개를 불러왔습니다${zipPart}`, 'ok');
+      }
+      if (skipped.length > 0) {
+        const safety = skipped.filter((item) => item.reason.includes('limit') || item.reason.includes('large')).length;
+        toast(`자료 ${skipped.length}개를 건너뛰었습니다${safety ? ` (안전 제한 ${safety}개)` : ''}`, 'warn');
+      }
+      if (limitDropped) toast(`전체 자료 안전 한도를 넘어 ${limitDropped}개를 추가하지 않았습니다`, 'warn');
+    } catch (error) {
+      if (sourceAbort?.signal.aborted) toast('자료 읽기를 취소했습니다', 'info');
+      else toast(`자료 읽기 실패: ${error instanceof Error ? error.message : String(error)}`, 'bad');
+    } finally {
+      sourceReading = false;
+      sourceProgress = null;
+      sourceAbort = null;
     }
-    if (skipped.length > 0) {
-      toast(`자료 ${skipped.length}개는 텍스트로 읽지 못해 건너뛰었습니다`, 'warn');
-    }
+  }
+
+  function cancelSourceRead() {
+    sourceAbort?.abort();
   }
 
   function removeSourceFile(id: string) {
@@ -228,7 +311,7 @@
     {#if running}
       <LiveRunPanel title="작업 실행 중" />
     {:else if starterIdeas.length}
-      <span class="kicker">기획 후보 — 하나를 고르면 세계관·플롯 기본 구성이 자동으로 만들어집니다</span>
+      <span class="kicker">기획안 확인. 이 기획으로 세계관·플롯 기본 구성을 시작합니다</span>
       <div class="ideas">
         {#each starterIdeas as idea (idea.seed.id)}
           <article class="idea">
@@ -256,7 +339,7 @@
         {#if showIntent}
           <input class="grow" bind:value={$intentNote} placeholder="원하는 방향이 있으면 한 줄로 (선택)" onkeydown={(e) => e.key === 'Enter' && go()} />
         {/if}
-        <button class="primary big" onclick={go}>{step.cta}</button>
+        <button class="primary big" onclick={go} disabled={sourceReading}>{sourceReading ? '자료 읽는 중...' : step.cta}</button>
       </div>
 
       {#if step.action === 'startProject'}
@@ -267,10 +350,13 @@
               <span>{sourceSummary}</span>
             </div>
             <div class="row source-actions">
-              {#if sourceUploads.length}
-                <button class="quiet" onclick={() => (sourceUploads = [])}>비우기</button>
+              {#if sourceReading}
+                <button class="quiet danger" onclick={cancelSourceRead}>읽기 취소</button>
               {/if}
-              <button class="quiet" onclick={() => sourceInput?.click()}>파일 추가</button>
+              {#if sourceUploads.length}
+                <button class="quiet" onclick={() => (sourceUploads = [])} disabled={sourceReading}>비우기</button>
+              {/if}
+              <button class="quiet" onclick={() => sourceInput?.click()} disabled={sourceReading}>파일 추가</button>
               <input
                 bind:this={sourceInput}
                 class="file-input"
@@ -281,6 +367,23 @@
               />
             </div>
           </div>
+          {#if sourceProgress}
+            <div class="source-progress" role="status" aria-live="polite">
+              <span>{sourceProgress.phase === 'expanding' ? 'ZIP 펼치는 중' : '파일 읽는 중'}</span>
+              <b>{sourceProgress.current}/{sourceProgress.total}</b>
+              <span class="source-progress-name" title={sourceProgress.name}>{sourceProgress.name}</span>
+            </div>
+          {/if}
+          {#if planningPackage}
+            <div class="package-ready">
+              <div>
+                <b>구조화 기획 패키지 감지</b>
+                <span>{planningPackage.archiveName} · {planningPackage.files.length}개 문서 · {planningPackage.totalChars.toLocaleString()}자</span>
+                <span>설정·인물·세계·플롯·재개 문서를 보존하고 플롯 구조만 정리합니다.</span>
+              </div>
+              <button class="primary" onclick={importStructuredPackage} disabled={running || sourceReading}>이 구조로 바로 시작</button>
+            </div>
+          {/if}
           {#if sourceUploads.length}
             <div class="source-list">
               {#each sourceUploads as file (file.id)}
@@ -294,7 +397,7 @@
               {/each}
             </div>
           {/if}
-          <p>업로드한 텍스트와 zip 내부 텍스트는 notes/source-raw.md에 저장되고 기획 후보 입력에 함께 들어갑니다.</p>
+          <p>원문은 notes/source-raw.md에 모두 저장됩니다. 일반 기획 후보에는 최대 40개 파일, 총 18,000자만 공평하게 발췌합니다.</p>
         </section>
       {/if}
 
@@ -326,14 +429,14 @@
 
 <style>
   .surface { padding: 56px 32px 48px; }
-  .col { max-width: 680px; margin: 0 auto; display: grid; gap: 14px; align-content: start; }
+  .col { max-width: 680px; margin: 0 auto; display: grid; gap: 12px; align-content: start; }
   .kicker { font-size: 10px; font-weight: 800; letter-spacing: 0.09em; text-transform: uppercase; color: var(--faint); }
   h1 { margin: 0; font-size: 29px; line-height: 1.28; letter-spacing: -0.012em; font-weight: 750; }
   .lead { margin: 0; color: var(--muted); font-size: 14.5px; line-height: 1.65; max-width: 56ch; }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .ctarow { margin-top: 8px; }
-  .grow { flex: 1; min-width: 220px; padding: 9px 12px; }
-  .big { padding: 10px 24px; font-size: 14px; }
+  .grow { flex: 1; min-width: 220px; padding: 8px 12px; }
+  .big { padding: 8px 24px; font-size: 14px; }
 
   .source-intake {
     display: grid;
@@ -349,7 +452,7 @@
     justify-content: space-between;
     flex-wrap: wrap;
   }
-  .source-head > div:first-child { display: grid; gap: 2px; }
+  .source-head > div:first-child { display: grid; gap: 4px; }
   .source-head strong { font-size: 13px; }
   .source-head span,
   .source-intake p,
@@ -359,7 +462,30 @@
   }
   .source-actions { justify-content: flex-end; }
   .file-input { display: none; }
-  .source-list { display: grid; gap: 6px; }
+  .source-list { display: grid; gap: 8px; }
+  .source-progress,
+  .package-ready {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: var(--space-2) var(--space-3);
+    background: var(--bg-1);
+    font-size: 12px;
+  }
+  .source-progress-name {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .package-ready { justify-content: space-between; align-items: flex-start; }
+  .package-ready > div { display: grid; gap: var(--space-1); min-width: 0; }
+  .package-ready b { color: var(--accent); }
+  .package-ready span { color: var(--muted); font-size: 11.5px; }
+  .package-ready button { flex: 0 0 auto; }
   .source-row {
     display: flex;
     gap: var(--space-2);
@@ -367,12 +493,12 @@
     justify-content: space-between;
     border: 1px solid var(--line);
     border-radius: 4px;
-    padding: 8px 10px;
+    padding: 8px 8px;
     background: var(--bg-1);
   }
   .source-meta {
     display: grid;
-    gap: 2px;
+    gap: 4px;
     min-width: 0;
   }
   .source-meta b {
@@ -384,27 +510,27 @@
   }
   .danger { color: var(--bad); }
 
-  .aux { display: grid; gap: 8px; margin-top: 22px; }
+  .aux { display: grid; gap: 8px; margin-top: 24px; }
   .card {
     display: flex; gap: 8px; align-items: center;
     text-align: left;
     border: 1px solid var(--line); border-radius: 4px;
     background: var(--bg-1);
-    padding: 11px 14px;
+    padding: 12px 12px;
     color: var(--muted); font-size: 12.5px;
   }
   .card b { color: var(--text); }
   .card:hover { background: var(--accent-soft); }
   .card .go { margin-left: auto; color: var(--accent); white-space: nowrap; }
 
-  /* 기획 후보는 좁은 카드 대신 전폭 행으로 — 훅 문장이 세로로 접히지 않고
+  /* 기획 후보는 좁은 카드 대신 전폭 행으로 - 훅 문장이 세로로 접히지 않고
      후보 간 차이를 줄 단위로 비교할 수 있다. */
   .ideas { display: grid; border-top: 1px solid var(--line-strong); }
   .idea {
-    display: grid; gap: 5px;
+    display: grid; gap: 4px;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
-    padding: 15px 2px;
+    padding: 16px 4px;
     border-bottom: 1px solid var(--line);
   }
   .idea h3 { margin: 0; font-size: 15px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; grid-column: 1; }
@@ -415,5 +541,7 @@
   @media (max-width: 560px) {
     .idea { grid-template-columns: minmax(0, 1fr); }
     .idea .act { grid-column: 1; grid-row: auto; }
+    .package-ready { display: grid; }
+    .package-ready button { width: 100%; }
   }
 </style>

@@ -51,5 +51,7 @@ export interface Bridge {
     onEvent: (event: AgentStreamEvent) => void
   ): Promise<AgentResult>;
   cancelAgent?(root: string, label: string): Promise<{ ok: boolean; cancelled: boolean }>;
+  /** 패키지 앱의 네이티브 폴더 선택기. dev/memory 브리지에서는 생략 가능. */
+  pickFolder?(prompt: string): Promise<{ path: string; cancelled: boolean }>;
   env(): Promise<{ home: string; cwd: string }>;
 }

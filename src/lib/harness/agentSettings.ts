@@ -1,6 +1,7 @@
 // 에이전트 실행기 설정 — provider에 고정되지 않는 CLI 프로필.
 // 프로젝트 파일(.bindery/settings.json)이 진실이고, 앱은 그것을 편집하는 UI다.
 import { LAYOUT } from '$lib/core/layout';
+import { defaultModelRates, type ModelRate } from './usage';
 import type { AgentSettings, Bridge } from '$lib/bridge';
 
 export type ProviderPreset = {
@@ -17,8 +18,9 @@ export type ProviderPreset = {
 export const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     id: 'codex', label: 'Codex CLI', command: 'codex',
-    argsTemplate: ['exec', '{prompt}'],
-    argsWithModel: ['exec', '-m', '{model}', '{prompt}'],
+    // Bindery 작품 폴더는 Git 저장소가 아닌 것이 정상이다.
+    argsTemplate: ['exec', '--skip-git-repo-check', '{prompt}'],
+    argsWithModel: ['exec', '--skip-git-repo-check', '-m', '{model}', '{prompt}'],
     outputMode: 'stdout'
   },
   {
@@ -28,9 +30,10 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     outputMode: 'stdout'
   },
   {
-    id: 'gemini', label: 'Gemini CLI', command: 'gemini',
+    // agy: 이 머신의 Gemini 실행 래퍼. 모델 플래그는 -m이 아니라 -model이 기본이다.
+    id: 'gemini', label: 'Gemini CLI (agy)', command: 'agy',
     argsTemplate: ['-p', '{prompt}'],
-    argsWithModel: ['-m', '{model}', '-p', '{prompt}'],
+    argsWithModel: ['-model', '{model}', '-p', '{prompt}'],
     outputMode: 'stdout'
   },
   {
@@ -90,6 +93,10 @@ export type HarnessSettings = {
   contextBudgetChars: number;
   /** 이 크기를 넘으면 AI 정제(distill) 스테이지로 캡슐 압축 */
   distillThresholdChars: number;
+  /** 모델별 단가 (USD/1M 토큰) — 비용 추정에 사용 */
+  modelRates: ModelRate[];
+  /** 월 예산 상한 (USD, 0이면 없음) */
+  monthlyBudgetUsd: number;
 };
 
 function defaultTierProfile(): TierProfile {
@@ -133,7 +140,9 @@ export function defaultSettings(): HarnessSettings {
     profiles: { light: defaultTierProfile(), heavy: defaultTierProfile() },
     stageTiers: defaultStageTiers(),
     contextBudgetChars: 6000,
-    distillThresholdChars: 3000
+    distillThresholdChars: 3000,
+    modelRates: defaultModelRates(),
+    monthlyBudgetUsd: 0
   };
 }
 
@@ -166,6 +175,7 @@ export function stageGroupOf(stage: string): StageGroup {
   if (stage === 'context-distill') return 'distill';
   if (stage.startsWith('qa-') || stage === 'revision-plan') return 'qa';
   if (stage === 'summary' || stage === 'canon-delta') return 'memory';
+  // 문체 분석은 결 추출 품질이 중요하다 — 기획·설계와 같은 티어로 묶는다.
   return 'planning';
 }
 
@@ -203,7 +213,8 @@ export async function loadSettings(bridge: Bridge, root: string): Promise<Harnes
           light: { ...d.profiles.light, ...(raw.profiles?.light ?? {}) },
           heavy: { ...d.profiles.heavy, ...(raw.profiles?.heavy ?? {}) }
         },
-        stageTiers: { ...d.stageTiers, ...(raw.stageTiers ?? {}) }
+        stageTiers: { ...d.stageTiers, ...(raw.stageTiers ?? {}) },
+        modelRates: raw.modelRates?.length ? raw.modelRates : d.modelRates
       };
     }
   } catch {

@@ -76,8 +76,8 @@ export async function readOptional(ctx: Ctx, path: string): Promise<string> {
 }
 
 /** story/chapters 아래의 회차 id 목록 (ep001, ep002…). */
-export async function listEpisodes(ctx: Ctx): Promise<string[]> {
-  const nodes = await ctx.bridge.listTree(ctx.root);
+export async function listEpisodes(ctx: Ctx, tree?: FileNode[]): Promise<string[]> {
+  const nodes = tree ?? await ctx.bridge.listTree(ctx.root);
   const chapters = nodes.find((n) => n.path === 'story')?.children?.find((n) => n.path === LAYOUT.story.chapters);
   return (chapters?.children ?? [])
     .filter((n) => n.kind === 'directory' && /^ep\d{3}$/.test(n.name))

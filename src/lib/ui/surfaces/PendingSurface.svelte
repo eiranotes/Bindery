@@ -1,5 +1,5 @@
 <script lang="ts">
-  // 보류함 — 미결정 설정 변경·세계관 확장을 한 곳에서 일괄 검토한다.
+  // 보류함 - 미결정 설정 변경·세계관 확장을 한 곳에서 일괄 검토한다.
   // AI 추천(위험 낮음·중간)은 기본 체크. 체크한 항목만 반영, 나머지는 계속 보류.
   import { ctx, proposals, withBusy, toast, uiMode, mode } from '$lib/stores/app';
   import { decideItem, applyProposal, assetTargetPath, type Proposal } from '$lib/harness/proposals';

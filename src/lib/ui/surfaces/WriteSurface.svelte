@@ -1,12 +1,13 @@
 <script lang="ts">
-  // 집필 — 간단 모드의 메인 작업면. 단일 진행 레일 + 상황별 CTA 하나.
+  // 집필 - 간단 모드의 메인 작업면. 단일 진행 레일 + 상황별 CTA 하나.
   // 사용자는 단계를 조작하지 않는다: 쓰기 → 후보 고르기 → (검토·수정) → 마감.
   // 중간 산출물은 전부 파일로 남고 "생성 근거 보기"에서 열람한다.
   import {
     ctx, currentEpisode, episodes, progress, candidates, withBusy, toast,
     refreshAll, refreshCandidates, busy, activeRun, intentNote, autopilotKick,
-    clearRunFeed, uiMode, mode, project, snapshots
+    clearRunFeed, uiMode, mode, project, snapshots, usageSummary
   } from '$lib/stores/app';
+  import { formatUsd } from '$lib/harness/usage';
   import {
     runEpisodeAutopilot, runRevisionAutopilot, buildRevisionCandidate,
     runCloseEpisodeAutopilot, finalizeCloseEpisode, applyCandidateToManuscript,
@@ -20,16 +21,18 @@
   } from '$lib/harness/episode';
   import { readOptional } from '$lib/harness/project';
   import { episodePaths, summaryPath } from '$lib/core/layout';
-  import { parseFrontmatter } from '$lib/core/text';
+  import { contentHash, parseFrontmatter } from '$lib/core/text';
   import { loadEpisodeContext, type ContextSource } from '$lib/harness/context';
   import { loadContextPackManifest, type ContextPackManifest } from '$lib/harness/contextPack';
-  import { restoreSnapshot } from '$lib/harness/snapshots';
+  import { loadActiveStylePreset } from '$lib/harness/styleTransfer';
+  import { restoreSnapshot, snapshotFile } from '$lib/harness/snapshots';
   import type { QAReport, RevisionPlan } from '$lib/schemas/contracts';
   import LiveRunPanel from '../LiveRunPanel.svelte';
   import DiffView from '../DiffView.svelte';
   import MarkdownEditor from '../MarkdownEditor.svelte';
 
   let manuscript = $state('');
+  let manuscriptLoadedHash = $state('');
   let summaryText = $state('');
   let briefMd = $state('');
   let scenePlanMd = $state('');
@@ -45,6 +48,7 @@
   let contextSources = $state<ContextSource[]>([]);
   let softGaps = $state<string[]>([]);
   let packManifest = $state<ContextPackManifest | null>(null);
+  let activeStyleName = $state<string | null>(null);
 
   const ep = $derived($currentEpisode);
   const paths = $derived(episodePaths(ep));
@@ -70,15 +74,18 @@
   async function load() {
     const c = ctx();
     summaryText = await readOptional(c, summaryPath(ep));
-    const [brief, scenePlan, epContext, manifest] = await Promise.all([
+    const [brief, scenePlan, epContext, manifest, activeStyle] = await Promise.all([
       loadBrief(c, ep),
       loadScenePlan(c, ep),
       loadEpisodeContext(c, ep),
-      loadContextPackManifest(c, ep)
+      loadContextPackManifest(c, ep),
+      loadActiveStylePreset(c).catch(() => null)
     ]);
     manuscript = epContext.currentManuscript;
+    manuscriptLoadedHash = contentHash(manuscript);
     contextSources = epContext.sources;
     packManifest = manifest;
+    activeStyleName = activeStyle?.name ?? null;
     // hard gate(바이블·이번 화 플롯)와 soft gap(스타일·이전 요약 등)을 구분한다:
     // 전자는 집필을 막고 준비 CTA로, 후자는 알리되 AI 추정으로 계속 진행한다.
     foundationMissing = [
@@ -114,10 +121,14 @@
       toast('집필 전에 바이블과 플롯 준비가 필요합니다.', 'warn');
       return;
     }
+    // 월 예산 초과 시 실행 전에 알린다 (차단은 하지 않는다 - 사용자 판단).
+    if ($usageSummary.budgetUsd > 0 && $usageSummary.budgetRatio >= 1) {
+      toast(`이번 달 추정 요금이 예산(${formatUsd($usageSummary.budgetUsd)})을 넘었습니다. 계속 진행합니다 - 설정에서 예산을 확인하세요.`, 'warn');
+    }
     if (!keepFeed) clearRunFeed();
     const note = $intentNote.trim();
     const r = await withBusy('이번 화 쓰기', () =>
-      runEpisodeAutopilot(ctx(), { episode: ep, userNote: note, candidateCount: 3, regeneratePlan })
+      runEpisodeAutopilot(ctx(), { episode: ep, userNote: note, candidateCount: 1, regeneratePlan })
     );
     if (!r) return;
     lastResult = r;
@@ -130,7 +141,7 @@
       toast(`후보 ${r.candidates.length}개가 준비됐습니다. 원고는 아직 그대로입니다.`, 'ok');
     }
     if (r.contextMissing.length) {
-      toast(`비어 있는 기초자료: ${r.contextMissing.join(', ')} — 작품노트에서 채우면 품질이 좋아집니다`, 'info');
+      toast(`비어 있는 기초자료: ${r.contextMissing.join(', ')} - 작품노트에서 채우면 품질이 좋아집니다`, 'info');
     }
     await load();
     if (hasManuscript) showCandidates = true;
@@ -242,7 +253,7 @@
     const r = await withBusy('회차 마감', () => finalizeCloseEpisode(ctx(), closeCard!, closeChecks));
     if (!r) return;
     toast(
-      `${ep} 마감 완료 — 설정 변경 ${r.appliedChanges}건 반영${r.heldChanges ? `, ${r.heldChanges}건 보류함으로` : ''}. 다음: ${nextEpisode(ep)}`,
+      `${ep} 마감 완료 - 설정 변경 ${r.appliedChanges}건 반영${r.heldChanges ? `, ${r.heldChanges}건 보류함으로` : ''}. 다음: ${nextEpisode(ep)}`,
       'ok'
     );
     closeCard = null;
@@ -259,8 +270,27 @@
   }
 
   async function saveManuscript() {
+    const c = ctx();
+    let diskContent: string | null = null;
+    try {
+      diskContent = await c.bridge.readFile(c.root, paths.manuscript);
+    } catch {
+      diskContent = null;
+    }
+    const changedOutside = diskContent == null || contentHash(diskContent) !== manuscriptLoadedHash;
+    if (changedOutside && diskContent !== manuscript) {
+      const ok = confirm(`${paths.manuscript} 파일이 열어둔 뒤 외부에서 변경되었습니다. 현재 편집본으로 덮어쓸까요? 외부 변경본은 스냅샷으로 남깁니다.`);
+      if (!ok) {
+        toast('원고 저장을 취소했습니다. 새로고침 후 다시 확인하세요.', 'warn');
+        return;
+      }
+    }
     await withBusy('원고 저장', async () => {
-      await ctx().bridge.writeFile(ctx().root, paths.manuscript, manuscript);
+      if (changedOutside && diskContent != null) {
+        await snapshotFile(c, paths.manuscript, `${ep} 외부 변경 덮어쓰기 전`, ep);
+      }
+      await c.bridge.writeFile(c.root, paths.manuscript, manuscript);
+      manuscriptLoadedHash = contentHash(manuscript);
       toast('원고 저장됨', 'ok');
     }, false);
     editing = false;
@@ -275,7 +305,7 @@
     toast(`${next} 시작`, 'ok');
   }
 
-  // 승인/되돌리기 명확화 — 후보·수정 적용 직후 원고를 한 번에 이전본으로 되돌린다.
+  // 승인/되돌리기 명확화 - 후보·수정 적용 직후 원고를 한 번에 이전본으로 되돌린다.
   const manuscriptSnapshot = $derived($snapshots.find((s) => s.targetPath === paths.manuscript) ?? null);
 
   async function restorePreviousManuscript() {
@@ -290,7 +320,7 @@
   const aspectLabel: Record<string, string> = { canon: '설정', continuity: '연속성', style: '문체' };
   const verdictLabel: Record<string, string> = { pass: '통과', warn: '주의', fail: '수정 필요' };
 
-  // Context Pack 요약 — "무엇을 참고했고 무엇을 대체했는가"를 산출물 옆에 한 줄로.
+  // Context Pack 요약 - "무엇을 참고했고 무엇을 대체했는가"를 산출물 옆에 한 줄로.
   const usedSources = $derived(contextSources.filter((s) => s.used));
   const replacedSources = $derived(
     contextSources.filter((s) => !s.used && !s.note.includes('해당 없음'))
@@ -298,10 +328,10 @@
 
   const railSteps = $derived.by(() => {
     const foundation = foundationMissing.length ? '준비 필요' : '준비됨';
-    const design = briefMd && scenePlanMd ? '자동 생성됨' : briefMd ? '브리프만 있음' : '—';
-    const draft = hasManuscript ? '원고 반영됨' : draftCards.length ? `후보 ${draftCards.length}개` : '—';
-    const review = revisionPlan ? `제안 ${revisionPlan.items.length}건` : qaReports.length ? '점검 완료' : '—';
-    const closed = epStatus === 'fixed' ? '픽스됨' : summaryText ? '요약 준비됨' : '—';
+    const design = briefMd && scenePlanMd ? '자동 생성됨' : briefMd ? '브리프만 있음' : '-';
+    const draft = hasManuscript ? '원고 반영됨' : draftCards.length ? `후보 ${draftCards.length}개` : '-';
+    const review = revisionPlan ? `제안 ${revisionPlan.items.length}건` : qaReports.length ? '점검 완료' : '-';
+    const closed = epStatus === 'fixed' ? '픽스됨' : summaryText ? '요약 준비됨' : '-';
     return [
       { label: '기준', value: foundation, done: foundationMissing.length === 0, now: foundationMissing.length > 0 && !hasManuscript },
       { label: '설계', value: design, done: Boolean(briefMd && scenePlanMd), now: foundationMissing.length === 0 && !briefMd && !hasManuscript },
@@ -343,7 +373,7 @@
     {:else if closeCard}
       <section class="block">
         <span class="kicker">회차 마감</span>
-        <p class="lead">요약이 준비됐습니다{closeCard.summarySource === 'fallback' ? ' (오프라인 요약 — AI 연결 후 다시 만들 수 있습니다)' : ''}.
+        <p class="lead">요약이 준비됐습니다{closeCard.summarySource === 'fallback' ? ' (오프라인 요약 - AI 연결 후 다시 만들 수 있습니다)' : ''}.
           {#if closeCard.proposal}설정 변경 후보 {closeCard.proposal.payload.changes.length}건을 확인하세요.{:else}이번 화에서 발견된 설정 변경 후보는 없습니다.{/if}</p>
         {#if closeCard.proposal}
           <div class="check">
@@ -368,7 +398,7 @@
       </section>
     {:else if revisionPlan}
       <section class="block">
-        <span class="kicker">검토 결과 — 체크된 항목만 반영됩니다</span>
+        <span class="kicker">검토 결과 - 체크된 항목만 반영됩니다</span>
         {#if qaReports.length}
           <div class="qaline" role="list" aria-label="점검 요약">
             {#each qaReports as r (r.aspect)}
@@ -432,10 +462,10 @@
           <input class="grow" bind:value={$intentNote} placeholder="이번 화에 원하는 방향이 있으면 한 줄로 (선택)" />
           <button class="primary big" onclick={() => write()}>이번 화 쓰기</button>
         </div>
-        <p class="dim small">원고에는 손대지 않습니다 — 후보를 보고 고르면 그때 반영됩니다.</p>
+        <p class="dim small">원고에는 손대지 않습니다 - 후보를 보고 고르면 그때 반영됩니다.</p>
         {#if softGaps.length}
           <p class="preflight">
-            비어 있는 자료: {softGaps.join(' · ')} — 그대로 진행하면 AI가 기존 원고에서 추정합니다.
+            비어 있는 자료: {softGaps.join(' · ')} - 그대로 진행하면 AI가 기존 원고에서 추정합니다.
             <button class="quiet inlinebtn" onclick={() => mode.set('notes')}>작품노트에서 채우기</button>
           </p>
         {/if}
@@ -443,9 +473,16 @@
     {:else if phase === 'candidates' || showCandidates}
       <section class="block">
         <div class="row headrow">
-          <span class="kicker">초안 후보 {draftCards.length}개 — 하나를 골라 반영하세요</span>
+          <span class="kicker">초안 후보 {draftCards.length}개 - 하나를 골라 반영하세요</span>
           {#if showCandidates && hasManuscript}<button class="quiet" onclick={() => (showCandidates = false)}>원고로 돌아가기</button>{/if}
         </div>
+        {#if draftCards.length && draftCards.every((c) => c.source === 'fallback')}
+          <div class="fallback-warn">
+            <span class="chip bad">AI 아님</span>
+            <span>이 후보들은 <b>AI가 아니라 로컬 뼈대</b>로 만들어졌습니다 - 실행기가 연결되지 않았습니다.
+              품질이 낮은 게 정상입니다. <button class="linkbtn" onclick={() => mode.set('settings')}>설정에서 실행기 연결 →</button> 후 다시 만드세요.</span>
+          </div>
+        {/if}
         <div class="cands">
           {#each draftCards as c (c.id)}
             <article class="cand" class:rec={lastResult?.recommendedId === c.id}>
@@ -453,6 +490,7 @@
                 {c.label}
                 {#if lastResult?.recommendedId === c.id}<span class="chip info">추천</span>{/if}
                 {#if c.source === 'agent'}<span class="chip ok">AI</span>{:else if c.source === 'web-import'}<span class="chip info">웹</span>{:else}<span class="chip warn">뼈대</span>{/if}
+                {#if c.qualityStatus}<span class="chip {c.qualityStatus === 'pass' ? 'ok' : c.qualityStatus === 'warn' ? 'warn' : 'bad'}">품질 {c.qualityStatus}</span>{/if}
               </h3>
               {#if c.changeSummary}<p class="sum">{c.changeSummary}</p>{/if}
               <p class="meta dim">
@@ -461,6 +499,9 @@
               </p>
               {#if c.risks?.length}
                 <p class="risk">위험: {c.risks.join(' · ')}</p>
+              {/if}
+              {#if c.qualityIssues?.length}
+                <p class="risk">품질: {c.qualityIssues.join(' · ')}</p>
               {/if}
               <div class="row">
                 <button class="quiet" onclick={() => openPreview(c)}>미리보기</button>
@@ -476,6 +517,7 @@
         {#if usedSources.length}
           <p class="srcline">
             참고: {usedSources.map((s) => s.label).join(' · ')}
+            {#if activeStyleName} · 문체: {activeStyleName} (장면별 자동 적용){/if}
             {#if replacedSources.length}<span class="dim"> / 비어 있어 추정: {replacedSources.map((s) => s.label).join(' · ')}</span>{/if}
           </p>
         {/if}
@@ -484,7 +526,7 @@
       <section class="block">
         {#if editing}
           <div class="row headrow">
-            <span class="kicker">직접 고치기 — {paths.manuscript}</span>
+            <span class="kicker">직접 고치기 - {paths.manuscript}</span>
             <span class="grow"></span>
             <button class="primary" onclick={saveManuscript}>저장</button>
             <button class="quiet" onclick={() => { editing = false; void load(); }}>취소</button>
@@ -521,7 +563,7 @@
         {#if packManifest}
           <div>
             <span class="label">
-              컨텍스트 팩 — 설정 자료 {packManifest.included.length}개 선별 · {packManifest.excluded.length}개 제외 ·
+              컨텍스트 팩 - 설정 자료 {packManifest.included.length}개 선별 · {packManifest.excluded.length}개 제외 ·
               {packManifest.usedChars.toLocaleString()}자 / 예산 {packManifest.budgetChars.toLocaleString()}자
               {#if packManifest.distill && packManifest.distill.source !== 'skipped'}
                 · 정제 {packManifest.distill.source === 'agent' ? `AI (${packManifest.distill.inputChars.toLocaleString()} → ${packManifest.distill.capsuleChars.toLocaleString()}자)` : '실패(선별본 사용)'}
@@ -539,7 +581,7 @@
             </ul>
             {#if packManifest.excluded.length}
               <details class="excluded">
-                <summary>제외된 자료 {packManifest.excluded.length}개 — 사유 보기</summary>
+                <summary>제외된 자료 {packManifest.excluded.length}개 - 사유 보기</summary>
                 <ul class="srcs">
                   {#each packManifest.excluded.slice(0, 20) as item (item.id)}
                     <li>
@@ -556,11 +598,11 @@
         {/if}
         {#if contextSources.length}
           <div>
-            <span class="label">이번 생성이 참고하는 자료 — 전체 자료가 아니라 필요한 부분만 투입됩니다</span>
+            <span class="label">이번 생성이 참고하는 자료 - 전체 자료가 아니라 필요한 부분만 투입됩니다</span>
             <ul class="srcs">
               {#each contextSources as s (s.label)}
                 <li>
-                  <span class="chip {s.used ? 'ok' : s.note.includes('해당 없음') ? 'muted' : 'warn'}">{s.used ? '투입' : s.note.includes('해당 없음') ? '—' : '비어 있음'}</span>
+                  <span class="chip {s.used ? 'ok' : s.note.includes('해당 없음') ? 'muted' : 'warn'}">{s.used ? '투입' : s.note.includes('해당 없음') ? '-' : '비어 있음'}</span>
                   <span class="srcname">{s.label}</span>
                   <span class="dim">{s.note}</span>
                   <span class="mono path">{s.path}</span>
@@ -570,11 +612,11 @@
           </div>
         {/if}
         <div>
-          <span class="label">회차 설계 — {paths.brief}</span>
-          <pre class="pre panel">{briefMd || '(아직 없음 — 이번 화 쓰기가 자동 생성합니다)'}</pre>
+          <span class="label">회차 설계 - {paths.brief}</span>
+          <pre class="pre panel">{briefMd || '(아직 없음 - 이번 화 쓰기가 자동 생성합니다)'}</pre>
         </div>
         <div>
-          <span class="label">장면 구성 — {paths.scenePlan}</span>
+          <span class="label">장면 구성 - {paths.scenePlan}</span>
           <pre class="pre panel">{scenePlanMd || '(아직 없음)'}</pre>
         </div>
         {#if qaReports.length}
@@ -587,7 +629,7 @@
         {/if}
         {#if summaryText}
           <div>
-            <span class="label">회차 요약 — {summaryPath(ep)}</span>
+            <span class="label">회차 요약 - {summaryPath(ep)}</span>
             <pre class="pre panel">{summaryText}</pre>
           </div>
         {/if}
@@ -600,18 +642,18 @@
 </div>
 
 <style>
-  .surface { padding: 26px 32px 40px; }
+  .surface { padding: 24px 32px 40px; }
   .col { max-width: 860px; margin: 0 auto; display: grid; gap: 16px; align-content: start; }
   .head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-  .titleline { display: flex; align-items: baseline; gap: 10px; }
+  .titleline { display: flex; align-items: baseline; gap: 8px; }
   .head h1 { margin: 0; font-size: 22px; }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .headrow { align-items: center; }
   .grow { flex: 1; min-width: 160px; }
-  .big { padding: 9px 20px; font-size: 13.5px; }
+  .big { padding: 8px 20px; font-size: 13.5px; }
 
   .rail { display: flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; background: var(--bg-1); }
-  .step { flex: 1; padding: 7px 12px; border-right: 1px solid var(--line); font-size: 12px; color: var(--muted); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .step { flex: 1; padding: 8px 12px; border-right: 1px solid var(--line); font-size: 12px; color: var(--muted); min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .step:last-child { border-right: 0; }
   .step em { display: block; font-style: normal; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
   .step.done { background: var(--ok-soft); }
@@ -622,21 +664,21 @@
   .block h2 { margin: 0; font-size: 20px; line-height: 1.3; }
   .lead { margin: 0; color: var(--muted); }
   .small { font-size: 11.5px; margin: 0; }
-  .ctarow { margin-top: 2px; }
+  .ctarow { margin-top: 4px; }
   .start { padding: 8px 0 4px; }
 
-  /* 후보는 좁은 세로 카드 대신 전폭 행으로 — 긴 요약이 세로로 늘어지지 않고
+  /* 후보는 좁은 세로 카드 대신 전폭 행으로 - 긴 요약이 세로로 늘어지지 않고
      후보 간 비교가 줄 단위로 읽힌다 (에디토리얼 리스트). */
   .cands { display: grid; border-top: 1px solid var(--line-strong); }
   .cand {
-    display: grid; gap: 6px;
+    display: grid; gap: 8px;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
-    padding: 14px 2px;
+    padding: 12px 4px;
     border-bottom: 1px solid var(--line);
   }
-  .cand.rec { background: var(--accent-soft); margin: 0 -10px; padding: 14px 12px; border-radius: 4px; border-bottom-color: transparent; }
-  .cand h3 { margin: 0; font-size: 14px; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; grid-column: 1; }
+  .cand.rec { background: var(--accent-soft); margin: 0 -8px; padding: 12px 12px; border-radius: 4px; border-bottom-color: transparent; }
+  .cand h3 { margin: 0; font-size: 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; grid-column: 1; }
   .cand .row { grid-column: 2; grid-row: 1; flex-wrap: nowrap; }
   .cand .sum { margin: 0; font-size: 13px; color: var(--text); grid-column: 1 / -1; line-height: 1.6; }
   .cand .meta { margin: 0; font-size: 11.5px; grid-column: 1 / -1; }
@@ -647,7 +689,7 @@
   }
 
   .check { display: grid; border-top: 1px solid var(--line); }
-  .check label { display: flex; gap: 10px; align-items: baseline; padding: 9px 4px; border-bottom: 1px solid var(--line); font-size: 13px; flex-wrap: wrap; }
+  .check label { display: flex; gap: 8px; align-items: baseline; padding: 8px 4px; border-bottom: 1px solid var(--line); font-size: 13px; flex-wrap: wrap; }
   .check label.off { opacity: 0.5; }
   .sev { font-family: var(--mono); font-size: 10.5px; font-weight: 700; }
   .sev.fail { color: var(--bad); }
@@ -662,30 +704,36 @@
     border: 1px solid var(--line);
     border-radius: 4px;
     background: var(--bg-1);
-    padding: 26px 30px;
+    padding: 24px 32px;
     max-height: min(58vh, 560px);
     overflow: auto;
   }
-  /* 원고가 화면의 중심 — 보조 패널이 아니라 데스크만큼 크게 보여준다. */
+  /* 원고가 화면의 중심 - 보조 패널이 아니라 데스크만큼 크게 보여준다. */
   .reader.main { max-height: min(66vh, 720px); }
   .editor { height: min(66vh, 720px); min-height: 320px; }
-  .panel { border: 1px solid var(--line); border-radius: 4px; padding: 10px; background: var(--bg-1); max-height: 300px; overflow: auto; }
+  .panel { border: 1px solid var(--line); border-radius: 4px; padding: 8px; background: var(--bg-1); max-height: 300px; overflow: auto; }
 
   .strong { color: var(--accent); border-color: var(--accent); }
+  .fallback-warn {
+    display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+    border: 1px solid var(--bad-soft); border-radius: 4px; background: var(--bad-soft);
+    padding: 8px 12px; font-size: 12.5px; line-height: 1.55;
+  }
+  .linkbtn { border: 0; padding: 0; color: var(--accent); text-decoration: underline; font: inherit; }
   .qaline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .preflight { margin: 0; font-size: 12px; color: var(--muted); }
   .srcline { margin: 0; font-size: 12px; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 8px; }
   .srcs { list-style: none; margin: 0; padding: 0; display: grid; border-top: 1px solid var(--line); }
   .srcs li {
     display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
-    padding: 6px 2px; border-bottom: 1px solid var(--line); font-size: 12.5px;
+    padding: 8px 4px; border-bottom: 1px solid var(--line); font-size: 12.5px;
   }
   .srcs .srcname { font-weight: 600; }
   .srcs .path { margin-left: auto; font-size: 11px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; max-width: 260px; white-space: nowrap; }
-  .excluded summary { cursor: pointer; color: var(--faint); font-size: 12px; padding: 6px 0 2px; }
-  .evidence summary { cursor: pointer; color: var(--muted); font-size: 12.5px; padding: 6px 0; border-top: 1px dashed var(--line-strong); }
-  .evidence-body { display: grid; gap: 14px; padding-top: 8px; }
-  .evidence-body > div { display: grid; gap: 6px; }
+  .excluded summary { cursor: pointer; color: var(--faint); font-size: 12px; padding: 8px 0 4px; }
+  .evidence summary { cursor: pointer; color: var(--muted); font-size: 12.5px; padding: 8px 0; border-top: 1px dashed var(--line-strong); }
+  .evidence-body { display: grid; gap: 12px; padding-top: 8px; }
+  .evidence-body > div { display: grid; gap: 8px; }
   .inlinebtn { padding: 0 4px; font-size: 12px; text-decoration: underline; }
   details summary { user-select: none; }
   button.on { background: var(--accent-soft); color: var(--text); }

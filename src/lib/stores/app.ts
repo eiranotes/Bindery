@@ -14,20 +14,29 @@ import { loadProgress, type EpisodeProgress } from '$lib/harness/closeout';
 import { listEpisodes } from '$lib/harness/project';
 import { loadSettings, saveSettings, toAgentSettings, toAgentSettingsForStage, defaultSettings, type HarnessSettings } from '$lib/harness/agentSettings';
 import { loadSnapshotIndex, type SnapshotMeta } from '$lib/harness/snapshots';
+import { loadProviderUsage, loadUsageLedger, summarizeUsage, type ProviderUsage, type UsageEntry, type UsageSummary } from '$lib/harness/usage';
+import {
+  diffProjectFileDigests,
+  loadProjectFileDigest,
+  type ProjectFileChange,
+  type ProjectFileDigest
+} from '$lib/harness/projectChanges';
 import type { PlotPlan } from '$lib/schemas/contracts';
 
 export type Mode =
-  | 'home' | 'write' | 'notes' | 'pending' | 'files' | 'settings'
+  | 'home' | 'write' | 'notes' | 'style' | 'export' | 'pending' | 'files' | 'settings'
   // 설계자(advanced) 모드 전용 — 파이프라인 직접 조작 화면
   | 'ideas' | 'world' | 'plot' | 'episode' | 'canon';
 
 export type ModeEntry = { id: Mode; label: string; hint: string };
 
-/** 간단 모드 — 자동화 중심 6개 메뉴. stage·packet·trace 용어를 노출하지 않는다. */
+/** 간단 모드 — 자동화 중심 메뉴. stage·packet·trace 용어를 노출하지 않는다. */
 export const SIMPLE_MODES: ModeEntry[] = [
   { id: 'home', label: '홈', hint: '다음 할 일 하나' },
   { id: 'write', label: '집필', hint: '이번 화 쓰기 · 후보 · 수정 · 마감' },
   { id: 'notes', label: '작품노트', hint: '인물 · 세계 · 플롯 · 떡밥' },
+  { id: 'style', label: '문체', hint: '원문 분석 · 프리셋 · 집필 적용' },
+  { id: 'export', label: '내보내기', hint: '원고 합본 · TXT · EPUB · DOCX · 백업' },
   { id: 'pending', label: '보류함', hint: '설정 변경 · 미결정 제안' },
   { id: 'files', label: '파일', hint: '프로젝트 파일 직접 수정' },
   { id: 'settings', label: '설정', hint: 'AI 실행기 · 모드' }
@@ -35,13 +44,13 @@ export const SIMPLE_MODES: ModeEntry[] = [
 
 /** 설계자 모드 — 기존 파이프라인 화면을 추가로 연다. */
 export const ADVANCED_MODES: ModeEntry[] = [
-  ...SIMPLE_MODES.slice(0, 4),
+  ...SIMPLE_MODES.slice(0, 5),
   { id: 'ideas', label: '소재', hint: '소재 발굴 · 채택' },
   { id: 'world', label: '세계관', hint: '자산 · 바이블' },
   { id: 'plot', label: '플롯', hint: '회별 계획 · 승인' },
   { id: 'episode', label: '회차', hint: '브리프→초안→QA→픽스' },
   { id: 'canon', label: '제안·정사', hint: 'proposal 승인 · 요약' },
-  ...SIMPLE_MODES.slice(4)
+  ...SIMPLE_MODES.slice(5)
 ];
 
 export const project = writable<ProjectMeta | null>(null);
@@ -61,6 +70,33 @@ export const runlog = writable<RunRecord[]>([]);
 export const runDockOpen = writable(false);
 export const selectedRun = writable<RunRecord | null>(null);
 export const snapshots = writable<SnapshotMeta[]>([]);
+export const usageLedger = writable<UsageEntry[]>([]);
+export const externalChanges = writable<ProjectFileChange[]>([]);
+export const projectRefreshing = writable(false);
+export const projectRefreshError = writable<string | null>(null);
+let projectFileDigest: ProjectFileDigest[] | null = null;
+let refreshSeq = 0;
+let projectOpenSeq = 0;
+
+/** 이번 달 추정 요금 등 — 상단바 게이지와 설정 대시보드가 함께 읽는다. */
+export const usageSummary = derived<[typeof usageLedger, typeof settings], UsageSummary>(
+  [usageLedger, settings],
+  ([$ledger, $settings]) =>
+    summarizeUsage($ledger, $settings.modelRates, { monthlyUsd: $settings.monthlyBudgetUsd })
+);
+
+/** 실행기 /usage로 가져온 실제 사용량 (agy 등). 추정치와 별개. */
+export const providerUsage = writable<ProviderUsage | null>(null);
+
+export async function refreshUsage(): Promise<void> {
+  try {
+    usageLedger.set(await loadUsageLedger(ctx()));
+    providerUsage.set(await loadProviderUsage(ctx()));
+  } catch {
+    usageLedger.set([]);
+    providerUsage.set(null);
+  }
+}
 
 export type ActiveRun = {
   runId: string;
@@ -70,7 +106,9 @@ export type ActiveRun = {
   status: 'running' | 'cancelling';
   lines: string[];
 };
-export const activeRun = writable<ActiveRun | null>(null);
+export const activeRuns = writable<ActiveRun[]>([]);
+/** 기존 화면은 가장 최근 시작한 실행을 대표로 읽고, 병렬 상태는 activeRuns로 확인한다. */
+export const activeRun = derived(activeRuns, (runs) => runs[runs.length - 1] ?? null);
 
 /** 실행 피드 — CLI stdout/stderr을 그대로 누적해 집필 화면에 실시간 표시한다.
  *  여러 stage가 이어지는 autopilot 실행 전체를 하나의 흐름으로 보여준다. */
@@ -97,6 +135,7 @@ export function stageLabel(stage: string): string {
   if (stage.startsWith('qa-canon')) return '설정 점검';
   const map: Record<string, string> = {
     'context-distill': '컨텍스트 정제',
+    'style-analysis': '문체 분석',
     'episode-brief': '회차 설계',
     'scene-plan': '장면 구성',
     'revision-plan': '수정 계획',
@@ -113,6 +152,26 @@ export function stageLabel(stage: string): string {
 }
 
 export const pendingProposals = derived(proposals, (list) => pendingCount(list));
+
+export function clearExternalChanges(): void {
+  externalChanges.set([]);
+}
+
+function resetProjectCaches(): void {
+  tree.set([]);
+  ideas.set([]);
+  proposals.set([]);
+  plot.set(null);
+  episodes.set(['ep001']);
+  progress.set({});
+  candidates.set([]);
+  snapshots.set([]);
+  usageLedger.set([]);
+  providerUsage.set(null);
+  projectFileDigest = null;
+  externalChanges.set([]);
+  projectRefreshError.set(null);
+}
 
 /** 현재 UI 모드 (설정 파일이 진실) */
 export const uiMode = derived(settings, (s) => s.uiMode ?? 'simple');
@@ -134,33 +193,37 @@ export function toast(text: string, tone: Toast['tone'] = 'info'): void {
 
 onRun((record) => {
   runlog.update((list) => [record, ...list].slice(0, 100));
+  // 실행이 끝날 때마다 비용 원장을 다시 읽어 상단바 게이지를 갱신한다.
+  if (get(project)) void refreshUsage();
 });
 
 onRunLive((event) => {
   if (event.type === 'start') {
-    activeRun.set({
-      runId: event.runId,
-      stage: event.stage,
-      scope: event.scope,
-      startedAt: event.startedAt,
-      status: 'running',
-      lines: ['CLI 실행 시작']
+    activeRuns.update((runs) => {
+      const next: ActiveRun = {
+        runId: event.runId,
+        stage: event.stage,
+        scope: event.scope,
+        startedAt: event.startedAt,
+        status: 'running',
+        lines: ['CLI 실행 시작']
+      };
+      return [...runs.filter((run) => run.runId !== event.runId), next];
     });
     appendFeed(`\n── ${stageLabel(event.stage)} (${event.scope}) 시작 ──\n`);
   } else if (event.type === 'stdout' || event.type === 'stderr' || event.type === 'status') {
     if (event.type !== 'status') appendFeed(event.text);
     const text = event.text.trim();
     if (!text) return;
-    activeRun.update((run) => {
-      if (!run || (run.runId !== event.runId && run.stage !== event.stage)) return run;
-      return {
-        ...run,
-        lines: [...run.lines, `${event.type}: ${text.replace(/\s+/g, ' ').slice(0, 220)}`].slice(-6)
-      };
-    });
+    activeRuns.update((runs) => runs.map((run) => {
+      if (run.runId !== event.runId) return run;
+      return { ...run, lines: [...run.lines, `${event.type}: ${text.replace(/\s+/g, ' ').slice(0, 220)}`].slice(-6) };
+    }));
   } else if (event.type === 'finish') {
     appendFeed(`\n── ${stageLabel(event.stage)} 완료 (${event.record.source === 'agent' ? 'AI' : '기본 생성'} · ${(event.record.durationMs / 1000).toFixed(1)}s) ──\n`);
-    activeRun.update((run) => (run && (run.runId === event.runId || run.stage === event.stage) ? null : run));
+    activeRuns.update((runs) => runs.filter((run) =>
+      run.runId !== event.runId && !(run.stage === event.stage && run.scope === event.scope)
+    ));
   }
 });
 
@@ -190,30 +253,86 @@ export function recentProjects(): string[] {
   }
 }
 
+export function forgetRecentProject(root: string): void {
+  localStorage.setItem(RECENT_KEY, JSON.stringify(recentProjects().filter((item) => item !== root)));
+}
+
+/** 파일 접근은 중단할 수 없어도, 타임아웃 뒤 늦은 응답이 프로젝트 상태를 바꾸는 것은 막는다. */
+export function cancelPendingProjectOpen(): void {
+  projectOpenSeq++;
+}
+
 function rememberProject(root: string): void {
   const next = [root, ...recentProjects().filter((r) => r !== root)].slice(0, 8);
   localStorage.setItem(RECENT_KEY, JSON.stringify(next));
 }
 
-export async function refreshAll(): Promise<void> {
+export async function refreshAll(options: { reportExternalChanges?: boolean; deferDigest?: boolean } = {}): Promise<void> {
+  const seq = ++refreshSeq;
   const c = ctx();
-  const [treeV, ideasV, proposalsV, plotV, episodesV, progressV, snapshotsV] = await Promise.all([
-    c.bridge.listTree(c.root),
-    listIdeas(c),
-    loadProposals(c),
-    loadPlotPlan(c),
-    listEpisodes(c),
-    loadProgress(c),
-    loadSnapshotIndex(c)
-  ]);
-  tree.set(treeV);
-  ideas.set(ideasV);
-  proposals.set(proposalsV);
-  plot.set(plotV);
-  episodes.set(episodesV.length ? episodesV : ['ep001']);
-  progress.set(progressV);
-  snapshots.set(snapshotsV);
-  candidates.set(await loadCandidateIndex(c, get(currentEpisode)));
+  const root = c.root;
+  projectRefreshing.set(true);
+  projectRefreshError.set(null);
+  const updateDigest = async (treeV: FileNode[]): Promise<void> => {
+    const digest = await loadProjectFileDigest(c, treeV);
+    if (seq !== refreshSeq || get(project)?.root !== root) return;
+    const changes = diffProjectFileDigests(projectFileDigest, digest);
+    if (options.reportExternalChanges && changes.length) {
+      externalChanges.set(changes);
+      toast(`외부 파일 변경 ${changes.length}건을 다시 읽었습니다`, 'info');
+    }
+    projectFileDigest = digest;
+  };
+  try {
+    const treeV = await c.bridge.listTree(c.root);
+    const [ideasV, proposalsV, plotV, episodesV, progressV, snapshotsV] = await Promise.all([
+      listIdeas(c, treeV),
+      loadProposals(c),
+      loadPlotPlan(c),
+      listEpisodes(c, treeV),
+      loadProgress(c),
+      loadSnapshotIndex(c)
+    ]);
+    const candidatesV = await loadCandidateIndex(c, get(currentEpisode));
+    let usageLedgerV: UsageEntry[] = [];
+    let providerUsageV: ProviderUsage | null = null;
+    try {
+      [usageLedgerV, providerUsageV] = await Promise.all([
+        loadUsageLedger(c),
+        loadProviderUsage(c)
+      ]);
+    } catch {
+      usageLedgerV = [];
+      providerUsageV = null;
+    }
+    if (seq !== refreshSeq || get(project)?.root !== root) return;
+    tree.set(treeV);
+    ideas.set(ideasV);
+    proposals.set(proposalsV);
+    plot.set(plotV);
+    episodes.set(episodesV.length ? episodesV : ['ep001']);
+    progress.set(progressV);
+    snapshots.set(snapshotsV);
+    candidates.set(candidatesV);
+    usageLedger.set(usageLedgerV);
+    providerUsage.set(providerUsageV);
+    if (options.deferDigest) {
+      void updateDigest(treeV).catch(() => {
+        /* 기준선 계산 실패는 다음 포커스 새로고침에서 다시 시도한다 */
+      });
+    } else {
+      await updateDigest(treeV);
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (seq === refreshSeq && get(project)?.root === root) {
+      projectRefreshError.set(message);
+      toast(`프로젝트 새로고침 실패: ${message}`, 'bad');
+    }
+    throw err;
+  } finally {
+    if (seq === refreshSeq) projectRefreshing.set(false);
+  }
 }
 
 export async function refreshCandidates(): Promise<void> {
@@ -221,24 +340,40 @@ export async function refreshCandidates(): Promise<void> {
 }
 
 export async function openProjectByPath(root: string): Promise<void> {
+  const openSeq = ++projectOpenSeq;
   const b = bridge();
   const meta = await openProject(b, root);
+  const loadedSettings = await loadSettings(b, root);
+  if (openSeq !== projectOpenSeq) return;
+  refreshSeq++;
+  resetProjectCaches();
+  projectRefreshing.set(true);
+  settings.set(loadedSettings);
   project.set(meta);
-  settings.set(await loadSettings(b, root));
   rememberProject(root);
-  await refreshAll();
   mode.set('home');
+  void refreshAll({ deferDigest: true }).catch(() => {
+    /* refreshAll already reports the visible error */
+  });
 }
 
 export async function createProjectAt(base: string, title: string, author: string): Promise<void> {
+  const openSeq = ++projectOpenSeq;
   const b = bridge();
   const meta = await createProject(b, base, title, author);
+  const loadedSettings = await loadSettings(b, meta.root);
+  if (openSeq !== projectOpenSeq) return;
+  refreshSeq++;
+  resetProjectCaches();
+  projectRefreshing.set(true);
+  settings.set(loadedSettings);
   project.set(meta);
-  settings.set(await loadSettings(b, meta.root));
   rememberProject(meta.root);
-  await refreshAll();
   mode.set('home');
   toast(`새 작품 생성됨: ${meta.root}`, 'ok');
+  void refreshAll({ deferDigest: true }).catch(() => {
+    /* refreshAll already reports the visible error */
+  });
 }
 
 export function returnToProjectPicker(): void {
@@ -247,6 +382,7 @@ export function returnToProjectPicker(): void {
     return;
   }
   project.set(null);
+  cancelPendingProjectOpen();
   settings.set(defaultSettings());
   mode.set('home');
   currentEpisode.set('ep001');
@@ -261,7 +397,13 @@ export function returnToProjectPicker(): void {
   runDockOpen.set(false);
   selectedRun.set(null);
   snapshots.set([]);
-  activeRun.set(null);
+  usageLedger.set([]);
+  providerUsage.set(null);
+  projectRefreshing.set(false);
+  projectRefreshError.set(null);
+  projectFileDigest = null;
+  externalChanges.set([]);
+  activeRuns.set([]);
   clearRunFeed();
   intentNote.set('');
   autopilotKick.set(null);
@@ -276,12 +418,13 @@ export async function persistSettings(): Promise<void> {
 }
 
 export async function cancelActiveRun(): Promise<void> {
-  const run = get(activeRun);
+  const runs = get(activeRuns);
   const p = get(project);
-  if (!run || !p) return;
-  activeRun.update((current) => (current ? { ...current, status: 'cancelling' } : current));
-  const cancelled = await bridge().cancelAgent?.(p.root, run.runId);
-  toast(cancelled?.cancelled ? '실행 취소 요청을 보냈습니다' : '취소할 실행을 찾지 못했습니다', cancelled?.cancelled ? 'warn' : 'info');
+  if (!runs.length || !p) return;
+  activeRuns.update((current) => current.map((run) => ({ ...run, status: 'cancelling' })));
+  const results = await Promise.all(runs.map((run) => bridge().cancelAgent?.(p.root, run.runId)));
+  const count = results.filter((result) => result?.cancelled).length;
+  toast(count ? `실행 ${count}건에 취소 요청을 보냈습니다` : '취소할 실행을 찾지 못했습니다', count ? 'warn' : 'info');
 }
 
 /** 오래 걸리는 하네스 호출 래퍼 — busy 표시 + 오류 토스트 + 새로고침. */

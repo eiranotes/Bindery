@@ -1,15 +1,18 @@
 <script lang="ts">
   // 설정 - AI 실행기(CLI) 프로필. 특정 provider 고정 없음, 사용자가 명령과 인자를 소유한다.
   // 저장 위치: 프로젝트의 .bindery/settings.json (local-first).
-  import { ctx, settings, persistSettings, withBusy, toast } from '$lib/stores/app';
+  import { ctx, settings, persistSettings, withBusy, toast, usageSummary, providerUsage, refreshUsage } from '$lib/stores/app';
   import {
     PROVIDER_PRESETS, STAGE_GROUPS, applyPreset, toAgentSettings, toAgentSettingsForTier,
     type AgentTier, type TierProfile
   } from '$lib/harness/agentSettings';
+  import { fetchProviderUsage, formatTokens, formatUsd, type ModelRate } from '$lib/harness/usage';
 
   let argsText = $state('');
   let argsWithModelText = $state('');
   let testResult = $state('');
+  // null: 이번 세션에 아직 테스트 안 함 · true/false: 마지막 기본 티어 테스트 결과
+  let testOk = $state<boolean | null>(null);
 
   $effect(() => {
     argsText = $settings.argsTemplate.join(' ');
@@ -47,14 +50,26 @@
       );
       testResult = result.ok
         ? `[${label} · ${agent.command}${agent.model ? ` · ${agent.model}` : ''}] 응답 확인 (exit ${result.exitCode}, ${result.durationMs}ms): ${result.text.slice(0, 200)}`
-        : `[${label}] 실패 (${result.mode}, exit ${result.exitCode}): ${result.stderr.slice(0, 300) || '출력 없음'}`;
+        : `[${label}] 실패 (${result.mode}, exit ${result.exitCode}): ${failureHint(result.mode, result.stderr)}${result.stderr.slice(0, 300) || '출력 없음'}`;
+      if (tier === 'standard') testOk = result.ok;
       toast(result.ok ? `${label} 실행기 응답 확인` : `${label} 실행기 연결 실패`, result.ok ? 'ok' : 'bad');
     }, false);
   }
 
+  /** 실패 모드를 원인 후보로 번역 - 초보 사용자가 바로 조치할 수 있게. */
+  function failureHint(mode: string, stderr = ''): string {
+    if (stderr.includes('trusted directory') || stderr.includes('skip-git-repo-check')) {
+      return 'Codex 비 Git 폴더 실행 옵션이 빠졌습니다. 최신 Codex 프리셋을 다시 선택한 뒤 저장하세요. · ';
+    }
+    if (mode === 'spawn-error') return '명령을 찾을 수 없음 - CLI 미설치이거나 경로 문제. 절대 경로를 넣어보세요. · ';
+    if (mode === 'timeout') return '응답 시간 초과 - 로그인이 안 됐거나 모델이 느립니다. · ';
+    if (mode === 'unavailable') return '실행기 없음 - 데모(메모리) 모드입니다. · ';
+    return '';
+  }
+
   const test = () => runConnectionTest('기본', 'standard');
 
-  // 티어 프로필 편집 헬퍼 — settings.profiles[tier]를 부분 갱신한다.
+  // 티어 프로필 편집 헬퍼 - settings.profiles[tier]를 부분 갱신한다.
   const TIER_LABELS: Record<Exclude<AgentTier, 'standard'>, string> = { light: '경량', heavy: '고급' };
   const TIERS: Array<Exclude<AgentTier, 'standard'>> = ['light', 'heavy'];
 
@@ -84,6 +99,29 @@
     const a = toAgentSettingsForTier($settings, tier);
     return `${a.command || '(미설정)'}${a.model ? ` · ${a.model}` : ''}`;
   }
+
+  const hasCommand = $derived(Boolean($settings.command.trim()));
+  // 'none': 명령 없음 · 'untested': 명령 있으나 미검증 · 'ok'/'fail': 테스트 결과
+  const connState = $derived<'none' | 'untested' | 'ok' | 'fail'>(
+    !hasCommand ? 'none' : testOk === true ? 'ok' : testOk === false ? 'fail' : 'untested'
+  );
+  const overBudget = $derived($usageSummary.budgetUsd > 0 && $usageSummary.budgetRatio >= 1);
+  const nearBudget = $derived($usageSummary.budgetUsd > 0 && $usageSummary.budgetRatio >= 0.8 && $usageSummary.budgetRatio < 1);
+
+  function updateRate(i: number, patch: Partial<ModelRate>) {
+    settings.update((s) => {
+      const rates = s.modelRates.map((r, idx) => (idx === i ? { ...r, ...patch } : r));
+      return { ...s, modelRates: rates };
+    });
+  }
+
+  async function loadProviderUsage() {
+    await withBusy('실제 사용량 조회', async () => {
+      const u = await fetchProviderUsage(ctx());
+      await refreshUsage();
+      toast(u.ok ? '실행기 사용량을 불러왔습니다.' : '사용량 응답이 비어 있습니다 - 실행기가 /usage를 지원하는지 확인하세요.', u.ok ? 'ok' : 'warn');
+    }, false);
+  }
 </script>
 
 <div class="surface">
@@ -91,6 +129,42 @@
     <h1>설정 - AI 실행기</h1>
     <p class="dim">CLI 명령과 인자를 직접 설정합니다. {'{prompt}'} {'{model}'} 자리가 실행 시 치환됩니다. 저장: .bindery/settings.json</p>
   </header>
+
+  {#if !$settings.offline && (connState === 'none' || connState === 'fail')}
+    <section class="onboarding">
+      <div class="ob-head">
+        <span class="chip {connState === 'fail' ? 'bad' : 'warn'}">{connState === 'fail' ? '연결 실패' : '연결 안 됨'}</span>
+        <b>{connState === 'fail' ? '실행기 응답이 없습니다' : 'AI 실행기를 먼저 연결하세요'}</b>
+      </div>
+      <p class="dim">Bindery는 사용자의 CLI(자기 API 키/구독)를 그대로 씁니다 - 앱은 별도 요금이 없습니다.
+        아래 중 하나를 설치·로그인한 뒤 프리셋을 고르고 <b>연결 테스트</b>를 누르세요.
+        <b class="bad-text">연결 전에는 모든 생성이 로컬 뼈대(AI 아님)로만 돌아 결과가 성의 없어 보입니다.</b></p>
+      <ol class="ob-steps">
+        <li><b>CLI 설치·로그인</b> - 터미널에서 하나 선택:
+          <ul>
+            <li><code class="mono">claude</code> (Claude Code) → <code class="mono">claude</code> 실행 후 로그인</li>
+            <li><code class="mono">codex</code> (OpenAI Codex CLI) → <code class="mono">codex login</code></li>
+            <li><code class="mono">agy</code> (이 머신의 Gemini 실행기) → 실행 후 로그인/키 설정</li>
+          </ul>
+        </li>
+        <li><b>프리셋 선택</b> - 아래 프리셋에서 설치한 CLI를 고르면 명령/인자가 자동 채워집니다.</li>
+        <li><b>연결 테스트</b> - 초록 응답이 뜨면 완료. 실패 메시지는 원인(미설치·로그인 만료·경로)을 알려줍니다.</li>
+      </ol>
+      <p class="dim small">전역 명령이 안 잡히면 명령어 칸에 절대 경로(예: <code class="mono">/opt/homebrew/bin/claude</code>)를 넣으세요.
+        AI 없이 구조만 시험하려면 아래 <b>오프라인 모드</b>를 켜면 이 안내가 사라집니다.</p>
+    </section>
+  {:else if !$settings.offline && connState === 'untested'}
+    <section class="onboarding">
+      <span class="chip warn">미확인</span>
+      <span>실행기 <b>{$settings.command}</b>가 설정돼 있습니다. 아래 <b>연결 테스트</b>로 실제 응답을 확인하세요 -
+        확인 전에는 실패 시 조용히 로컬 뼈대로 폴백됩니다.</span>
+    </section>
+  {:else if !$settings.offline && connState === 'ok'}
+    <section class="onboarding ok">
+      <span class="chip ok">연결됨</span>
+      <span>기본 실행기: <b>{$settings.command}</b>{$settings.model ? ` · ${$settings.model}` : ''}.</span>
+    </section>
+  {/if}
 
   <section>
     <span class="label">화면 모드</span>
@@ -128,7 +202,7 @@
   {#if testResult}<pre class="pre panel">{testResult}</pre>{/if}
 
   <section>
-    <span class="label">모델 라우팅 — 경량 / 기본 / 고급</span>
+    <span class="label">모델 라우팅 - 경량 / 기본 / 고급</span>
     <p class="dim">
       단계마다 다른 CLI·모델을 쓸 수 있습니다. 위의 기본 실행기가 「기본」 티어이고,
       아래에서 경량·고급 티어를 별도로 켤 수 있습니다. 꺼진 티어는 기본 실행기로 폴백합니다.
@@ -202,11 +276,104 @@
   </section>
 
   <section>
+    <div class="usage-head">
+      <span class="label">AI 사용량 · 추정 요금</span>
+      <span class="dim">토큰·요금은 추정치입니다 (CLI가 실제 usage를 주지 않아 글자 수 기반 근사).</span>
+    </div>
+    <div class="usage-cards">
+      <div class="ucard">
+        <span class="ulabel">이번 달 ({$usageSummary.thisMonthKey})</span>
+        <b class="ucost" class:over={overBudget} class:near={nearBudget}>~{formatUsd($usageSummary.thisMonth.costUsd)}</b>
+        <span class="dim">{formatTokens($usageSummary.thisMonth.promptTokens + $usageSummary.thisMonth.outputTokens)} 토큰 · {$usageSummary.thisMonth.runs}회 실행</span>
+        {#if $usageSummary.budgetUsd > 0}
+          <div class="bar"><div class="fill" class:over={overBudget} class:near={nearBudget} style:width={`${Math.min(100, $usageSummary.budgetRatio * 100)}%`}></div></div>
+          <span class="dim">예산 {formatUsd($usageSummary.budgetUsd)}의 {Math.round($usageSummary.budgetRatio * 100)}%</span>
+        {/if}
+      </div>
+      <div class="ucard">
+        <span class="ulabel">전체 누적</span>
+        <b class="ucost">~{formatUsd($usageSummary.all.costUsd)}</b>
+        <span class="dim">{formatTokens($usageSummary.all.promptTokens + $usageSummary.all.outputTokens)} 토큰 · {$usageSummary.all.runs}회</span>
+      </div>
+    </div>
+
+    <label class="budget">월 예산 상한 (USD, 0이면 없음)
+      <input type="number" step="5" min="0" bind:value={$settings.monthlyBudgetUsd} onchange={save} />
+    </label>
+
+    <div class="provider-usage">
+      <div class="row">
+        <span class="label">실행기 실제 사용량</span>
+        <span class="grow"></span>
+        <button class="quiet" onclick={loadProviderUsage} disabled={$settings.offline || !$settings.command.trim()}>
+          /usage 불러오기
+        </button>
+      </div>
+      <p class="dim small">위 대시보드는 글자 수 기반 추정입니다. 실행기가 <code class="mono">/usage</code>를 지원하면
+        (예: <code class="mono">agy</code>) 실제 사용량을 그대로 불러옵니다.</p>
+      {#if $providerUsage}
+        <div class="pu-meta dim">
+          {$providerUsage.command} · {new Date($providerUsage.fetchedAt).toLocaleString()}
+          {#if !$providerUsage.ok}<span class="chip warn">응답 없음</span>{/if}
+        </div>
+        <pre class="pre panel pu-raw">{$providerUsage.raw || '(빈 응답)'}</pre>
+      {/if}
+    </div>
+
+    {#if $usageSummary.byScope.length}
+      <details class="usage-detail">
+        <summary>회차·월별 상세</summary>
+        <div class="cols2 usage-tables">
+          <div>
+            <span class="label">회차별 (요금 높은 순)</span>
+            <table class="grid">
+              <tbody>
+                {#each $usageSummary.byScope.slice(0, 12) as row (row.scope)}
+                  <tr><td>{row.scope}</td><td class="num">{formatTokens(row.totals.promptTokens + row.totals.outputTokens)}</td><td class="num">~{formatUsd(row.totals.costUsd)}</td></tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+          <div>
+            <span class="label">월별</span>
+            <table class="grid">
+              <tbody>
+                {#each $usageSummary.byMonth.slice(0, 12) as row (row.month)}
+                  <tr><td>{row.month}</td><td class="num">{formatTokens(row.totals.promptTokens + row.totals.outputTokens)}</td><td class="num">~{formatUsd(row.totals.costUsd)}</td></tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </details>
+    {/if}
+
+    <details class="usage-detail">
+      <summary>모델 단가 (USD / 1M 토큰) - 자기 요금제에 맞게 조정</summary>
+      <table class="grid rates">
+        <thead><tr><th>모델 매칭</th><th>설명</th><th>입력</th><th>출력</th></tr></thead>
+        <tbody>
+          {#each $settings.modelRates as rate, i (i)}
+            <tr>
+              <td><input class="mono cell" value={rate.match} placeholder="(기본값)" oninput={(e) => updateRate(i, { match: (e.currentTarget as HTMLInputElement).value })} /></td>
+              <td><input class="cell" value={rate.label} oninput={(e) => updateRate(i, { label: (e.currentTarget as HTMLInputElement).value })} /></td>
+              <td><input class="cell num" type="number" step="0.1" min="0" value={rate.inputPerM} oninput={(e) => updateRate(i, { inputPerM: Number((e.currentTarget as HTMLInputElement).value) || 0 })} /></td>
+              <td><input class="cell num" type="number" step="0.1" min="0" value={rate.outputPerM} oninput={(e) => updateRate(i, { outputPerM: Number((e.currentTarget as HTMLInputElement).value) || 0 })} /></td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+      <p class="dim">모델 id에 매칭 문자열이 포함되면 해당 단가를 씁니다(위에서부터). 빈 매칭은 기본값입니다.
+        오프라인·로컬 뼈대 실행은 항상 $0으로 계산됩니다.</p>
+    </details>
+  </section>
+
+  <section>
     <span class="label">프롬프트 투명성</span>
     <p class="dim">
       모든 단계의 프롬프트 원본은 저장소의 <code>prompts/*.prompt.md</code> blueprint 파일이며,
       실제 전송된 프롬프트는 실행마다 프로젝트의 <code>.bindery/trace/</code>에 파일로 남습니다.
-      run 기록은 <code>.bindery/runs/</code>에서 확인할 수 있습니다.
+      run 기록은 <code>.bindery/runs/</code>, 사용량 원장은 <code>.bindery/usage.json</code>에 있습니다.
     </p>
   </section>
 </div>
@@ -214,35 +381,67 @@
 <style>
   .surface { padding: 20px 28px; display: grid; gap: 16px; align-content: start; max-width: 720px; }
   .head h1 { margin: 0; font-size: 22px; }
-  .head p { margin: 2px 0 0; }
+  .head p { margin: 4px 0 0; }
   section { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
   .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .grow { flex: 1; }
-  .form label { display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
-  .form.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .form label { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+  .form.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .form.grid2 .wide { grid-column: 1 / -1; }
-  .inline-check { display: flex !important; gap: 6px; align-items: center; }
+  .inline-check { display: flex !important; gap: 8px; align-items: center; }
   .strongname { color: var(--text); font-weight: 650; }
-  .panel { border: 1px solid var(--line); border-radius: 4px; padding: 10px; background: var(--bg-1); }
+  .panel { border: 1px solid var(--line); border-radius: 4px; padding: 8px; background: var(--bg-1); }
 
-  .tier { display: grid; gap: 8px; border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; background: var(--bg-1); }
+  .tier { display: grid; gap: 8px; border: 1px solid var(--line); border-radius: 4px; padding: 8px 12px; background: var(--bg-1); }
   .tier.off { background: transparent; }
-  .tierhead { min-height: 26px; }
+  .tierhead { min-height: 24px; }
 
   .stages { display: grid; border-top: 1px solid var(--line); }
   .stage {
-    display: grid; gap: 6px;
+    display: grid; gap: 8px;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    padding: 9px 2px;
+    padding: 8px 4px;
     border-bottom: 1px solid var(--line);
   }
   .stagename { display: grid; gap: 1px; min-width: 0; }
   .stagename .dim { font-size: 11.5px; }
-  .tiersel button { font-size: 12px; padding: 3px 10px; }
+  .tiersel button { font-size: 12px; padding: 4px 8px; }
   .resolved { grid-column: 1 / -1; font-size: 11px; }
+
+  .onboarding { display: grid; gap: 8px; border: 1px solid var(--line-strong); border-radius: 4px; padding: 12px 12px; background: var(--bg-1); }
+  .onboarding.ok { border-color: var(--ok-soft); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .ob-head { display: flex; gap: 8px; align-items: center; }
+  .ob-head b { font-size: 14px; }
+  .ob-steps { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 12.5px; line-height: 1.6; }
+  .ob-steps ul { margin: 4px 0; padding-left: 16px; }
+  .bad-text { color: var(--bad); }
+
+  .usage-head { display: grid; gap: 4px; }
+  .usage-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .ucard { display: grid; gap: 4px; border: 1px solid var(--line); border-radius: 4px; padding: 12px 12px; background: var(--bg-1); }
+  .ulabel { font-size: 11px; color: var(--faint); }
+  .ucost { font-size: 22px; font-weight: 750; font-variant-numeric: tabular-nums; }
+  .ucost.near { color: var(--warn); }
+  .ucost.over { color: var(--bad); }
+  .bar { height: 4px; border-radius: 4px; background: var(--bg-rail); overflow: hidden; margin-top: 4px; }
+  .fill { height: 100%; background: var(--accent); }
+  .fill.near { background: var(--warn); }
+  .fill.over { background: var(--bad); }
+  .budget { display: grid; gap: 4px; font-size: 12px; color: var(--muted); max-width: 280px; }
+  .provider-usage { display: grid; gap: 8px; border-top: 1px dashed var(--line); padding-top: 8px; }
+  .pu-meta { display: flex; gap: 8px; align-items: center; font-size: 11.5px; }
+  .pu-raw { max-height: 220px; overflow: auto; font-size: 11.5px; white-space: pre-wrap; }
+  .usage-detail summary { cursor: pointer; color: var(--muted); font-size: 12.5px; padding: 4px 0; }
+  .usage-tables { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .usage-tables .num, table.grid td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.grid.rates input.cell { width: 100%; padding: 4px 8px; font-size: 12px; }
+  table.grid.rates input.num { text-align: right; }
+  .cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
   @media (max-width: 620px) {
     .stage { grid-template-columns: minmax(0, 1fr); }
     .form.grid2 { grid-template-columns: 1fr; }
+    .usage-cards, .usage-tables, .cols2 { grid-template-columns: 1fr; }
   }
 </style>

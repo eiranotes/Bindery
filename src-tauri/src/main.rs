@@ -3,16 +3,18 @@ use serde_json::{json, Value};
 use std::{
     collections::HashMap,
     fs,
+    io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::Mutex,
+    sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+use tauri::ipc::Channel;
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct AgentState {
-    active: Mutex<HashMap<String, u32>>,
+    active: Arc<Mutex<HashMap<String, u32>>>,
 }
 
 #[derive(Deserialize)]
@@ -100,6 +102,28 @@ fn is_text_file(path: &Path) -> bool {
         || name.ends_with(".prompt.md")
 }
 
+fn is_ignored_walk_dir(name: &str, rel: &str) -> bool {
+    matches!(
+        name,
+        "node_modules"
+            | ".git"
+            | ".DS_Store"
+            | ".superloopy"
+            | ".svelte-kit"
+            | "dist"
+            | "build"
+            | "target"
+    ) || matches!(
+        rel,
+        ".bindery/artifacts"
+            | ".bindery/backups"
+            | ".bindery/runs"
+            | ".bindery/snapshots"
+            | ".bindery/trace"
+            | "exports"
+    )
+}
+
 fn walk(dir: &Path, base: &Path, depth: usize) -> Vec<FileNode> {
     if depth > 8 {
         return vec![];
@@ -111,11 +135,11 @@ fn walk(dir: &Path, base: &Path, depth: usize) -> Vec<FileNode> {
     for entry in entries.flatten() {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
-        if name == "node_modules" || name == ".git" || name == ".DS_Store" {
-            continue;
-        }
         let rel = path.strip_prefix(base).unwrap_or(&path).to_string_lossy().replace('\\', "/");
         if path.is_dir() {
+            if is_ignored_walk_dir(&name, &rel) {
+                continue;
+            }
             out.push(FileNode {
                 name,
                 path: rel,
@@ -191,6 +215,9 @@ fn scaffold(base: String, name: String) -> Result<Value, String> {
         return bad("empty project name");
     }
     let root = base_path.join(safe);
+    if root.exists() && fs::read_dir(&root).map_err(|e| e.to_string())?.next().is_some() {
+        return bad(format!("project folder is not empty: {}", root.to_string_lossy()));
+    }
     fs::create_dir_all(&root).map_err(|e| e.to_string())?;
     Ok(json!({ "root": root.to_string_lossy() }))
 }
@@ -213,8 +240,83 @@ fn now_millis() -> u128 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis()
 }
 
-#[tauri::command]
-fn run_agent(req: AgentRequest, state: tauri::State<AgentState>) -> Result<AgentResult, String> {
+fn agent_key(root: &Path, label: &str) -> String {
+    format!("{}\0{label}", root.to_string_lossy())
+}
+
+/** Finder에서 실행한 앱은 로그인 셸 PATH를 받지 않는다. 사용자 CLI의 흔한 설치 경로를
+ *  보강하고, 단순 명령 이름은 그 경로에서 절대경로로 해석한다. */
+fn agent_search_paths() -> Vec<PathBuf> {
+    let mut paths = std::env::var_os("PATH")
+        .map(|value| std::env::split_paths(&value).collect::<Vec<_>>())
+        .unwrap_or_default();
+    if let Some(home) = std::env::var_os("HOME") {
+        let home = PathBuf::from(home);
+        paths.push(home.join(".local/bin"));
+        paths.push(home.join(".cargo/bin"));
+    }
+    paths.extend([
+        PathBuf::from("/opt/homebrew/bin"),
+        PathBuf::from("/usr/local/bin"),
+        PathBuf::from("/usr/bin"),
+        PathBuf::from("/bin"),
+    ]);
+    let mut unique = vec![];
+    for path in paths {
+        if !unique.contains(&path) {
+            unique.push(path);
+        }
+    }
+    unique
+}
+
+fn resolve_agent_command(command: &str, paths: &[PathBuf]) -> PathBuf {
+    let configured = Path::new(command);
+    if configured.is_absolute() || configured.components().count() > 1 {
+        return configured.to_path_buf();
+    }
+    paths
+        .iter()
+        .map(|dir| dir.join(command))
+        .find(|candidate| candidate.is_file())
+        .unwrap_or_else(|| configured.to_path_buf())
+}
+
+fn send_agent_event(channel: &Option<Channel<Value>>, event: Value) {
+    if let Some(channel) = channel {
+        let _ = channel.send(event);
+    }
+}
+
+fn stream_pipe<R: Read + Send + 'static>(
+    reader: R,
+    event_type: &'static str,
+    channel: Option<Channel<Value>>,
+) -> thread::JoinHandle<String> {
+    thread::spawn(move || {
+        let mut reader = BufReader::new(reader);
+        let mut captured = String::new();
+        loop {
+            let mut bytes = vec![];
+            match reader.read_until(b'\n', &mut bytes) {
+                Ok(0) => break,
+                Ok(_) => {
+                    let text = String::from_utf8_lossy(&bytes).to_string();
+                    captured.push_str(&text);
+                    send_agent_event(&channel, json!({ "type": event_type, "text": text }));
+                }
+                Err(_) => break,
+            }
+        }
+        captured
+    })
+}
+
+fn run_agent_blocking(
+    req: AgentRequest,
+    state: AgentState,
+    channel: Option<Channel<Value>>,
+) -> Result<AgentResult, String> {
     let root = resolve_root(&req.root)?;
     if req.settings.command.trim().is_empty() {
         return bad("agent command not configured");
@@ -240,69 +342,118 @@ fn run_agent(req: AgentRequest, state: tauri::State<AgentState>) -> Result<Agent
     vars.insert("outputFile", output_file.to_string_lossy().to_string());
     let args = substitute_args(&req.settings.args_template, &vars);
 
-    let mut child = Command::new(&req.settings.command)
+    let search_paths = agent_search_paths();
+    let search_path = std::env::join_paths(&search_paths).map_err(|error| error.to_string())?;
+    let command = resolve_agent_command(&req.settings.command, &search_paths);
+    let mut child = match Command::new(&command)
         .args(args)
         .current_dir(&root)
+        .env("PATH", search_path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| e.to_string())?;
+    {
+        Ok(child) => child,
+        Err(error) => {
+            return Ok(AgentResult {
+                ok: false,
+                text: String::new(),
+                stderr: error.to_string(),
+                exit_code: -1,
+                duration_ms: started.elapsed().as_millis(),
+                mode: "spawn-error".to_string(),
+                prompt_file: prompt_file.strip_prefix(&root).ok().map(|p| p.to_string_lossy().replace('\\', "/")),
+            });
+        }
+    };
 
-    if let Some(pid) = child.id().checked_into() {
-        state.active.lock().map_err(|e| e.to_string())?.insert(label.clone(), pid);
-    }
+    let key = agent_key(&root, &label);
+    state.active.lock().map_err(|e| e.to_string())?.insert(key.clone(), child.id());
+    send_agent_event(
+        &channel,
+        json!({
+            "type": "status",
+            "text": format!("CLI 실행 시작: {}", req.settings.command),
+            "promptFile": prompt_file.strip_prefix(&root).ok().map(|p| p.to_string_lossy().replace('\\', "/"))
+        }),
+    );
+
+    let stdout = child.stdout.take().ok_or("missing child stdout")?;
+    let stderr = child.stderr.take().ok_or("missing child stderr")?;
+    let stdout_thread = stream_pipe(stdout, "stdout", channel.clone());
+    let stderr_thread = stream_pipe(stderr, "stderr", channel.clone());
 
     let mut timed_out = false;
-    loop {
-        if let Some(_status) = child.try_wait().map_err(|e| e.to_string())? {
-            break;
+    let status = loop {
+        if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+            break status;
         }
         if started.elapsed() > Duration::from_millis(timeout_ms) {
             timed_out = true;
             let _ = child.kill();
-            break;
+            break child.wait().map_err(|e| e.to_string())?;
         }
         thread::sleep(Duration::from_millis(60));
-    }
+    };
 
-    let output = child.wait_with_output().map_err(|e| e.to_string())?;
-    state.active.lock().map_err(|e| e.to_string())?.remove(&label);
-    let mut text = String::from_utf8_lossy(&output.stdout).to_string();
-    let mut stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    state.active.lock().map_err(|e| e.to_string())?.remove(&key);
+    let mut text = stdout_thread.join().unwrap_or_default();
+    let mut stderr = stderr_thread.join().unwrap_or_default();
     let mut mode = "cli".to_string();
     if timed_out {
         mode = "timeout".to_string();
         stderr = format!("timeout after {timeout_ms}ms");
     }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if !timed_out && status.signal().is_some() {
+            mode = "cancelled".to_string();
+            stderr = format!("{stderr}\ncancelled by user").trim().to_string();
+        }
+    }
     if req.settings.output_mode == "file" {
         text = fs::read_to_string(output_file).unwrap_or(text);
     }
-    let exit_code = output.status.code().unwrap_or(-1);
-    Ok(AgentResult {
-        ok: !timed_out && output.status.success() && !text.trim().is_empty(),
+    let exit_code = status.code().unwrap_or(-1);
+    let result = AgentResult {
+        ok: !timed_out && status.success() && !text.trim().is_empty(),
         text,
-        stderr: stderr.chars().take(20_000).collect(),
+        stderr: stderr.chars().rev().take(20_000).collect::<String>().chars().rev().collect(),
         exit_code,
         duration_ms: started.elapsed().as_millis(),
         mode,
         prompt_file: prompt_file.strip_prefix(&root).ok().map(|p| p.to_string_lossy().replace('\\', "/")),
-    })
+    };
+    send_agent_event(&channel, json!({ "type": "done", "result": &result }));
+    Ok(result)
 }
 
-trait CheckedInto {
-    fn checked_into(self) -> Option<u32>;
+#[tauri::command]
+async fn run_agent(req: AgentRequest, state: tauri::State<'_, AgentState>) -> Result<AgentResult, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || run_agent_blocking(req, state, None))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
-impl CheckedInto for u32 {
-    fn checked_into(self) -> Option<u32> {
-        Some(self)
-    }
+#[tauri::command]
+async fn run_agent_stream(
+    req: AgentRequest,
+    on_event: Channel<Value>,
+    state: tauri::State<'_, AgentState>,
+) -> Result<AgentResult, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || run_agent_blocking(req, state, Some(on_event)))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
 fn cancel_agent(root: String, label: String, state: tauri::State<AgentState>) -> Result<Value, String> {
-    let _root = resolve_root(&root)?;
-    let pid = state.active.lock().map_err(|e| e.to_string())?.get(&label).copied();
+    let root = resolve_root(&root)?;
+    let key = agent_key(&root, &label);
+    let pid = state.active.lock().map_err(|e| e.to_string())?.get(&key).copied();
     if let Some(pid) = pid {
         #[cfg(unix)]
         {
@@ -322,6 +473,33 @@ fn env_info() -> Result<Value, String> {
     }))
 }
 
+#[tauri::command]
+fn pick_folder(prompt: String) -> Result<Value, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let safe_prompt = prompt.replace('\\', "\\\\").replace('"', "\\\"");
+        let script = format!("POSIX path of (choose folder with prompt \"{safe_prompt}\")");
+        let output = Command::new("osascript")
+            .args(["-e", &script])
+            .output()
+            .map_err(|error| error.to_string())?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if stderr.contains("-128") || stderr.to_lowercase().contains("cancel") {
+                return Ok(json!({ "path": "", "cancelled": true }));
+            }
+            return bad(stderr.trim().to_string());
+        }
+        let path = String::from_utf8_lossy(&output.stdout).trim().trim_end_matches('/').to_string();
+        return Ok(json!({ "path": path, "cancelled": false }));
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = prompt;
+        bad("native folder picker is not implemented on this platform")
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(AgentState::default())
@@ -329,9 +507,69 @@ fn main() {
             fs_op,
             scaffold,
             run_agent,
+            run_agent_stream,
             cancel_agent,
+            pick_folder,
             env_info
         ])
         .run(tauri::generate_context!())
         .expect("error while running Bindery");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tauri::ipc::InvokeResponseBody;
+
+    #[test]
+    fn streams_stdout_and_returns_the_complete_agent_result() {
+        let root = std::env::temp_dir().join(format!("bindery-stream-test-{}", now_millis()));
+        fs::create_dir_all(&root).unwrap();
+        let events = Arc::new(Mutex::new(Vec::<String>::new()));
+        let captured = events.clone();
+        let channel = Channel::<Value>::new(move |body| {
+            if let InvokeResponseBody::Json(json) = body {
+                captured.lock().unwrap().push(json);
+            }
+            Ok(())
+        });
+        let result = run_agent_blocking(
+            AgentRequest {
+                root: root.to_string_lossy().to_string(),
+                prompt: "stream test".to_string(),
+                label: Some("stream-test".to_string()),
+                settings: AgentSettings {
+                    command: "/bin/sh".to_string(),
+                    args_template: vec!["-c".to_string(), "printf 'alpha\\nbeta\\n'".to_string()],
+                    output_mode: "stdout".to_string(),
+                    model: None,
+                    timeout_ms: Some(5_000),
+                },
+            },
+            AgentState::default(),
+            Some(channel),
+        )
+        .unwrap();
+
+        assert!(result.ok);
+        assert_eq!(result.text, "alpha\nbeta\n");
+        let events = events.lock().unwrap().join("\n");
+        assert!(events.contains("\"type\":\"stdout\""));
+        assert!(events.contains("alpha"));
+        assert!(events.contains("\"type\":\"done\""));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn augments_finder_path_for_user_installed_agents() {
+        let paths = agent_search_paths();
+        if let Some(home) = std::env::var_os("HOME") {
+            let local_bin = PathBuf::from(home).join(".local/bin");
+            assert!(paths.contains(&local_bin));
+            let agy = local_bin.join("agy");
+            if agy.is_file() {
+                assert_eq!(resolve_agent_command("agy", &paths), agy);
+            }
+        }
+    }
 }

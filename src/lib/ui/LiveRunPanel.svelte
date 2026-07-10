@@ -1,12 +1,19 @@
 <script lang="ts">
-  // 실시간 실행 패널 — CLI stdout을 그대로 스트리밍해 대기 시간을 체감으로 바꾼다.
+  // 실시간 실행 패널 - CLI stdout을 그대로 스트리밍해 대기 시간을 체감으로 바꾼다.
   // runFeed(전체 흐름 누적) + activeRun(현재 단계)을 함께 보여준다.
-  import { activeRun, runFeed, cancelActiveRun, stageLabel } from '$lib/stores/app';
+  import { onMount } from 'svelte';
+  import { activeRun, activeRuns, runFeed, cancelActiveRun, stageLabel } from '$lib/stores/app';
 
   let { title = 'AI 실행 중' }: { title?: string } = $props();
 
   let pre: HTMLPreElement | undefined = $state();
   let follow = $state(true);
+  let now = $state(Date.now());
+
+  onMount(() => {
+    const timer = setInterval(() => (now = Date.now()), 1000);
+    return () => clearInterval(timer);
+  });
 
   $effect(() => {
     void $runFeed;
@@ -20,7 +27,10 @@
 
   const elapsed = $derived.by(() => {
     if (!$activeRun) return '';
-    const s = Math.max(0, Math.round((Date.now() - new Date($activeRun.startedAt).getTime()) / 1000));
+    const started = $activeRuns.length
+      ? Math.min(...$activeRuns.map((run) => new Date(run.startedAt).getTime()))
+      : new Date($activeRun.startedAt).getTime();
+    const s = Math.max(0, Math.round((now - started) / 1000));
     return s < 60 ? `${s}초` : `${Math.floor(s / 60)}분 ${s % 60}초`;
   });
 </script>
@@ -28,12 +38,12 @@
 <section class="stream">
   <header>
     <span class="pulse" class:idle={!$activeRun}></span>
-    <b>{$activeRun ? `${stageLabel($activeRun.stage)} · ${$activeRun.scope}` : title}</b>
+    <b>{$activeRun ? ($activeRuns.length > 1 ? `${$activeRuns.length}개 단계 병렬 실행` : `${stageLabel($activeRun.stage)} · ${$activeRun.scope}`) : title}</b>
     {#if $activeRun}<span class="dim">{elapsed}</span>{/if}
     <span class="grow"></span>
     {#if $activeRun}
       <button class="quiet cancel" onclick={cancelActiveRun} disabled={$activeRun.status === 'cancelling'}>
-        {$activeRun.status === 'cancelling' ? '취소 중' : '취소'}
+        {$activeRun.status === 'cancelling' ? '취소 중' : $activeRuns.length > 1 ? '전체 취소' : '취소'}
       </button>
     {/if}
   </header>
@@ -50,7 +60,7 @@
     grid-template-rows: auto minmax(0, 1fr);
   }
   header {
-    display: flex; align-items: center; gap: 10px;
+    display: flex; align-items: center; gap: 8px;
     padding: 8px 12px;
     border-bottom: 1px solid var(--line);
     font-size: 12.5px; color: var(--muted);
@@ -67,7 +77,7 @@
   @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
   pre {
     margin: 0;
-    padding: 12px 14px;
+    padding: 12px 12px;
     font: 11.5px/1.6 var(--mono);
     color: var(--muted);
     background: var(--bg-desk);

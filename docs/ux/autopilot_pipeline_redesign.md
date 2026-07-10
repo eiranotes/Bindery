@@ -40,9 +40,9 @@ AI는 중간 작업 자동 처리 (soft output 자동 승인)
 
 ## 후보 정책
 
-- 기본 3개, 의미 라벨: **정석안 / 추진안 / 감정안** (`CANDIDATE_APPROACHES`)
-- 라벨별 변주 지시가 draft 프롬프트의 `{{variation}}`으로 들어간다
-- 추천 = 자체 점검(style_self_check) 최고점 후보
+- 간단 모드 기본은 **집필안 1개**다. 설계자 모드는 필요할 때 후보 수를 늘릴 수 있다.
+- 집필안 접근 지시가 draft 프롬프트의 `{{variation}}`으로 들어간다.
+- 후보가 여러 개면 자체 점검(style_self_check) 최고점 후보를 추천한다.
 - 후보 카드 메타(요약·위험·자수·점수)는 `.bindery/candidates/<ep>/index.json`에 영속
 
 ## 기초자료 강제 점검
@@ -59,15 +59,15 @@ AI는 중간 작업 자동 처리 (soft output 자동 승인)
 
 ## 스트리밍
 
-- 브리지의 SSE(`/__bridge/agent-stream`) → `runFeed` 스토어에 stdout/stderr 원문 누적
-- `LiveRunPanel.svelte`가 집필/홈 화면에서 실행 전체 흐름(스테이지 경계 포함)을 실시간 표시, 자동 스크롤 + 취소
+- dev 브리지 SSE와 Tauri `Channel<Value>` → `runFeed` 스토어에 stdout/stderr 원문 누적
+- `LiveRunPanel.svelte`가 병렬 실행 수와 실제 경과 시간을 포함해 전체 흐름을 표시하고 자동 스크롤 + 전체 취소를 제공
 - 상태바에는 마지막 줄 tail 유지
 
 ## 수용 기준 체크
 
 - 회차 후보까지 기본 행동 1~2회: 기준 준비가 끝난 프로젝트는 홈 → [이번 화 쓰기], 기준이 비어 있으면 홈 → [바이블과 플롯 준비하고 쓰기] ✔
 - 간단 모드에서 브리프 승인·개별 QA·packet·trace 버튼 미노출 ✔ (설계자 모드/근거 보기에 보존)
-- 기본 후보 3개 이하 ✔
+- 간단 모드 기본 후보 1개 ✔
 - 무입력 실행 가능 ✔ (`userNote` optional)
 - hard commit 자동 확정 금지 ✔ (`tests/autopilot.test.ts`가 회귀 방지)
 - 파일 기반 유지 ✔ (모든 산출물 경로 불변)

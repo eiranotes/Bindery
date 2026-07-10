@@ -3,12 +3,14 @@
   // 어떤 산출물이든 여기서 열어 사람이 직접 고칠 수 있다.
   import { ctx, tree, snapshots, withBusy, toast, refreshAll } from '$lib/stores/app';
   import type { FileNode } from '$lib/bridge';
-  import { restoreSnapshot, type SnapshotMeta } from '$lib/harness/snapshots';
+  import { restoreSnapshot, snapshotFile, type SnapshotMeta } from '$lib/harness/snapshots';
+  import { contentHash } from '$lib/core/text';
   import MarkdownEditor from '../MarkdownEditor.svelte';
 
   let openPath = $state<string | null>(null);
   let content = $state('');
   let savedContent = $state('');
+  let savedHash = $state('');
   let showHidden = $state(false);
 
   const dirty = $derived(content !== savedContent);
@@ -21,14 +23,34 @@
     if (dirty && !confirm('저장하지 않은 변경이 있습니다. 버리고 이동할까요?')) return;
     content = await ctx().bridge.readFile(ctx().root, path);
     savedContent = content;
+    savedHash = contentHash(content);
     openPath = path;
   }
 
   async function save() {
     if (!openPath) return;
+    const c = ctx();
+    let diskContent: string | null = null;
+    try {
+      diskContent = await c.bridge.readFile(c.root, openPath);
+    } catch {
+      diskContent = null;
+    }
+    const changedOutside = diskContent == null || contentHash(diskContent) !== savedHash;
+    if (changedOutside && diskContent !== content) {
+      const ok = confirm(`${openPath} 파일이 열어둔 뒤 외부에서 변경되었습니다. 현재 편집본으로 덮어쓸까요? 외부 변경본은 스냅샷으로 남깁니다.`);
+      if (!ok) {
+        toast('저장을 취소했습니다. 새로고침 후 다시 확인하세요.', 'warn');
+        return;
+      }
+    }
     await withBusy('파일 저장', async () => {
-      await ctx().bridge.writeFile(ctx().root, openPath!, content);
+      if (changedOutside && diskContent != null) {
+        await snapshotFile(c, openPath!, '외부 변경 덮어쓰기 전 자동 백업');
+      }
+      await c.bridge.writeFile(c.root, openPath!, content);
       savedContent = content;
+      savedHash = contentHash(content);
       toast(`저장됨: ${openPath}`, 'ok');
     }, false);
   }
@@ -40,6 +62,7 @@
       if (openPath === meta.targetPath) {
         content = await ctx().bridge.readFile(ctx().root, meta.targetPath);
         savedContent = content;
+        savedHash = contentHash(content);
       }
       await refreshAll();
       toast(`복원됨: ${meta.targetPath}`, 'ok');

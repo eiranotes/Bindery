@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readSourceUploads } from '../src/lib/harness/sourceUploads';
+import { SOURCE_ZIP_MAX_ENTRIES } from '../src/lib/harness/sourceUploads';
 
 const textEncoder = new TextEncoder();
 
@@ -168,5 +169,38 @@ describe('source uploads', () => {
 
     expect(result.uploads.map((file) => file.name)).toEqual(['mixed.zip/safe/idea.md']);
     expect(result.skipped.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('reports progress and cancels a long zip read', async () => {
+    const zip = await makeZip(Array.from({ length: 12 }, (_, index) => ({
+      name: `planning/${index}.md`, content: `자료 ${index}`, method: 'stored' as const
+    })));
+    const controller = new AbortController();
+    const seen: number[] = [];
+
+    await expect(readSourceUploads(
+      [new File([toArrayBuffer(zip)], 'cancel.zip', { type: 'application/zip' })],
+      {
+        signal: controller.signal,
+        onProgress(progress) {
+          if (progress.phase === 'expanding') {
+            seen.push(progress.current);
+            if (progress.current === 3) controller.abort();
+          }
+        }
+      }
+    )).rejects.toThrow('cancelled');
+    expect(seen).toEqual([1, 2, 3]);
+  });
+
+  it('rejects zip archives over the entry-count safety limit', async () => {
+    const zip = await makeZip(Array.from({ length: SOURCE_ZIP_MAX_ENTRIES + 1 }, (_, index) => ({
+      name: `planning/${index}.md`, content: 'x', method: 'stored' as const
+    })));
+    const result = await readSourceUploads([
+      new File([toArrayBuffer(zip)], 'too-many.zip', { type: 'application/zip' })
+    ]);
+    expect(result.uploads).toHaveLength(0);
+    expect(result.skipped).toContainEqual({ name: 'too-many.zip', reason: 'zip-entry-limit' });
   });
 });

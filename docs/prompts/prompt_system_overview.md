@@ -14,7 +14,7 @@
 섹션을 가진다. "후속 단계 연결"이 이 시스템의 핵심이다 — 각 단계의 출력 필드가 다음 단계의
 입력 변수와 어떻게 이어지는지 프롬프트 자체에 문서화되어 있다.
 
-## 16종 blueprint 목록
+## 18종 blueprint 목록
 
 | 파일 | 단계 | 출력 계약 |
 |---|---|---|
@@ -25,6 +25,8 @@
 | plot_plan.prompt.md | 플롯 설계 | plot_plan JSON |
 | episode_brief.prompt.md | 회차 브리프 | episode_brief JSON |
 | scene_plan.prompt.md | 장면 계획 | scene_plan JSON |
+| context_distill.prompt.md | 컨텍스트 정제 | 집필용 컨텍스트 캡슐 |
+| style_analysis.prompt.md | 문체 분석 | style_profile JSON |
 | draft_candidate.prompt.md | 초안 후보 | draft_candidate JSON |
 | qa_style.prompt.md | 문체/표현 QA | qa_report JSON (aspect=style) |
 | qa_continuity.prompt.md | 플롯/연속성 QA | qa_report JSON (aspect=continuity) |

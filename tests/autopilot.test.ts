@@ -18,6 +18,7 @@ import { loadProgress } from '../src/lib/harness/closeout';
 import { loadProposals } from '../src/lib/harness/proposals';
 import { loadPlotPlan } from '../src/lib/harness/plot';
 import { LAYOUT, episodePaths } from '../src/lib/core/layout';
+import type { Bridge } from '../src/lib/bridge/types';
 
 const AGENT = { command: 'mock-agent', argsTemplate: ['{prompt}'], outputMode: 'stdout' as const };
 
@@ -201,7 +202,7 @@ describe('autopilot — 최소 입력·자동 중간 처리·최종 선택', () 
     ctx = { root: meta.root, bridge: memoryBridge, agent: AGENT };
   });
 
-  it('runEpisodeAutopilot: 무입력 실행으로 설계+후보 3개, 원고는 건드리지 않는다', async () => {
+  it('runEpisodeAutopilot: 무입력 실행으로 설계+후보 1개, 원고는 건드리지 않는다', async () => {
     const before = await readOptional(ctx, episodePaths('ep001').manuscript);
     const blocked = await runEpisodeAutopilot(ctx, { episode: 'ep001' });
     expect(blocked.error).toContain('준비가 필요합니다');
@@ -211,11 +212,11 @@ describe('autopilot — 최소 입력·자동 중간 처리·최종 선택', () 
     const r = await runEpisodeAutopilot(ctx, { episode: 'ep001' });
 
     expect(r.error).toBeUndefined();
-    expect(r.candidates.length).toBe(3);
+    expect(r.candidates.length).toBe(1);
     expect(r.candidates.map((c) => c.label)).toEqual([...DEFAULT_CANDIDATE_LABELS]);
-    // 추천은 자체 점검 최고점(감정안=90)
+    // 후보가 하나여도 추천 id를 명시한다.
     const rec = r.candidates.find((c) => c.id === r.recommendedId);
-    expect(rec?.label).toBe('감정안');
+    expect(rec?.label).toBe('집필안');
 
     // soft output 자동 승인 (autopilot 주체 기록)
     const brief = await loadBrief(ctx, 'ep001');
@@ -309,6 +310,39 @@ describe('autopilot — 최소 입력·자동 중간 처리·최종 선택', () 
     expect(r.plan?.items.every((i) => i.accepted)).toBe(true);
   });
 
+  it('runRevisionAutopilot: QA 3종을 실제로 병렬 실행한다', async () => {
+    await prepareFoundation(ctx);
+    const r0 = await runEpisodeAutopilot(ctx, { episode: 'ep001' });
+    await applyCandidateToManuscript(ctx, r0.candidates[0]);
+
+    let activeQa = 0;
+    let maxActiveQa = 0;
+    const parallelBridge: Bridge = {
+      ...memoryBridge,
+      async runAgentStream(root, prompt, label, settings, onEvent) {
+        const isQa = label.includes('qa-');
+        if (isQa) {
+          activeQa++;
+          maxActiveQa = Math.max(maxActiveQa, activeQa);
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        try {
+          onEvent({ type: 'status', text: 'parallel test' });
+          return await memoryBridge.runAgent(root, prompt, label, settings);
+        } finally {
+          if (isQa) activeQa--;
+        }
+      }
+    };
+    const result = await runRevisionAutopilot({ ...ctx, bridge: parallelBridge }, { episode: 'ep001' });
+    expect(result.reports).toHaveLength(3);
+    expect(maxActiveQa).toBe(3);
+    const runIndex = JSON.parse(await readOptional(ctx, `${LAYOUT.bindery.runs}/index.json`)) as Array<{ stage: string }>;
+    expect(runIndex.filter((run) => run.stage.startsWith('qa-'))).toHaveLength(3);
+    const usage = JSON.parse(await readOptional(ctx, `${LAYOUT.bindery.root}/usage.json`)) as Array<{ stage: string }>;
+    expect(usage.filter((entry) => entry.stage.startsWith('qa-'))).toHaveLength(3);
+  });
+
   it('closeEpisode: 추천 체크는 high 리스크 제외, 체크 항목만 반영·나머지는 보류', async () => {
     await prepareFoundation(ctx);
     const r0 = await runEpisodeAutopilot(ctx, { episode: 'ep001' });
@@ -379,5 +413,18 @@ describe('autopilot — 최소 입력·자동 중간 처리·최종 선택', () 
 
     const plan = await loadPlotPlan(ctx);
     expect(plan?.episodes[0].title).toBe('회계 장부 위의 악마성');
+  });
+
+  it('기획 채택: AI 전체 실패에도 채택 기획 기반 로컬 바이블을 먼저 적용한다', async () => {
+    setAgentScript(null);
+    const starter = await runProjectStarterAutopilot(ctx, '던전 운영 손익을 뒤집는 이야기');
+    const r = await adoptStarterIdea(ctx, starter.ideas[0], '오프라인 던전');
+
+    expect(r.assets).toBe(0);
+    expect(r.bibleSource).toBe('fallback');
+    const bible = await readOptional(ctx, LAYOUT.canon.bible);
+    expect(bible).toContain('로컬 조립본');
+    expect(bible).toContain('던전 운영 손익');
+    expect((await loadPlotPlan(ctx))?.episodes.length).toBeGreaterThan(0);
   });
 });

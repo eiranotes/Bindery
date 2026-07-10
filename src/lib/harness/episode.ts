@@ -23,6 +23,8 @@ import {
 } from '$lib/schemas/contracts';
 import { loadEpisodeContext } from './context';
 import { buildEpisodeContextPack, prepareDraftContext } from './contextPack';
+import { buildStyleCapsule } from './styleTransfer';
+import { qualitySummary, scoreDraftQuality, type QualityStatus } from './quality';
 import type { Ctx, StageOutcome } from './types';
 
 // 회차 번호 헬퍼는 context.ts가 원본이다 (기초자료 로더와의 순환 참조 방지).
@@ -300,7 +302,18 @@ export type CandidateFile = {
   risks?: string[];
   selfCheckScore?: number | null;
   charCount?: number;
+  qualityStatus?: QualityStatus;
+  qualityIssues?: string[];
 };
+
+function candidateQuality(text: string): Pick<CandidateFile, 'charCount' | 'qualityStatus' | 'qualityIssues'> {
+  const report = scoreDraftQuality(text);
+  return {
+    charCount: report.chars,
+    qualityStatus: report.status,
+    qualityIssues: qualitySummary(report)
+  };
+}
 
 export async function saveWebDraftCandidate(ctx: Ctx, episode: string, candidate: DraftCandidate): Promise<CandidateFile> {
   const paths = episodePaths(episode);
@@ -317,7 +330,8 @@ export async function saveWebDraftCandidate(ctx: Ctx, episode: string, candidate
     source: 'web-import',
     createdAt: nowIso(),
     changeSummary: candidate.change_summary,
-    deltaCandidates: candidate.canon_delta_candidates
+    deltaCandidates: candidate.canon_delta_candidates,
+    ...candidateQuality(candidate.manuscript_md)
   };
   await ctx.bridge.writeFile(ctx.root, path, embedJson(candidate.manuscript_md, { ...meta, source: 'web-import', canon_delta_candidates: candidate.canon_delta_candidates }));
   const existing = await loadCandidateIndex(ctx, episode);
@@ -400,6 +414,9 @@ export async function generateDraftCandidates(
     note: notes,
     extraQuery: `${brief.goal}\n${brief.must_events.join('\n')}\n${brief.characters.join(' ')}`
   });
+  // 문체 라우팅: 활성 프리셋이 있으면 전역 분위기 + 이번 화 장면 유형에 맞는
+  // 오버레이만 골라 캡슐로 주입한다. 없으면 기존 style-guide.md 그대로.
+  const styleCapsule = await buildStyleCapsule(ctx, episode, scenePlan);
   const vars = {
     episode,
     brief: renderBriefMarkdown(brief),
@@ -409,7 +426,7 @@ export async function generateDraftCandidates(
     previousTail: base.previousTail,
     bible: packed.capsule,
     openThreads: base.openThreads,
-    styleGuide: base.styleGuide,
+    styleGuide: styleCapsule?.text ?? base.styleGuide,
     currentManuscript: excerptWindow(baseBody, 8000) || '(빈 원고)',
     notes: notes || '(없음)',
     targetLength: String(brief.target_length),
@@ -452,7 +469,7 @@ export async function generateDraftCandidates(
       deltaCandidates: outcome.output.canon_delta_candidates,
       risks: candidateRisks(outcome.output),
       selfCheckScore: outcome.output.style_self_check?.score ?? null,
-      charCount: outcome.output.manuscript_md.replace(/\s/g, '').length
+      ...candidateQuality(outcome.output.manuscript_md)
     };
     await ctx.bridge.writeFile(ctx.root, path, embedJson(outcome.output.manuscript_md, { ...meta, canon_delta_candidates: outcome.output.canon_delta_candidates }));
     candidates.push(meta);
@@ -471,6 +488,8 @@ export async function generateRevisionCandidate(ctx: Ctx, episode: string, plan:
   const accepted = plan.items.filter((i) => i.accepted);
   if (!accepted.length) return { candidate: null, error: '수용된 수정 항목이 없습니다.' };
   const baseBody = parseFrontmatter(current).body ?? current;
+  // 수정 후보도 초안과 같은 문체 라우팅을 탄다 — 수정 과정에서 결이 흔들리지 않게.
+  const styleCapsule = await buildStyleCapsule(ctx, episode, await loadScenePlan(ctx, episode));
 
   const outcome = await runStage(ctx, {
     stage: 'revision-candidate',
@@ -480,7 +499,7 @@ export async function generateRevisionCandidate(ctx: Ctx, episode: string, plan:
       episode,
       revisionPlan: accepted.map((i) => `- [${i.id}][${i.severity}] ${i.instruction}${i.target ? ` (위치: ${i.target})` : ''}`).join('\n'),
       manuscript: baseBody,
-      styleGuide: clip(await readOptional(ctx, LAYOUT.style.guide), 2000)
+      styleGuide: styleCapsule?.text ?? clip(await readOptional(ctx, LAYOUT.style.guide), 2000)
     },
     parse: (text) => parseDraftCandidate(text, episode, '').candidate,
     fallback: () => localDraftFallback(episode, null),
@@ -501,7 +520,8 @@ export async function generateRevisionCandidate(ctx: Ctx, episode: string, plan:
     source: 'agent',
     createdAt: nowIso(),
     changeSummary: outcome.output.change_summary,
-    deltaCandidates: outcome.output.canon_delta_candidates
+    deltaCandidates: outcome.output.canon_delta_candidates,
+    ...candidateQuality(outcome.output.manuscript_md)
   };
   await ctx.bridge.writeFile(ctx.root, path, embedJson(outcome.output.manuscript_md, meta));
   const existing = await loadCandidateIndex(ctx, episode);

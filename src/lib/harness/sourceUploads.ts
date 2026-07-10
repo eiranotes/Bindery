@@ -11,7 +11,29 @@ export type SourceUpload = {
 
 export type SourceUploadSkip = {
   name: string;
-  reason: 'unsupported' | 'read-error' | 'zip-error' | 'zip-entry-unsupported';
+  reason:
+    | 'unsupported'
+    | 'read-error'
+    | 'zip-error'
+    | 'zip-entry-unsupported'
+    | 'zip-too-large'
+    | 'zip-entry-limit'
+    | 'zip-entry-too-large'
+    | 'zip-total-limit'
+    | 'source-total-limit'
+    | 'cancelled';
+};
+
+export type SourceUploadProgress = {
+  phase: 'reading' | 'expanding';
+  name: string;
+  current: number;
+  total: number;
+};
+
+export type SourceUploadReadOptions = {
+  signal?: AbortSignal;
+  onProgress?: (progress: SourceUploadProgress) => void;
 };
 
 export type SourceUploadReadResult = {
@@ -30,6 +52,11 @@ export type SourceReadableFile = {
 };
 
 export const SOURCE_FILE_MAX_CHARS = 120_000;
+export const SOURCE_UPLOAD_MAX_TOTAL_CHARS = 2_000_000;
+export const SOURCE_ZIP_MAX_BYTES = 50 * 1024 * 1024;
+export const SOURCE_ZIP_MAX_ENTRIES = 500;
+export const SOURCE_ZIP_ENTRY_MAX_BYTES = 2 * 1024 * 1024;
+export const SOURCE_ZIP_MAX_TEXT_BYTES = 20 * 1024 * 1024;
 export const SOURCE_FILE_ACCEPT =
   '.txt,.md,.markdown,.json,.yaml,.yml,.csv,.tsv,.log,.rtf,.xml,.html,.zip';
 
@@ -91,6 +118,20 @@ type HuffmanTable = {
   maxBits: number;
 };
 
+class SourceZipError extends Error {
+  constructor(readonly reason: SourceUploadSkip['reason'], message: string) {
+    super(message);
+  }
+}
+
+function assertNotAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new SourceZipError('cancelled', 'Source upload cancelled');
+}
+
+async function yieldToMainThread(): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
+
 class DeflateBitReader {
   private bitOffset = 0;
 
@@ -148,16 +189,17 @@ function normalizeSourceText(text: string): string {
   return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 }
 
-function makeSourceUpload(name: string, size: number, rawText: string): SourceUpload {
+function makeSourceUpload(name: string, size: number, rawText: string, maxChars = SOURCE_FILE_MAX_CHARS): SourceUpload {
   const raw = normalizeSourceText(rawText);
-  const content = raw.slice(0, SOURCE_FILE_MAX_CHARS);
+  const limit = Math.min(SOURCE_FILE_MAX_CHARS, Math.max(0, maxChars));
+  const content = raw.slice(0, limit);
   return {
     id: uploadId(name),
     name: name || 'untitled.txt',
     size,
     chars: content.length,
     content,
-    truncated: raw.length > SOURCE_FILE_MAX_CHARS
+    truncated: raw.length > limit
   };
 }
 
@@ -395,10 +437,11 @@ async function decodeZipPayload(payload: Uint8Array, method: number, uncompresse
   throw new Error(`Unsupported ZIP compression method: ${method}`);
 }
 
-async function readZipTextEntries(file: SourceReadableFile): Promise<{
+async function readZipTextEntries(file: SourceReadableFile, options: SourceUploadReadOptions = {}): Promise<{
   entries: ZipTextEntry[];
   skipped: SourceUploadSkip[];
 }> {
+  assertNotAborted(options.signal);
   const bytes = new Uint8Array(await file.arrayBuffer());
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const eocd = findEndOfCentralDirectory(view);
@@ -411,12 +454,19 @@ async function readZipTextEntries(file: SourceReadableFile): Promise<{
   if (entryCount === 0xffff || directoryOffset + 46 > bytes.length || directoryEnd > bytes.length) {
     throw new Error('ZIP64 or corrupt ZIP is not supported');
   }
+  if (entryCount > SOURCE_ZIP_MAX_ENTRIES) {
+    throw new SourceZipError('zip-entry-limit', `ZIP contains ${entryCount} entries`);
+  }
 
   const entries: ZipTextEntry[] = [];
   const skipped: SourceUploadSkip[] = [];
   let cursor = directoryOffset;
+  let totalTextBytes = 0;
 
   for (let index = 0; index < entryCount; index++) {
+    assertNotAborted(options.signal);
+    options.onProgress?.({ phase: 'expanding', name: file.name, current: index + 1, total: entryCount });
+    if (index > 0 && index % 8 === 0) await yieldToMainThread();
     if (cursor + 46 > directoryEnd || readUint32(view, cursor) !== ZIP_CENTRAL_DIRECTORY) {
       throw new Error('Corrupt ZIP central directory');
     }
@@ -437,6 +487,15 @@ async function readZipTextEntries(file: SourceReadableFile): Promise<{
       skipped.push({ name: rawName || file.name, reason: 'zip-entry-unsupported' });
       continue;
     }
+    if (uncompressedSize > SOURCE_ZIP_ENTRY_MAX_BYTES) {
+      skipped.push({ name: entryName, reason: 'zip-entry-too-large' });
+      continue;
+    }
+    if (totalTextBytes + uncompressedSize > SOURCE_ZIP_MAX_TEXT_BYTES) {
+      skipped.push({ name: entryName, reason: 'zip-total-limit' });
+      continue;
+    }
+    totalTextBytes += uncompressedSize;
 
     if (localHeaderOffset + 30 > bytes.length || readUint32(view, localHeaderOffset) !== ZIP_LOCAL_FILE_HEADER) {
       skipped.push({ name: entryName, reason: 'zip-error' });
@@ -465,27 +524,49 @@ async function readZipTextEntries(file: SourceReadableFile): Promise<{
   return { entries, skipped };
 }
 
-export async function readSourceUploads(files: SourceReadableFile[]): Promise<SourceUploadReadResult> {
+export async function readSourceUploads(
+  files: SourceReadableFile[],
+  options: SourceUploadReadOptions = {}
+): Promise<SourceUploadReadResult> {
   const uploads: SourceUpload[] = [];
   const skipped: SourceUploadSkip[] = [];
   let zipFiles = 0;
   let zipEntries = 0;
+  let totalChars = 0;
 
-  for (const file of files) {
+  for (let fileIndex = 0; fileIndex < files.length; fileIndex++) {
+    const file = files[fileIndex];
+    assertNotAborted(options.signal);
+    options.onProgress?.({ phase: 'reading', name: file.name, current: fileIndex + 1, total: files.length });
     if (isZipSource(file)) {
       zipFiles++;
+      if (file.size > SOURCE_ZIP_MAX_BYTES) {
+        skipped.push({ name: file.name, reason: 'zip-too-large' });
+        continue;
+      }
       try {
-        const { entries, skipped: zipSkipped } = await readZipTextEntries(file);
+        const { entries, skipped: zipSkipped } = await readZipTextEntries(file, options);
         skipped.push(...zipSkipped);
         for (const entry of entries) {
-          uploads.push(makeSourceUpload(`${file.name}/${entry.name}`, entry.size, entry.text));
+          const remaining = SOURCE_UPLOAD_MAX_TOTAL_CHARS - totalChars;
+          if (remaining <= 0) {
+            skipped.push({ name: entry.name, reason: 'source-total-limit' });
+            continue;
+          }
+          const upload = makeSourceUpload(`${file.name}/${entry.name}`, entry.size, entry.text, remaining);
+          uploads.push(upload);
+          totalChars += upload.chars;
         }
         zipEntries += entries.length;
         if (!entries.length && !zipSkipped.length) {
           skipped.push({ name: file.name, reason: 'zip-entry-unsupported' });
         }
-      } catch {
-        skipped.push({ name: file.name, reason: 'zip-error' });
+      } catch (error) {
+        if (error instanceof SourceZipError && error.reason === 'cancelled') throw error;
+        skipped.push({
+          name: file.name,
+          reason: error instanceof SourceZipError ? error.reason : 'zip-error'
+        });
       }
       continue;
     }
@@ -496,7 +577,14 @@ export async function readSourceUploads(files: SourceReadableFile[]): Promise<So
     }
 
     try {
-      uploads.push(makeSourceUpload(file.name || 'untitled.txt', file.size, await file.text()));
+      const remaining = SOURCE_UPLOAD_MAX_TOTAL_CHARS - totalChars;
+      if (remaining <= 0) {
+        skipped.push({ name: file.name || 'untitled.txt', reason: 'source-total-limit' });
+        continue;
+      }
+      const upload = makeSourceUpload(file.name || 'untitled.txt', file.size, await file.text(), remaining);
+      uploads.push(upload);
+      totalChars += upload.chars;
     } catch {
       skipped.push({ name: file.name || 'untitled.txt', reason: 'read-error' });
     }

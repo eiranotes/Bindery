@@ -1,5 +1,5 @@
-import { invoke } from '@tauri-apps/api/core';
-import type { AgentResult, AgentSettings, Bridge, FileNode } from './types';
+import { Channel, invoke } from '@tauri-apps/api/core';
+import type { AgentResult, AgentSettings, AgentStreamEvent, Bridge, FileNode } from './types';
 
 type FsPayload =
   | { op: 'read'; root: string; path: string }
@@ -43,8 +43,19 @@ export const tauriBridge: Bridge = {
   async runAgent(root, prompt, label, settings: AgentSettings): Promise<AgentResult> {
     return invoke<AgentResult>('run_agent', { req: { root, prompt, label, settings } });
   },
+  async runAgentStream(root, prompt, label, settings, onEvent): Promise<AgentResult> {
+    const channel = new Channel<AgentStreamEvent>();
+    channel.onmessage = onEvent;
+    return invoke<AgentResult>('run_agent_stream', {
+      req: { root, prompt, label, settings },
+      onEvent: channel
+    });
+  },
   async cancelAgent(root, label) {
     return invoke<{ ok: boolean; cancelled: boolean }>('cancel_agent', { root, label });
+  },
+  async pickFolder(prompt) {
+    return invoke<{ path: string; cancelled: boolean }>('pick_folder', { prompt });
   },
   async env() {
     return invoke<{ home: string; cwd: string }>('env_info');
